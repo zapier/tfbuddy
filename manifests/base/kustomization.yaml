@@ -1,0 +1,73 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - service-account.yaml
+  - service.yaml
+  - deployment.yaml
+  - tfbuddy-server-pdb.yaml
+  - service-monitor.yaml
+
+helmCharts:
+  - name: nats
+    namespace: tfbuddy
+    repo: https://nats-io.github.io/k8s/helm/charts/
+    version: 0.19.1
+    releaseName: tfbuddy-nats
+    valuesInline:
+      cluster:
+        enabled: 'true'
+        replicas: 3
+
+      nats:
+        jetstream:
+          enabled: 'true'
+          fileStorage:
+            enabled: 'true'
+            size: 20Gi
+            storageDirectory: /data/
+          memoryStorage:
+            enabled: 'true'
+            size: 1Gi
+
+        resources:
+          limits:
+            memory: 4Gi
+          requests:
+            cpu: 250m
+            memory: 2Gi
+
+      natsbox:
+        enabled: false
+
+      exporter:
+        enabled: true
+        serviceMonitor:
+          enabled: true
+        resources:
+          limits:
+            cpu: 50m
+            memory: 128Mi
+          requests:
+            cpu: 50m
+            memory: 128Mi
+
+      reloader:
+        resources:
+          limits:
+            cpu: 50m
+            memory: 128Mi
+          requests:
+            cpu: 50m
+            memory: 128Mi
+
+patches:
+  # v1.21.0 doesn't support policy/v1 yet.
+  - patch: |-
+      - op: replace
+        path: "/apiVersion"
+        value: policy/v1beta1
+    target:
+      group: policy
+      version: v1
+      labelSelector: "app.kubernetes.io/managed-by=Helm"

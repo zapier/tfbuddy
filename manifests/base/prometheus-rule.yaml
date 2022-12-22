@@ -1,0 +1,11 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: tfbuddy-recording-rules
+spec:
+  groups:
+    - name: tfbuddy-recording-rules
+      interval: 30s
+      rules:
+        - record: sum:tfbuddy_tfc_runs_started
+          expr: sum(tfbuddy_tfc_runs_started) by (runType, organization, workspace)

@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tfbuddy
+spec:
+  selector:
+    matchLabels:
+      app: tfbuddy
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: tfbuddy
+    spec:
+      containers:
+        - name: tfbuddy
+          image: tfbuddy-server
+          ports:
+            - containerPort: 2345
+              name: dlv
+            - containerPort: 8080
+              name: http
+          env:
+            - name: TFBUDDY_NATS_SERVICE_URL
+              value: nats://nats:4222
+          envFrom:
+            - configMapRef:
+                name: tfbuddy-config
+            - secretRef:
+                name: tfbuddy-secrets
+          resources:
+            limits:
+              memory: 512Mi
+            requests:
+              memory: 256Mi
+              cpu: 200m
+          livenessProbe:
+            failureThreshold: 30
+            httpGet:
+              path: /live
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 5
+          readinessProbe:
+            failureThreshold: 30
+            httpGet:
+              path: /ready
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 5

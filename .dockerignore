@@ -1,0 +1,35 @@
+.git
+.github
+.gitlab-ci.yml
+.tfbuddy.yaml
+ci-common.yml
+ci-stable.yml
+ci-tfc-status.yml
+
+# Built binaries
+terraform-ci-buddy
+tfbuddy
+
+# Dev scripts / tools
+Makefile
+test-hooks.rest
+.env
+go.work
+go.work.sum
+
+# Docs
+README.md
+images/*
+
+# Deployment manifests
+manifests/**
+
+# localdev & Waypoint files
+localdev/**
+**/.terraform/*
+**/.terraform.lock.hcl
+**/terraform.tfstate*
+**/*.tfvars
+
+# Terraform
+terraform/**

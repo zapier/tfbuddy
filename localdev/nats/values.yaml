@@ -1,0 +1,45 @@
+cluster:
+  enabled: 'true'
+  replicas: 3
+
+nats:
+  jetstream:
+    enabled: 'true'
+    fileStorage:
+      enabled: 'true'
+      size: 4Gi
+      storageDirectory: /data/
+    memoryStorage:
+      enabled: 'true'
+      size: 2Gi
+
+  resources:
+    limits:
+      memory: 128Mi
+    requests:
+      cpu: 250m
+      memory: 128Mi
+
+natsbox:
+  enabled: true
+
+exporter:
+  enabled: false
+  serviceMonitor:
+    enabled: false
+  resources:
+    limits:
+      cpu: 50m
+      memory: 128Mi
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+reloader:
+  resources:
+    limits:
+      cpu: 50m
+      memory: 128Mi
+    requests:
+      cpu: 50m
+      memory: 128Mi

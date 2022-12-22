@@ -1,0 +1,5 @@
+{
+  "enable_github": true,
+  "enable_gitlab": true,
+  "live_debug": true
+}
