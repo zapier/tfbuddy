@@ -8,7 +8,7 @@ require (
 	github.com/cenkalti/backoff/v4 v4.2.0
 	github.com/creasty/defaults v1.6.0
 	github.com/go-git/go-billy/v5 v5.3.1
-	github.com/go-git/go-git/v5 v5.5.1
+	github.com/go-git/go-git/v5 v5.2.0
 	github.com/golang/mock v1.6.0
 	github.com/google/go-cmp v0.5.9
 	github.com/google/go-github/v48 v48.2.0
@@ -69,6 +69,7 @@ require (
 	github.com/mattn/go-isatty v0.0.16 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
 	github.com/minio/highwayhash v1.0.2 // indirect
+	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/nats-io/jwt/v2 v2.3.0 // indirect
 	github.com/nats-io/nkeys v0.3.0 // indirect
