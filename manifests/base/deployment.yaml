@@ -38,7 +38,7 @@ spec:
             value: "debug"
           - name: TFBUDDY_NATS_SERVICE_URL
             value: nats://tfbuddy-nats:4222
-          image: zapier/tfbuddy:latest
+          image: ghcr.io/zapier/tfbuddy:latest
           imagePullPolicy: Always
           livenessProbe:
             failureThreshold: 30
