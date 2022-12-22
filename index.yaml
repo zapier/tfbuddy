@@ -1,0 +1,19 @@
+apiVersion: v1
+entries:
+  tfbuddy:
+  - apiVersion: v2
+    created: "2022-12-22T20:34:40.019848468Z"
+    dependencies:
+    - name: nats
+      repository: https://nats-io.github.io/k8s/helm/charts/
+      version: 0.14.2
+    description: A Helm chart for tfbuddy
+    digest: 3279e395d7b5faa477987572ed65e3235b7f1b26fc031b373346ed15f575fa6e
+    maintainers:
+    - name: zapier
+    name: tfbuddy
+    type: application
+    urls:
+    - https://github.com/zapier/tfbuddy/releases/download/tfbuddy-0.1.0/tfbuddy-0.1.0.tgz
+    version: 0.1.0
+generated: "2022-12-22T20:34:40.019873569Z"
