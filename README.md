@@ -17,7 +17,7 @@ and then passes status updates of those back to the Merge/Pull Request in the fo
 
 TFBuddy consists of the webhook handler and a NATS cluster.
 
-![](./images/tfbuddy.png)
+![](./docs/img/overview.png)
 
 ### Building
 
@@ -29,3 +29,6 @@ go test -v ./...
 go build -v
 ```
 
+## Documentation
+
+To learn more about TF Buddy [go to the complete documentation](https://tfbuddy.readthedocs.io/).

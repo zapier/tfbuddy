@@ -10,5 +10,5 @@ TF Buddy is an application meant to simplify executing terraform in your pull re
 
 ## Documentation
 
-To learn more about TF Buddy [go to the complete documentation](https://tf-buddy.readthedocs.io/).
+To learn more about TF Buddy [go to the complete documentation](https://tfbuddy.readthedocs.io/).
 
