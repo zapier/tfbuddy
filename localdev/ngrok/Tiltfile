@@ -1,0 +1,48 @@
+load('ext://secret', 'secret_from_dict')
+
+# /////////////////////////////////////////////////////////////////////////////
+# N G R O K
+# /////////////////////////////////////////////////////////////////////////////
+
+def get_ngrok_url():
+    if config.tilt_subcommand == 'down':
+        return 'http://xyz.ngrok.io'
+    else:
+        return str(local(
+            'curl -s http://localhost:4040/api/tunnels \
+              | jq --raw-output ".tunnels[0].public_url"'.format(
+                k8s_namespace,
+                k8s_context
+            ),
+        )).rstrip('\n')
+
+# Read Auth token for ngrok (assumes ngrok has been installed and configured)
+ngrok_config_file = str(local('ngrok config check', quiet=True)).lstrip('Valid configuration file at ').rstrip('\n')
+ngrok_config = read_yaml(ngrok_config_file)
+k8s_yaml(
+    secret_from_dict("ngrok-config", inputs = {
+        'NGROK_AUTHTOKEN' : ngrok_config['authtoken'],
+    })
+)
+k8s_resource(
+    objects=['ngrok-config:secret'],
+    labels=["ngrok"],
+    new_name='ngrok-config',
+    resource_deps=['k8s:namespace']
+)
+
+# Deploy ngrok proxy
+k8s_yaml(
+    kustomize('./')
+)
+k8s_resource(
+    'ngrok',
+    resource_deps=['ngrok-config', 'k8s:namespace'],
+    labels=["ngrok"],
+    port_forwards=4040,
+)
+k8s_resource(
+    'wait-ngrok-url',
+    resource_deps=['k8s:namespace', 'ngrok'],
+    labels=["ngrok"]
+)

@@ -1,0 +1,134 @@
+# Default values for tfbuddy
+resources:
+  limits:
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 128Mi
+
+replicaCount: 1
+
+pdb:
+  maxUnavailable: 1
+
+image:
+  repository: zapier
+  name: tfbuddy
+  tag: latest
+  pullPolicy: Always
+
+imagePullSecrets: []
+
+containerPort: 8080
+
+env:
+  TFBUDDY_LOG_LEVEL: info
+  TFBUDDY_NATS_SERVICE_URL: nats://tfbuddy-nats:4222
+  # TFBUDDY_PROJECT_ALLOW_LIST:
+  # TFBUDDY_WORKSPACE_ALLOW_LIST:
+  # TFBUDDY_DEFAULT_TFC_ORGANIZATION:
+  # TFBUDDY_GITLAB_HOOK_SECRET_KEY:
+
+envFrom:
+  - secretRef:
+      name: tfbuddy
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  name: tfbuddy
+
+serviceMonitor:
+  create: false
+
+secrets:
+  create: true
+  name: tfbuddy
+  # envs can be used for writing sensitive environment variables
+  # to the secret resource. These should be passed into the
+  # deployment as arguments.
+  # env: []
+
+podSecurityContext: {}
+  # fsGroup: 2000
+
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+ingress:
+  create: false
+  className: ""
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+  hosts:
+    - host: tfbuddy.local
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls: []
+  #  - secretName: chart-example-tls
+  #    hosts:
+  #      - chart-example.local
+
+service:
+  port: 8080
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# https://github.com/nats-io/k8s/tree/main/helm/charts/nats#jetstream
+nats:
+  cluster:
+    enabled: 'true'
+    replicas: 3
+
+  nats:
+    jetstream:
+      enabled: 'true'
+      fileStorage:
+        enabled: 'true'
+        size: 20Gi
+        storageDirectory: /data/
+      memoryStorage:
+        enabled: 'true'
+        size: 1Gi
+
+    resources:
+      limits:
+        memory: 4Gi
+      requests:
+        cpu: 250m
+        memory: 2Gi
+
+  natsbox:
+    enabled: false
+
+  exporter:
+    enabled: true
+    serviceMonitor:
+      enabled: false
+    resources:
+      limits:
+        cpu: 50m
+        memory: 128Mi
+      requests:
+        cpu: 50m
+        memory: 128Mi
+
+  reloader:
+    resources:
+      limits:
+        cpu: 50m
+        memory: 128Mi
+      requests:
+        cpu: 50m
+        memory: 128Mi

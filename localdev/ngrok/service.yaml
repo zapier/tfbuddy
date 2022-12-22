@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ngrok
+spec:
+  type: LoadBalancer
+  ports:
+    - name: http
+      port: 4040
+      targetPort: 4040
+      protocol: TCP
+  selector:
+    app: ngrok

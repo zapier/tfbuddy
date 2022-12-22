@@ -1,0 +1,27 @@
+suite: Deployment tests
+
+templates: [deployment.yaml]
+
+tests:
+  - it: can render resources
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources
+          value:
+            requests:
+              cpu: 250m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+  - it: can render env vars
+    set:
+      controller:
+        env:
+          hello: world
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env
+          value:
+            - {name: PORT, value: "8080"}
+            - {name: TFBUDDY_LOG_LEVEL, value: info}
+            - {name: TFBUDDY_NATS_SERVICE_URL, value: nats://tfbuddy-nats:4222}

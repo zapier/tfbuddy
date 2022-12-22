@@ -1,0 +1,13 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: tfbuddy-server
+spec:
+  endpoints:
+    - path: /metrics
+      targetPort: 8080
+  namespaceSelector:
+    any: true
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tfbuddy-server

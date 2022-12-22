@@ -1,0 +1,98 @@
+package tfc_api
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/hashicorp/go-tfe"
+	"github.com/rs/zerolog/log"
+)
+
+type ApiRunOptions struct {
+	// IsApply = true if this run is will auto apply
+	IsApply bool
+	// Path is the path to directory where repo source has been cloned
+	Path string
+	// Message is the Terraform Cloud run title.
+	Message string
+	// Organization is the Terraform Cloud organization name
+	Organization string
+	// Workspace is the Terraform Cloud workspace name
+	Workspace string
+}
+
+// CreateRunFromSource creates a new Terraform Cloud run from source files
+func (c *TFCClient) CreateRunFromSource(opts *ApiRunOptions) (*tfe.Run, error) {
+	ctx := context.Background()
+	log := log.With().Str("workspace", opts.Workspace).Logger()
+
+	ws, err := c.GetWorkspaceByName(ctx, opts.Organization, opts.Workspace)
+	if err != nil {
+		log.Error().Msg("could not get workspace")
+		return nil, err
+	}
+
+	cv, err := c.createConfigurationVersion(opts, ctx, ws)
+	if err != nil {
+		return nil, err
+	}
+
+	// create run for new CV
+	run, err := c.Client.Runs.Create(ctx, tfe.RunCreateOptions{
+		Message:              tfe.String(opts.Message),
+		ConfigurationVersion: cv,
+		Workspace:            ws,
+		AutoApply:            tfe.Bool(opts.IsApply),
+	})
+	run.Workspace = ws
+	// TFC API is weird, it doesn't return the correct value for Speculative, so we override here.
+	run.ConfigurationVersion.Speculative = !opts.IsApply
+	if err != nil {
+		log.Error().Err(err).Msg("could create run")
+		return nil, err
+	}
+
+	return run, nil
+}
+
+func (c *TFCClient) createConfigurationVersion(opts *ApiRunOptions, ctx context.Context, ws *tfe.Workspace) (*tfe.ConfigurationVersion, error) {
+	cfgOpts := tfe.ConfigurationVersionCreateOptions{
+		AutoQueueRuns: tfe.Bool(false),
+		Speculative:   tfe.Bool(!opts.IsApply),
+	}
+	cv, err := c.Client.ConfigurationVersions.Create(ctx, ws.ID, cfgOpts)
+	if err != nil {
+		log.Error().Err(err).Msg("could not create TFC configuration version")
+		return cv, err
+	}
+	log.Debug().Interface("CV", cv).Msg("Created new CV")
+
+	err = c.Client.ConfigurationVersions.Upload(ctx, cv.UploadURL, opts.Path)
+	if err != nil {
+		log.Error().Err(err).Msg("could not upload config")
+		return cv, err
+	}
+
+	cv2, err := c.pollCVWhilePending(ctx, cv)
+	if err != nil {
+		log.Error().Err(err).Msg("could not read configuration version")
+		return nil, err
+	}
+	log.Debug().Interface("CV", cv2).Msg("Uploaded source to CV")
+	return cv2, err
+}
+
+func (c *TFCClient) pollCVWhilePending(ctx context.Context, cv *tfe.ConfigurationVersion) (*tfe.ConfigurationVersion, error) {
+	for i := 0; i < 30; i++ {
+		cv, err := c.Client.ConfigurationVersions.Read(ctx, cv.ID)
+		if err != nil {
+			return nil, err
+		}
+		if cv.Status != tfe.ConfigurationPending {
+			return cv, nil
+		}
+		time.Sleep(1 * time.Second)
+	}
+	return nil, fmt.Errorf("timed out waiting for CV to move from pending")
+}

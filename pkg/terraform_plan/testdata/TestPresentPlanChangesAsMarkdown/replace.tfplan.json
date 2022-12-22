@@ -1,0 +1,694 @@
+{
+  "format_version": "1.1",
+  "terraform_version": "1.2.1",
+  "planned_values": {
+    "outputs": {
+      "pets": {
+        "sensitive": false
+      }
+    },
+    "root_module": {
+      "resources": [
+        {
+          "address": "random_integer.pet_length",
+          "mode": "managed",
+          "type": "random_integer",
+          "name": "pet_length",
+          "provider_name": "registry.terraform.io/hashicorp/random",
+          "schema_version": 0,
+          "values": {
+            "max": 5,
+            "min": 2,
+            "seed": null
+          },
+          "sensitive_values": {
+            "keepers": {}
+          }
+        },
+        {
+          "address": "random_pet.rando[0]",
+          "mode": "managed",
+          "type": "random_pet",
+          "name": "rando",
+          "index": 0,
+          "provider_name": "registry.terraform.io/hashicorp/random",
+          "schema_version": 0,
+          "values": {
+            "prefix": null,
+            "separator": "-"
+          },
+          "sensitive_values": {
+            "keepers": {}
+          }
+        },
+        {
+          "address": "random_pet.rando[1]",
+          "mode": "managed",
+          "type": "random_pet",
+          "name": "rando",
+          "index": 1,
+          "provider_name": "registry.terraform.io/hashicorp/random",
+          "schema_version": 0,
+          "values": {
+            "prefix": null,
+            "separator": "-"
+          },
+          "sensitive_values": {
+            "keepers": {}
+          }
+        },
+        {
+          "address": "random_pet.rando[2]",
+          "mode": "managed",
+          "type": "random_pet",
+          "name": "rando",
+          "index": 2,
+          "provider_name": "registry.terraform.io/hashicorp/random",
+          "schema_version": 0,
+          "values": {
+            "prefix": null,
+            "separator": "-"
+          },
+          "sensitive_values": {
+            "keepers": {}
+          }
+        },
+        {
+          "address": "random_pet.rando[3]",
+          "mode": "managed",
+          "type": "random_pet",
+          "name": "rando",
+          "index": 3,
+          "provider_name": "registry.terraform.io/hashicorp/random",
+          "schema_version": 0,
+          "values": {
+            "prefix": null,
+            "separator": "-"
+          },
+          "sensitive_values": {
+            "keepers": {}
+          }
+        },
+        {
+          "address": "time_rotating.moar_pets",
+          "mode": "managed",
+          "type": "time_rotating",
+          "name": "moar_pets",
+          "provider_name": "registry.terraform.io/hashicorp/time",
+          "schema_version": 0,
+          "values": {
+            "rotation_days": null,
+            "rotation_hours": null,
+            "rotation_minutes": 1,
+            "rotation_months": null,
+            "rotation_years": null,
+            "triggers": null
+          },
+          "sensitive_values": {}
+        }
+      ]
+    }
+  },
+  "resource_drift": [
+    {
+      "address": "time_rotating.moar_pets",
+      "mode": "managed",
+      "type": "time_rotating",
+      "name": "moar_pets",
+      "provider_name": "registry.terraform.io/hashicorp/time",
+      "change": {
+        "actions": [
+          "delete"
+        ],
+        "before": {
+          "day": 25,
+          "hour": 1,
+          "id": "2022-05-25T01:23:59Z",
+          "minute": 23,
+          "month": 5,
+          "rfc3339": "2022-05-25T01:23:59Z",
+          "rotation_days": null,
+          "rotation_hours": null,
+          "rotation_minutes": 1,
+          "rotation_months": null,
+          "rotation_rfc3339": "2022-05-25T01:24:59Z",
+          "rotation_years": null,
+          "second": 59,
+          "triggers": null,
+          "unix": 1653441839,
+          "year": 2022
+        },
+        "after": null,
+        "after_unknown": {},
+        "before_sensitive": {},
+        "after_sensitive": false
+      }
+    }
+  ],
+  "resource_changes": [
+    {
+      "address": "random_integer.pet_length",
+      "mode": "managed",
+      "type": "random_integer",
+      "name": "pet_length",
+      "provider_name": "registry.terraform.io/hashicorp/random",
+      "change": {
+        "actions": [
+          "delete",
+          "create"
+        ],
+        "before": {
+          "id": "3",
+          "keepers": {
+            "rotate": "2022-05-25T01:23:59Z"
+          },
+          "max": 5,
+          "min": 2,
+          "result": 3,
+          "seed": null
+        },
+        "after": {
+          "max": 5,
+          "min": 2,
+          "seed": null
+        },
+        "after_unknown": {
+          "id": true,
+          "keepers": true,
+          "result": true
+        },
+        "before_sensitive": {
+          "keepers": {}
+        },
+        "after_sensitive": {
+          "keepers": {}
+        },
+        "replace_paths": [
+          [
+            "keepers"
+          ]
+        ]
+      },
+      "action_reason": "replace_because_cannot_update"
+    },
+    {
+      "address": "random_pet.rando[0]",
+      "mode": "managed",
+      "type": "random_pet",
+      "name": "rando",
+      "index": 0,
+      "provider_name": "registry.terraform.io/hashicorp/random",
+      "change": {
+        "actions": [
+          "delete",
+          "create"
+        ],
+        "before": {
+          "id": "solely-on-hog",
+          "keepers": {
+            "rotate": "2022-05-25T01:23:59Z"
+          },
+          "length": 3,
+          "prefix": null,
+          "separator": "-"
+        },
+        "after": {
+          "prefix": null,
+          "separator": "-"
+        },
+        "after_unknown": {
+          "id": true,
+          "keepers": true,
+          "length": true
+        },
+        "before_sensitive": {
+          "keepers": {}
+        },
+        "after_sensitive": {
+          "keepers": {}
+        },
+        "replace_paths": [
+          [
+            "keepers"
+          ],
+          [
+            "length"
+          ]
+        ]
+      },
+      "action_reason": "replace_because_cannot_update"
+    },
+    {
+      "address": "random_pet.rando[1]",
+      "mode": "managed",
+      "type": "random_pet",
+      "name": "rando",
+      "index": 1,
+      "provider_name": "registry.terraform.io/hashicorp/random",
+      "change": {
+        "actions": [
+          "delete",
+          "create"
+        ],
+        "before": {
+          "id": "trivially-more-raven",
+          "keepers": {
+            "rotate": "2022-05-25T01:23:59Z"
+          },
+          "length": 3,
+          "prefix": null,
+          "separator": "-"
+        },
+        "after": {
+          "prefix": null,
+          "separator": "-"
+        },
+        "after_unknown": {
+          "id": true,
+          "keepers": true,
+          "length": true
+        },
+        "before_sensitive": {
+          "keepers": {}
+        },
+        "after_sensitive": {
+          "keepers": {}
+        },
+        "replace_paths": [
+          [
+            "keepers"
+          ],
+          [
+            "length"
+          ]
+        ]
+      },
+      "action_reason": "replace_because_cannot_update"
+    },
+    {
+      "address": "random_pet.rando[2]",
+      "mode": "managed",
+      "type": "random_pet",
+      "name": "rando",
+      "index": 2,
+      "provider_name": "registry.terraform.io/hashicorp/random",
+      "change": {
+        "actions": [
+          "delete",
+          "create"
+        ],
+        "before": {
+          "id": "nationally-unique-mantis",
+          "keepers": {
+            "rotate": "2022-05-25T01:23:59Z"
+          },
+          "length": 3,
+          "prefix": null,
+          "separator": "-"
+        },
+        "after": {
+          "prefix": null,
+          "separator": "-"
+        },
+        "after_unknown": {
+          "id": true,
+          "keepers": true,
+          "length": true
+        },
+        "before_sensitive": {
+          "keepers": {}
+        },
+        "after_sensitive": {
+          "keepers": {}
+        },
+        "replace_paths": [
+          [
+            "keepers"
+          ],
+          [
+            "length"
+          ]
+        ]
+      },
+      "action_reason": "replace_because_cannot_update"
+    },
+    {
+      "address": "random_pet.rando[3]",
+      "mode": "managed",
+      "type": "random_pet",
+      "name": "rando",
+      "index": 3,
+      "provider_name": "registry.terraform.io/hashicorp/random",
+      "change": {
+        "actions": [
+          "delete",
+          "create"
+        ],
+        "before": {
+          "id": "entirely-present-leech",
+          "keepers": {
+            "rotate": "2022-05-25T01:23:59Z"
+          },
+          "length": 3,
+          "prefix": null,
+          "separator": "-"
+        },
+        "after": {
+          "prefix": null,
+          "separator": "-"
+        },
+        "after_unknown": {
+          "id": true,
+          "keepers": true,
+          "length": true
+        },
+        "before_sensitive": {
+          "keepers": {}
+        },
+        "after_sensitive": {
+          "keepers": {}
+        },
+        "replace_paths": [
+          [
+            "keepers"
+          ],
+          [
+            "length"
+          ]
+        ]
+      },
+      "action_reason": "replace_because_cannot_update"
+    },
+    {
+      "address": "time_rotating.moar_pets",
+      "mode": "managed",
+      "type": "time_rotating",
+      "name": "moar_pets",
+      "provider_name": "registry.terraform.io/hashicorp/time",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "rotation_days": null,
+          "rotation_hours": null,
+          "rotation_minutes": 1,
+          "rotation_months": null,
+          "rotation_years": null,
+          "triggers": null
+        },
+        "after_unknown": {
+          "day": true,
+          "hour": true,
+          "id": true,
+          "minute": true,
+          "month": true,
+          "rfc3339": true,
+          "rotation_rfc3339": true,
+          "second": true,
+          "unix": true,
+          "year": true
+        },
+        "before_sensitive": false,
+        "after_sensitive": {}
+      }
+    }
+  ],
+  "output_changes": {
+    "pets": {
+      "actions": [
+        "update"
+      ],
+      "before": [
+        "solely-on-hog",
+        "trivially-more-raven",
+        "nationally-unique-mantis",
+        "entirely-present-leech"
+      ],
+      "after_unknown": true,
+      "before_sensitive": false,
+      "after_sensitive": false
+    }
+  },
+  "prior_state": {
+    "format_version": "1.0",
+    "terraform_version": "1.2.1",
+    "values": {
+      "outputs": {
+        "pets": {
+          "sensitive": false,
+          "value": [
+            "solely-on-hog",
+            "trivially-more-raven",
+            "nationally-unique-mantis",
+            "entirely-present-leech"
+          ],
+          "type": [
+            "tuple",
+            [
+              "string",
+              "string",
+              "string",
+              "string"
+            ]
+          ]
+        }
+      },
+      "root_module": {
+        "resources": [
+          {
+            "address": "random_integer.pet_length",
+            "mode": "managed",
+            "type": "random_integer",
+            "name": "pet_length",
+            "provider_name": "registry.terraform.io/hashicorp/random",
+            "schema_version": 0,
+            "values": {
+              "id": "3",
+              "keepers": {
+                "rotate": "2022-05-25T01:23:59Z"
+              },
+              "max": 5,
+              "min": 2,
+              "result": 3,
+              "seed": null
+            },
+            "sensitive_values": {
+              "keepers": {}
+            },
+            "depends_on": [
+              "time_rotating.moar_pets"
+            ]
+          },
+          {
+            "address": "random_pet.rando[0]",
+            "mode": "managed",
+            "type": "random_pet",
+            "name": "rando",
+            "index": 0,
+            "provider_name": "registry.terraform.io/hashicorp/random",
+            "schema_version": 0,
+            "values": {
+              "id": "solely-on-hog",
+              "keepers": {
+                "rotate": "2022-05-25T01:23:59Z"
+              },
+              "length": 3,
+              "prefix": null,
+              "separator": "-"
+            },
+            "sensitive_values": {
+              "keepers": {}
+            },
+            "depends_on": [
+              "random_integer.pet_length",
+              "time_rotating.moar_pets"
+            ]
+          },
+          {
+            "address": "random_pet.rando[1]",
+            "mode": "managed",
+            "type": "random_pet",
+            "name": "rando",
+            "index": 1,
+            "provider_name": "registry.terraform.io/hashicorp/random",
+            "schema_version": 0,
+            "values": {
+              "id": "trivially-more-raven",
+              "keepers": {
+                "rotate": "2022-05-25T01:23:59Z"
+              },
+              "length": 3,
+              "prefix": null,
+              "separator": "-"
+            },
+            "sensitive_values": {
+              "keepers": {}
+            },
+            "depends_on": [
+              "random_integer.pet_length",
+              "time_rotating.moar_pets"
+            ]
+          },
+          {
+            "address": "random_pet.rando[2]",
+            "mode": "managed",
+            "type": "random_pet",
+            "name": "rando",
+            "index": 2,
+            "provider_name": "registry.terraform.io/hashicorp/random",
+            "schema_version": 0,
+            "values": {
+              "id": "nationally-unique-mantis",
+              "keepers": {
+                "rotate": "2022-05-25T01:23:59Z"
+              },
+              "length": 3,
+              "prefix": null,
+              "separator": "-"
+            },
+            "sensitive_values": {
+              "keepers": {}
+            },
+            "depends_on": [
+              "random_integer.pet_length",
+              "time_rotating.moar_pets"
+            ]
+          },
+          {
+            "address": "random_pet.rando[3]",
+            "mode": "managed",
+            "type": "random_pet",
+            "name": "rando",
+            "index": 3,
+            "provider_name": "registry.terraform.io/hashicorp/random",
+            "schema_version": 0,
+            "values": {
+              "id": "entirely-present-leech",
+              "keepers": {
+                "rotate": "2022-05-25T01:23:59Z"
+              },
+              "length": 3,
+              "prefix": null,
+              "separator": "-"
+            },
+            "sensitive_values": {
+              "keepers": {}
+            },
+            "depends_on": [
+              "random_integer.pet_length",
+              "time_rotating.moar_pets"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "configuration": {
+    "provider_config": {
+      "random": {
+        "name": "random",
+        "full_name": "registry.terraform.io/hashicorp/random"
+      },
+      "time": {
+        "name": "time",
+        "full_name": "registry.terraform.io/hashicorp/time"
+      }
+    },
+    "root_module": {
+      "outputs": {
+        "pets": {
+          "expression": {
+            "references": [
+              "random_pet.rando"
+            ]
+          }
+        }
+      },
+      "resources": [
+        {
+          "address": "random_integer.pet_length",
+          "mode": "managed",
+          "type": "random_integer",
+          "name": "pet_length",
+          "provider_config_key": "random",
+          "expressions": {
+            "keepers": {
+              "references": [
+                "time_rotating.moar_pets.id",
+                "time_rotating.moar_pets"
+              ]
+            },
+            "max": {
+              "constant_value": 5
+            },
+            "min": {
+              "constant_value": 2
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "random_pet.rando",
+          "mode": "managed",
+          "type": "random_pet",
+          "name": "rando",
+          "provider_config_key": "random",
+          "expressions": {
+            "keepers": {
+              "references": [
+                "time_rotating.moar_pets.id",
+                "time_rotating.moar_pets"
+              ]
+            },
+            "length": {
+              "references": [
+                "random_integer.pet_length.result",
+                "random_integer.pet_length"
+              ]
+            },
+            "separator": {
+              "constant_value": "-"
+            }
+          },
+          "schema_version": 0,
+          "count_expression": {
+            "constant_value": 4
+          }
+        },
+        {
+          "address": "time_rotating.moar_pets",
+          "mode": "managed",
+          "type": "time_rotating",
+          "name": "moar_pets",
+          "provider_config_key": "time",
+          "expressions": {
+            "rotation_minutes": {
+              "constant_value": 1
+            }
+          },
+          "schema_version": 0
+        }
+      ]
+    }
+  },
+  "relevant_attributes": [
+    {
+      "resource": "random_pet.rando",
+      "attribute": []
+    },
+    {
+      "resource": "time_rotating.moar_pets",
+      "attribute": [
+        "id"
+      ]
+    },
+    {
+      "resource": "random_integer.pet_length",
+      "attribute": [
+        "result"
+      ]
+    }
+  ]
+}
