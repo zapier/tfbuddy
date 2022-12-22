@@ -2,7 +2,7 @@
 name = "docs"
 version = "0.1.0"
 description = "TF Buddy mkdocs"
-authors = ["Your Name <you@example.com>"]
+authors = ["Zapier <opensource@zapier.com>"]
 license = "Mozilla Public License 2.0"
 
 [tool.poetry.dependencies]

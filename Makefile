@@ -30,3 +30,6 @@ up-local:
 
 tail-local:
 	stern --context minikube --namespace tfbuddy-localdev tfbuddy-v -s10s
+
+generate-requirements-file:
+	poetry export -f requirements.txt --output docs/requirements.txt --without-hashes
