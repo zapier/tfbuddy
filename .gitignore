@@ -29,7 +29,7 @@ coverage.txt
 /.vscode
 
 # ignore asdf local versions
-/.tool-versions
+# /.tool-versions
 
 # goreleaser
 dist/
