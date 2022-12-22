@@ -45,5 +45,5 @@ jobs:
             +release \
             --GIT_TAG=${{ env.GIT_RELEASE_TAG }} \
             --GIT_COMMIT=${{ env.GIT_SHA_SHORT }} \
-            --CI_REGISTRY_IMAGE=ghcr.io/${{ env.REPO_OWNER_LC }}/tfbuddy \
+            --CI_REGISTRY_IMAGE=ghcr.io/zapier/tfbuddy \
             --token ${{ secrets.GITHUB_TOKEN }}

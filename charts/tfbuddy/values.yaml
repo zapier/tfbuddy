@@ -12,7 +12,7 @@ pdb:
   maxUnavailable: 1
 
 image:
-  repository: zapier
+  repository: ghcr.io/zapier
   name: tfbuddy
   tag: latest
   pullPolicy: Always
