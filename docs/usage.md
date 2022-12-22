@@ -14,6 +14,8 @@ export TFC_TOKEN="" \
        GITLAB_TOKEN="" \
        GITLAB_TOKEN_USER=""
 
+helm repo add tfbuddy https://zapier.github.io/tfbuddy/
+
 helm install tfbuddy charts/tfbuddy \
   --set secrets.env.TFC_TOKEN="${TFC_TOKEN}" \
   --set secrets.env.GITLAB_TOKEN="${GITLAB_TOKEN}" \
