@@ -17,7 +17,7 @@ How to deploy TF Buddy onto your infrastructure. We provide a helm chart to simp
 helm repo add tfbuddy https://zapier.github.io/tfbuddy/
 ```
 
-**Github**
+**For use with Github**
 
 ```console
 export TFC_TOKEN="" \
@@ -29,7 +29,7 @@ helm install tfbuddy charts/tfbuddy \
   --dependency-update
 ```
 
-**Gitlab**
+**For use with Gitlab**
 
 ```console
 export TFC_TOKEN="" \
