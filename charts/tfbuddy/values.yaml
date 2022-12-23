@@ -6,7 +6,7 @@ resources:
     cpu: 250m
     memory: 128Mi
 
-replicaCount: 1
+replicaCount: 3
 
 pdb:
   maxUnavailable: 1
@@ -23,11 +23,30 @@ containerPort: 8080
 
 env:
   TFBUDDY_LOG_LEVEL: info
+
+  ## The connection URL for NATS. Override if using your own NATS installation.
   TFBUDDY_NATS_SERVICE_URL: nats://tfbuddy-nats:4222
+
+  ## The Gitlab projects for which TFBuddy is allowed to process webhooks
+  ## This value is applied as a prefix match, so a value of
+  ## `companyx/` would match all projects in the `companyx` group
   # TFBUDDY_PROJECT_ALLOW_LIST:
+
+  ## Comma seperated list of the Terraform Cloud workspaces that TFBuddy is allowed to manage.
+  ## If not set, all workspaces are allowed, if set, only workspaces in this list are allowed.
+  ## The environment variable TFBUDDY_WORKSPACE_DENY_LIST can also be used to deny specific workspaces.
   # TFBUDDY_WORKSPACE_ALLOW_LIST:
+
+  ## The default Terraform Cloud organization. If a repo's `.tfbuddy.yaml` does not
+  ## provide the organization, this value will be used.
   # TFBUDDY_DEFAULT_TFC_ORGANIZATION:
+
+  ## The Webhook secret TFBuddy expects in hooks from Gitlab
   # TFBUDDY_GITLAB_HOOK_SECRET_KEY:
+
+
+  ## The Webhook secret TFBuddy expects in hooks from Github
+  # TFBUDDY_GITHUB_HOOK_SECRET_KEY:
 
 envFrom:
   - secretRef:
