@@ -1,4 +1,4 @@
-# TFBuddy - Terraform Cloud 
+# TFBuddy - Terraform Cloud workflow engine
 
 ## What is TF Buddy
 TF Buddy is an application meant to simplify executing terraform in your pull requests. It supports Github, and Gitlab and Terraform Cloud Workspaces currently. TF Buddy has been in use at Zapier, in production for the past 9 months, and is still under active development.
