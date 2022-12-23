@@ -35,7 +35,7 @@ The following checks run when a PR is opened:
 ## Developer Environment
 
 ### Tools / Accounts
-* [Go 1.18](https://go.dev/)
+* [Go 1.19](https://go.dev/)
 * [Earthly](https://earthly.dev/)
 * [Ngrok](https://ngrok.com/)
 * [Tilt](https://tilt.dev/)
@@ -50,6 +50,55 @@ The following checks run when a PR is opened:
 Some of the above tools are not necessary if you're developing against an externally accessible kubernetes cluster. We leverage Ngrok for local testing in order to accept webhooks from Terraform Cloud, or Gitlab/Github.
 
 ### Tilt
+
+[Tilt.dev](https://tilt.dev) is used to power the local development environment.
+The `Tiltfile` defines all the resources required to build, run and test TFBuddy.
+It creates:
+* Gitlab / Github repository with test files.
+* Deploys nats into a local kubernetes cluster (kind, minikube, docker-desktop etc).
+* Deploys ngrok to provide an external accessible URL for Github/Gitlab/TFC to send webhooks to your local dev environment.
+* Builds, tests and runs (with watch and hot restart) the TFBuddy server in the local Kubernetes cluster.
+* Delve live debugger is available for TFBuddy.
+
+To get started do the following:
+
+* Copy the `.env.example` and set required values.
+
+    ```console
+    cp .env.example .env
+    ```
+
+* From the root directory of this repo:
+
+    ```console
+    tilt up
+    ```
+
+You should see output like:
+
+    ```
+    Tilt started on http://localhost:10350/
+    v0.30.13, built 2022-12-05
+
+    (space) to open the browser
+    (s) to stream logs (--stream=true)
+    (t) to open legacy terminal mode (--legacy=true)
+    (ctrl-c) to exit
+
+    ```
+
+In the background Tilt has started building and deploying resources.
+
+You should go ahead and press the space bar to open the Tilt web UI.
+
+There are currently some circular dependencies in the local dev resources, so all resources may not come up cleanly on the first launch.
+
+![tilt-1](img/tilt-1.png)
+
+Click the Detailed view button at the top, and click the refresh button next to the `Tiltfile` resource to run another cycle.
+
+![tilt-2](img/tilt-2.png)
+
 
 #### Minikube
 

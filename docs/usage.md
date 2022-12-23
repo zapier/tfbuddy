@@ -2,25 +2,48 @@
 
 How to deploy TF Buddy onto your infrastructure. We provide a helm chart to simplify deployment. 
 
-## Dependencies
-1. [NATS](https://nats.io/)
-1. Gitlab / Github
-1. Terraform Cloud Workspace
 
-## Helm Chart
+## Installation
+
+### Dependencies
+1. Kubernetes Cluster
+1. Gitlab / Github token
+1. Terraform Cloud token
+1. [NATS](https://nats.io/) (installed by TFBuddy helm chart)
+
+### Helm
+
+```console
+helm repo add tfbuddy https://zapier.github.io/tfbuddy/
+```
+
+**Github**
+
+```console
+export TFC_TOKEN="" \
+       GITHUB_TOKEN=""
+
+helm install tfbuddy charts/tfbuddy \
+  --set secrets.env.TFC_TOKEN="${TFC_TOKEN}" \
+  --set secrets.env.GITHUB_TOKEN="${GITHUB_TOKEN}" \
+  --dependency-update
+```
+
+**Gitlab**
 
 ```console
 export TFC_TOKEN="" \
        GITLAB_TOKEN="" \
        GITLAB_TOKEN_USER=""
 
-helm repo add tfbuddy https://zapier.github.io/tfbuddy/
-
 helm install tfbuddy charts/tfbuddy \
   --set secrets.env.TFC_TOKEN="${TFC_TOKEN}" \
   --set secrets.env.GITLAB_TOKEN="${GITLAB_TOKEN}" \
-  --set secrets.env.GITLAB_TOKEN_USER="${GITLAB_TOKEN_USER}"
+  --set secrets.env.GITLAB_TOKEN_USER="${GITLAB_TOKEN_USER}" \
+  --dependency-update
 ```
+
+The default helm values can be found [here](https://github.com/zapier/tfbuddy/blob/main/charts/tfbuddy/values.yaml).
 
 ### Configuration
 
