@@ -385,7 +385,7 @@ func (t *TFCTrigger) TriggerCleanupEvent() error {
 	var wsNames []string
 	cfg, err := getProjectConfigFile(t.gl, t)
 	if err != nil {
-		log.Debug().Msg("ignoring cleanup trigger for project, missing .tfbuddy.yaml")
+		return t.handleError(err, "ignoring cleanup trigger for project, missing .tfbuddy.yaml")
 	}
 	tag := fmt.Sprintf("%s-%d", tfPrefix, mr.GetInternalID())
 	for _, cfgWS := range cfg.Workspaces {
@@ -408,10 +408,10 @@ func (t *TFCTrigger) TriggerCleanupEvent() error {
 				t.handleError(err, "Error removing locking tag from workspace")
 				continue
 			}
-			wsNames = append(wsNames, cfgWS.Name)
 		}
+		// record workspace even if there are not tags since we could have cleared them earlier (same event can be called multiple times)
+		wsNames = append(wsNames, cfgWS.Name)
 	}
-
 	_, err = t.gl.CreateMergeRequestDiscussion(mr.GetInternalID(),
 		t.cfg.GetProjectNameWithNamespace(),
 		fmt.Sprintf("Released locks for workspaces: %s", strings.Join(wsNames, ",")),
