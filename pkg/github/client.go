@@ -119,6 +119,8 @@ func (c *Client) GetMergeRequestModifiedFiles(prID int, fullName string) ([]stri
 	return []string{}, nil
 }
 
+const GITHUB_CLONE_DEPTH_ENV = "TFBUDDY_GITHUB_CLONE_DEPTH"
+
 func (c *Client) CloneMergeRequest(project string, mr vcs.MR, dest string) (vcs.GitRepo, error) {
 	parts, err := splitFullName(project)
 	if err != nil {
@@ -140,13 +142,13 @@ func (c *Client) CloneMergeRequest(project string, mr vcs.MR, dest string) (vcs.
 	if log.Trace().Enabled() {
 		progress = os.Stdout
 	}
-
+	cloneDepth := zgit.GetCloneDepth(GITHUB_CLONE_DEPTH_ENV)
 	gitRepo, err := git.PlainClone(dest, false, &git.CloneOptions{
 		Auth:          auth,
 		URL:           *repo.CloneURL,
 		ReferenceName: ref,
 		SingleBranch:  true,
-		Depth:         10,
+		Depth:         cloneDepth,
 	})
 
 	if err != nil && err != git.ErrRepositoryAlreadyExists {
@@ -158,8 +160,8 @@ func (c *Client) CloneMergeRequest(project string, mr vcs.MR, dest string) (vcs.
 		//RemoteName:        "",
 		ReferenceName: ref,
 		//SingleBranch:      false,
-		//Depth:             0,
-		Auth: auth,
+		Depth: cloneDepth,
+		Auth:  auth,
 		//RecurseSubmodules: 0,
 		Progress: progress,
 		Force:    false,
