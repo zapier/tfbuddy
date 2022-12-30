@@ -1,6 +1,7 @@
 package git
 
 import (
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -91,4 +92,21 @@ func TestGetModifiedFileNamesBetweenCommitsNoResults(t *testing.T) {
 	modifiedFiles, err := client.GetModifiedFileNamesBetweenCommits(commonCommit, "master")
 	assert.Equal(t, nil, err)
 	assert.Equal(t, len(modifiedFiles), 0, "expected no files modified between master and test")
+}
+
+func TestGitCloneDepth(t *testing.T) {
+	testVar := "git-clone-test"
+	defer os.Unsetenv(testVar)
+	t.Run("no value", func(t *testing.T) {
+		os.Unsetenv(testVar)
+		assert.Equal(t, 0, GetCloneDepth(testVar))
+	})
+	t.Run("500 depth", func(t *testing.T) {
+		os.Setenv(testVar, "500")
+		assert.Equal(t, 500, GetCloneDepth(testVar))
+	})
+	t.Run("invalid value", func(t *testing.T) {
+		os.Setenv(testVar, "somestuff")
+		assert.Equal(t, 0, GetCloneDepth(testVar))
+	})
 }
