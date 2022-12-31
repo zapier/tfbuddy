@@ -127,6 +127,7 @@ type TestSuite struct {
 	MockTriggerConfig *MockTriggerConfig
 	MockApiClient     *MockApiClient
 	MockStreamClient  *MockStreamClient
+	MockProject       *MockProject
 	MetaData          *TestMetaData
 }
 type TestOverrides struct {
@@ -171,10 +172,12 @@ func (ts *TestSuite) InitTestSuite() {
 	ts.MockGitClient.EXPECT().CreateMergeRequestDiscussion(ts.MetaData.MRIID, ts.MetaData.ProjectNameNS, &RegexMatcher{regex: regexp.MustCompile("Starting TFC apply for Workspace: `([A-z\\-]){1,}/([A-z\\-]){1,}`.")}).Return(ts.MockGitDisc, nil).AnyTimes()
 
 	ts.MockTriggerConfig.EXPECT().GetAction().Return(tfc_trigger.ApplyAction).AnyTimes()
+	ts.MockTriggerConfig.EXPECT().SetAction(gomock.Any()).AnyTimes()
 	ts.MockTriggerConfig.EXPECT().GetMergeRequestIID().Return(ts.MetaData.MRIID).AnyTimes()
 	ts.MockTriggerConfig.EXPECT().GetProjectNameWithNamespace().Return(ts.MetaData.ProjectNameNS).AnyTimes()
 	ts.MockTriggerConfig.EXPECT().GetBranch().Return(ts.MetaData.SourceBranch).AnyTimes()
 	ts.MockTriggerConfig.EXPECT().GetWorkspace().Return("").AnyTimes()
+	ts.MockTriggerConfig.EXPECT().SetWorkspace(gomock.Any()).AnyTimes()
 	ts.MockTriggerConfig.EXPECT().SetMergeRequestDiscussionID(gomock.Any()).AnyTimes()
 	ts.MockTriggerConfig.EXPECT().SetMergeRequestRootNoteID(gomock.Any()).AnyTimes()
 	ts.MockTriggerConfig.EXPECT().GetCommitSHA().Return("abcd12233").AnyTimes()
@@ -187,6 +190,8 @@ func (ts *TestSuite) InitTestSuite() {
 	ts.MockApiClient.EXPECT().AddTags(gomock.Any(), gomock.Any(), "tfbuddylock", "101").AnyTimes()
 
 	ts.MockStreamClient.EXPECT().AddRunMeta(gomock.Any()).AnyTimes()
+
+	ts.MockProject.EXPECT().GetPathWithNamespace().Return(ts.MetaData.ProjectNameNS).AnyTimes()
 
 }
 
@@ -226,6 +231,8 @@ func CreateTestSuite(mockCtrl *gomock.Controller, overrides TestOverrides, t *te
 
 	mockStreamClient := NewMockStreamClient(mockCtrl)
 
+	mockProject := NewMockProject(mockCtrl)
+
 	return &TestSuite{
 		MockGitClient:     mockGitClient,
 		MockGitMR:         mockGitMR,
@@ -235,6 +242,7 @@ func CreateTestSuite(mockCtrl *gomock.Controller, overrides TestOverrides, t *te
 		MockTriggerConfig: mockTriggerConfig,
 		MockApiClient:     mockApiClient,
 		MockStreamClient:  mockStreamClient,
+		MockProject:       mockProject,
 		MetaData: &TestMetaData{
 			MRIID:         mrIID,
 			ProjectNameNS: projectNameNS,

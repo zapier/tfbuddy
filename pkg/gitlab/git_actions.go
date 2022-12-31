@@ -15,7 +15,7 @@ import (
 	"gopkg.in/errgo.v2/fmt/errors"
 )
 
-const GIT_CLONE_DEPTH_ENV = "TFBUDDY_GITLAB_CLONE_DEPTH"
+const GITLAB_CLONE_DEPTH_ENV = "TFBUDDY_GITLAB_CLONE_DEPTH"
 
 // CloneMergeRequest performs a git clone of the target Gitlab project & merge request branch to the `dest` path.
 func (c *GitlabClient) CloneMergeRequest(project string, mr vcs.MR, dest string) (vcs.GitRepo, error) {
@@ -38,7 +38,7 @@ func (c *GitlabClient) CloneMergeRequest(project string, mr vcs.MR, dest string)
 	if log.Trace().Enabled() {
 		progress = os.Stdout
 	}
-	cloneDepth := zgit.GetCloneDepth(GIT_CLONE_DEPTH_ENV)
+	cloneDepth := zgit.GetCloneDepth(GITLAB_CLONE_DEPTH_ENV)
 
 	repo, err := git.PlainClone(dest, false, &git.CloneOptions{
 		Auth:          auth,

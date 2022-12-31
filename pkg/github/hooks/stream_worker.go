@@ -96,11 +96,9 @@ func (h *GithubHooksHandler) processIssueCommentEvent(msg *GithubIssueCommentEve
 	}
 	executedWorkspaces, tfError := trigger.TriggerTFCEvents()
 	if tfError == nil && len(executedWorkspaces.Errored) > 0 {
-		failedMsg := ""
 		for _, failedWS := range executedWorkspaces.Errored {
-			failedMsg += fmt.Sprintf("%s could not be run because: %s\n", failedWS.Name, failedWS.Error)
+			h.postPullRequestComment(event, fmt.Sprintf(":no_entry: %s could not be run because: %s", failedWS.Name, failedWS.Error))
 		}
-		h.postPullRequestComment(event, fmt.Sprintf(":no_entry: %s", failedMsg))
 		return nil
 	}
 	return tfError
