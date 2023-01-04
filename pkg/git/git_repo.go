@@ -3,6 +3,8 @@ package git
 import (
 	"fmt"
 	"io/fs"
+	"os"
+	"strconv"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
@@ -120,4 +122,16 @@ func WalkRepo(s string, d fs.DirEntry, err error) error {
 		println(s)
 	}
 	return nil
+}
+
+// GetCloneDepth reads the provided env var and returns an int to be used as git clone depth. Default is 0.
+func GetCloneDepth(envVar string) int {
+	val := os.Getenv(envVar)
+	if val != "" {
+		depth, err := strconv.Atoi(val)
+		if err == nil {
+			return depth
+		}
+	}
+	return 0
 }
