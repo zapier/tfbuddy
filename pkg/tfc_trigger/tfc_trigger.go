@@ -198,6 +198,12 @@ func (t *TFCTrigger) handleError(err error, msg string) error {
 	return err
 }
 
+// / postUpdate puts a message on a relevant MR
+func (t *TFCTrigger) postUpdate(msg string) error {
+	return t.gl.CreateMergeRequestComment(t.cfg.GetMergeRequestIID(), t.cfg.GetProjectNameWithNamespace(), msg)
+
+}
+
 func (t *TFCTrigger) getLockingMR(workspace string) string {
 	tags, err := t.tfc.GetTagsByQuery(context.Background(), workspace, tfPrefix)
 	if err != nil {
@@ -252,8 +258,8 @@ type TriggeredTFCWorkspaces struct {
 	Executed []string
 }
 
-func (t *TFCTrigger) getModifiedWorkspaceBetweenMergeBaseTargetBranch(mr vcs.MR, repo vcs.GitRepo) (map[string]byte, error) {
-	modifiedWSMap := make(map[string]byte, 0)
+func (t *TFCTrigger) getModifiedWorkspaceBetweenMergeBaseTargetBranch(mr vcs.MR, repo vcs.GitRepo) (map[string]struct{}, error) {
+	modifiedWSMap := make(map[string]struct{}, 0)
 	// update the cloned repo to have the latest commits from target branch (usually main)
 	err := repo.FetchUpstreamBranch(mr.GetTargetBranch())
 	if err != nil {
@@ -264,14 +270,14 @@ func (t *TFCTrigger) getModifiedWorkspaceBetweenMergeBaseTargetBranch(mr vcs.MR,
 	if err != nil {
 		return nil, t.handleError(err, "could not find merge base")
 	}
-	log.Info().Msgf("got common %s", commonSHA)
+	log.Debug().Msgf("got common hash %s for source branch %s and target branch %s", commonSHA, mr.GetSourceBranch(), mr.GetTargetBranch())
 	// got a merge base and two up to date branches. We can grab the target diffs now
 	// we find files modified between the merge base and the HEAD of the target branch
 	targetModifiedFiles, err := repo.GetModifiedFileNamesBetweenCommits(commonSHA, mr.GetTargetBranch())
 	if err != nil {
 		return modifiedWSMap, t.handleError(err, fmt.Sprintf("could not find file diffs between %s and %s", commonSHA, mr.GetTargetBranch()))
 	}
-	log.Debug().Msgf("%+v files modified between merge base and target branch", targetModifiedFiles)
+	log.Debug().Msgf("%+v files modified between merge base and target branch (%s)", targetModifiedFiles, mr.GetTargetBranch())
 	// if there's no modified files we can assume it's safe to continue
 	if len(targetModifiedFiles) > 0 {
 		// use the same logic to find triggeredWorkspaces based on files modified between when the source branch was
@@ -281,7 +287,7 @@ func (t *TFCTrigger) getModifiedWorkspaceBetweenMergeBaseTargetBranch(mr vcs.MR,
 			return modifiedWSMap, t.handleError(err, "could not find modified workspaces for target branch")
 		}
 		for _, ws := range targetBranchWorkspaces {
-			modifiedWSMap[ws.Name] = 0
+			modifiedWSMap[ws.Name] = struct{}{}
 		}
 	}
 	return modifiedWSMap, err
@@ -333,8 +339,10 @@ func (t *TFCTrigger) TriggerTFCEvents() (*TriggeredTFCWorkspaces, error) {
 
 		modifiedWSMap, err := t.getModifiedWorkspaceBetweenMergeBaseTargetBranch(mr, repo)
 		if err != nil {
-			// this could just log and continue since the function will always return a valid lookup map
-			return nil, t.handleError(err, "could not identify modified workspaces on target branch")
+			err = t.postUpdate(":warning: Could not identify modified workspaces on target branch. Please review the plan carefully for unrelated changes.")
+			if err != nil {
+				log.Error().Err(err).Msg("could not update MR with message")
+			}
 		}
 		for _, cfgWS := range triggeredWorkspaces {
 			// check allow / deny lists

@@ -219,16 +219,12 @@ func TestProcessNoteEventPlanFailedWorkspace(t *testing.T) {
 	defer os.Unsetenv(allow_list.GitlabProjectAllowListEnv)
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
-	mockGitClient := mocks.NewMockGitClient(mockCtrl)
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
 
-	mockGitClient.EXPECT().CreateMergeRequestComment(101, "zapier/service-tf-buddy", ":no_entry: service-tf-buddy could not be run because: could not fetch upstream\n").Return(nil)
-
-	mockApiClient := mocks.NewMockApiClient(mockCtrl)
-	mockStreamClient := mocks.NewMockStreamClient(mockCtrl)
-	mockProject := mocks.NewMockProject(mockCtrl)
-	mockProject.EXPECT().GetPathWithNamespace().Return("zapier/service-tf-buddy").Times(2)
+	testSuite.MockGitClient.EXPECT().CreateMergeRequestComment(101, testSuite.MetaData.ProjectNameNS, ":no_entry: service-tf-buddy could not be run because: could not fetch upstream").Return(nil)
 
 	mockLastCommit := mocks.NewMockCommit(mockCtrl)
+
 	mockLastCommit.EXPECT().GetSHA().Return("abvc12345")
 
 	mockAttributes := mocks.NewMockMRAttributes(mockCtrl)
@@ -237,21 +233,15 @@ func TestProcessNoteEventPlanFailedWorkspace(t *testing.T) {
 	mockAttributes.EXPECT().GetType().Return("SomeNote")
 
 	mockMREvent := mocks.NewMockMRCommentEvent(mockCtrl)
-	mockMREvent.EXPECT().GetProject().Return(mockProject).Times(2)
+	mockMREvent.EXPECT().GetProject().Return(testSuite.MockProject).Times(2)
 	mockMREvent.EXPECT().GetAttributes().Return(mockAttributes).Times(2)
 	mockMREvent.EXPECT().GetLastCommit().Return(mockLastCommit)
 
-	mockSimpleMR := mocks.NewMockMR(mockCtrl)
-	mockSimpleMR.EXPECT().GetSourceBranch().Return("DTA-2009")
-
-	mockSimpleMR.EXPECT().GetInternalID().Return(101).Times(2)
-	mockMREvent.EXPECT().GetMR().Return(mockSimpleMR).Times(3)
+	mockMREvent.EXPECT().GetMR().Return(testSuite.MockGitMR).Times(3)
 
 	mockTFCTrigger := mocks.NewMockTrigger(mockCtrl)
-	mockTFCConfig := mocks.NewMockTriggerConfig(mockCtrl)
-	mockTFCConfig.EXPECT().SetAction(tfc_trigger.PlanAction)
-	mockTFCConfig.EXPECT().SetWorkspace("service-tf-buddy")
-	mockTFCTrigger.EXPECT().GetConfig().Return(mockTFCConfig).Times(2)
+
+	mockTFCTrigger.EXPECT().GetConfig().Return(testSuite.MockTriggerConfig).Times(2)
 	mockTFCTrigger.EXPECT().TriggerTFCEvents().Return(&tfc_trigger.TriggeredTFCWorkspaces{
 		Errored: []*tfc_trigger.ErroredWorkspace{{
 			Name:  "service-tf-buddy",
@@ -260,10 +250,12 @@ func TestProcessNoteEventPlanFailedWorkspace(t *testing.T) {
 		},
 	}, nil)
 
+	testSuite.InitTestSuite()
+
 	worker := &GitlabEventWorker{
-		tfc:       mockApiClient,
-		gl:        mockGitClient,
-		runstream: mockStreamClient,
+		tfc:       testSuite.MockApiClient,
+		gl:        testSuite.MockGitClient,
+		runstream: testSuite.MockStreamClient,
 		triggerCreation: func(gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg tfc_trigger.TriggerConfig) tfc_trigger.Trigger {
 			return mockTFCTrigger
 		},
@@ -273,7 +265,7 @@ func TestProcessNoteEventPlanFailedWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if proj != "zapier/service-tf-buddy" {
+	if proj != testSuite.MetaData.ProjectNameNS {
 		t.Fatal("expected a project name to be returned")
 	}
 }
@@ -283,15 +275,12 @@ func TestProcessNoteEventPlanFailedMultipleWorkspaces(t *testing.T) {
 	defer os.Unsetenv(allow_list.GitlabProjectAllowListEnv)
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
-	mockGitClient := mocks.NewMockGitClient(mockCtrl)
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
 
-	mockGitClient.EXPECT().CreateMergeRequestComment(101, "zapier/service-tf-buddy", ":no_entry: service-tf-buddy could not be run because: could not fetch upstream\nservice-tf-buddy-staging could not be run because: workspace has been modified on target branch\n").Return(nil)
-
-	mockApiClient := mocks.NewMockApiClient(mockCtrl)
-	mockStreamClient := mocks.NewMockStreamClient(mockCtrl)
-	mockProject := mocks.NewMockProject(mockCtrl)
-	mockProject.EXPECT().GetPathWithNamespace().Return("zapier/service-tf-buddy").Times(2)
-
+	gomock.InOrder(
+		testSuite.MockGitClient.EXPECT().CreateMergeRequestComment(101, testSuite.MetaData.ProjectNameNS, ":no_entry: service-tf-buddy could not be run because: could not fetch upstream").Return(nil),
+		testSuite.MockGitClient.EXPECT().CreateMergeRequestComment(101, testSuite.MetaData.ProjectNameNS, ":no_entry: service-tf-buddy-staging could not be run because: workspace has been modified on target branch").Return(nil),
+	)
 	mockLastCommit := mocks.NewMockCommit(mockCtrl)
 	mockLastCommit.EXPECT().GetSHA().Return("abvc12345")
 
@@ -301,15 +290,10 @@ func TestProcessNoteEventPlanFailedMultipleWorkspaces(t *testing.T) {
 	mockAttributes.EXPECT().GetType().Return("SomeNote")
 
 	mockMREvent := mocks.NewMockMRCommentEvent(mockCtrl)
-	mockMREvent.EXPECT().GetProject().Return(mockProject).Times(2)
+	mockMREvent.EXPECT().GetProject().Return(testSuite.MockProject).AnyTimes()
 	mockMREvent.EXPECT().GetAttributes().Return(mockAttributes).Times(2)
 	mockMREvent.EXPECT().GetLastCommit().Return(mockLastCommit)
-
-	mockSimpleMR := mocks.NewMockMR(mockCtrl)
-	mockSimpleMR.EXPECT().GetSourceBranch().Return("DTA-2009")
-
-	mockSimpleMR.EXPECT().GetInternalID().Return(101).Times(2)
-	mockMREvent.EXPECT().GetMR().Return(mockSimpleMR).Times(3)
+	mockMREvent.EXPECT().GetMR().Return(testSuite.MockGitMR).AnyTimes()
 
 	mockTFCTrigger := mocks.NewMockTrigger(mockCtrl)
 	mockTFCConfig := mocks.NewMockTriggerConfig(mockCtrl)
@@ -328,10 +312,12 @@ func TestProcessNoteEventPlanFailedMultipleWorkspaces(t *testing.T) {
 		},
 	}, nil)
 
+	testSuite.InitTestSuite()
+
 	client := &GitlabEventWorker{
-		gl:        mockGitClient,
-		tfc:       mockApiClient,
-		runstream: mockStreamClient,
+		gl:        testSuite.MockGitClient,
+		tfc:       testSuite.MockApiClient,
+		runstream: testSuite.MockStreamClient,
 		triggerCreation: func(gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg tfc_trigger.TriggerConfig) tfc_trigger.Trigger {
 			return mockTFCTrigger
 		},
@@ -341,7 +327,7 @@ func TestProcessNoteEventPlanFailedMultipleWorkspaces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if proj != "zapier/service-tf-buddy" {
+	if proj != testSuite.MetaData.ProjectNameNS {
 		t.Fatal("expected a project name to be returned")
 	}
 }
