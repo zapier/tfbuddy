@@ -82,7 +82,7 @@ type MergeRequestEventMsg struct {
 }
 
 func (e *MergeRequestEventMsg) GetId() string {
-	return fmt.Sprintf("%d", e.payload.ObjectAttributes.ID)
+	return fmt.Sprintf("%d-%s", e.payload.ObjectAttributes.ID, e.payload.ObjectAttributes.Action)
 }
 
 func (e *MergeRequestEventMsg) DecodeEventData(b []byte) error {
