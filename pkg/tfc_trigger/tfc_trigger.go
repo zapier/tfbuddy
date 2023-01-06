@@ -416,9 +416,8 @@ func (t *TFCTrigger) TriggerCleanupEvent() error {
 				t.handleError(err, "Error removing locking tag from workspace")
 				continue
 			}
+			wsNames = append(wsNames, cfgWS.Name)
 		}
-		// record workspace even if there are not tags since we could have cleared them earlier (same event can be called multiple times)
-		wsNames = append(wsNames, cfgWS.Name)
 	}
 	_, err = t.gl.CreateMergeRequestDiscussion(mr.GetInternalID(),
 		t.cfg.GetProjectNameWithNamespace(),
