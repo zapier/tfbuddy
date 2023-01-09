@@ -375,7 +375,9 @@ func (t *TFCTrigger) TriggerTFCEvents() (*TriggeredTFCWorkspaces, error) {
 		}
 
 	} else if t.cfg.GetTriggerSource() == CommentTrigger {
-		return nil, t.handleError(ErrNoChangesDetected, "")
+		log.Error().Err(ErrNoChangesDetected)
+		t.postUpdate(ErrNoChangesDetected.Error())
+		return nil, nil
 
 	} else {
 		log.Debug().Msg("No Terraform changes found in changeset.")
