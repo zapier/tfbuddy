@@ -3,7 +3,7 @@ package github
 import (
 	"fmt"
 
-	gogithub "github.com/google/go-github/v48/github"
+	gogithub "github.com/google/go-github/v49/github"
 	"github.com/zapier/tfbuddy/pkg/vcs"
 )
 
