@@ -82,11 +82,13 @@ func (w *GitlabEventWorker) processNoteEvent(event vcs.MRCommentEvent) (projectN
 		return proj, nil
 	}
 	executedWorkspaces, tfError := trigger.TriggerTFCEvents()
-	if tfError == nil && len(executedWorkspaces.Errored) > 0 {
-		for _, failedWS := range executedWorkspaces.Errored {
-			w.postMessageToMergeRequest(event, fmt.Sprintf(":no_entry: %s could not be run because: %s", failedWS.Name, failedWS.Error))
+	if tfError == nil && executedWorkspaces != nil {
+		if len(executedWorkspaces.Errored) > 0 {
+			for _, failedWS := range executedWorkspaces.Errored {
+				w.postMessageToMergeRequest(event, fmt.Sprintf(":no_entry: %s could not be run because: %s", failedWS.Name, failedWS.Error))
+			}
+			return proj, nil
 		}
-		return proj, nil
 	}
 	return proj, tfError
 

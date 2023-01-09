@@ -331,3 +331,59 @@ func TestProcessNoteEventPlanFailedMultipleWorkspaces(t *testing.T) {
 		t.Fatal("expected a project name to be returned")
 	}
 }
+
+func TestProcessNoteEventNoErrorNoRuns(t *testing.T) {
+	os.Setenv(allow_list.GitlabProjectAllowListEnv, "zapier/")
+	defer os.Unsetenv(allow_list.GitlabProjectAllowListEnv)
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	mockGitClient := mocks.NewMockGitClient(mockCtrl)
+
+	mockApiClient := mocks.NewMockApiClient(mockCtrl)
+	mockStreamClient := mocks.NewMockStreamClient(mockCtrl)
+	mockProject := mocks.NewMockProject(mockCtrl)
+	mockProject.EXPECT().GetPathWithNamespace().Return("zapier/service-tf-buddy")
+
+	mockLastCommit := mocks.NewMockCommit(mockCtrl)
+	mockLastCommit.EXPECT().GetSHA().Return("abvc12345")
+
+	mockAttributes := mocks.NewMockMRAttributes(mockCtrl)
+
+	mockAttributes.EXPECT().GetNote().Return("tfc plan -w service-tf-buddy")
+	mockAttributes.EXPECT().GetType().Return("SomeNote")
+
+	mockMREvent := mocks.NewMockMRCommentEvent(mockCtrl)
+	mockMREvent.EXPECT().GetProject().Return(mockProject)
+	mockMREvent.EXPECT().GetAttributes().Return(mockAttributes).Times(2)
+	mockMREvent.EXPECT().GetLastCommit().Return(mockLastCommit)
+
+	mockSimpleMR := mocks.NewMockMR(mockCtrl)
+	mockSimpleMR.EXPECT().GetSourceBranch().Return("DTA-2009")
+
+	mockSimpleMR.EXPECT().GetInternalID().Return(101)
+	mockMREvent.EXPECT().GetMR().Return(mockSimpleMR).Times(2)
+
+	mockTFCTrigger := mocks.NewMockTrigger(mockCtrl)
+	mockTFCConfig := mocks.NewMockTriggerConfig(mockCtrl)
+	mockTFCConfig.EXPECT().SetAction(tfc_trigger.PlanAction)
+	mockTFCConfig.EXPECT().SetWorkspace("service-tf-buddy")
+	mockTFCTrigger.EXPECT().GetConfig().Return(mockTFCConfig).Times(2)
+	mockTFCTrigger.EXPECT().TriggerTFCEvents().Return(nil, nil)
+
+	client := &GitlabEventWorker{
+		gl:        mockGitClient,
+		tfc:       mockApiClient,
+		runstream: mockStreamClient,
+		triggerCreation: func(gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg tfc_trigger.TriggerConfig) tfc_trigger.Trigger {
+			return mockTFCTrigger
+		},
+	}
+
+	proj, err := client.processNoteEvent(mockMREvent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if proj != "zapier/service-tf-buddy" {
+		t.Fatal("expected a project name to be returned")
+	}
+}
