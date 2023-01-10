@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/google/go-github/v48/github"
+	"github.com/google/go-github/v49/github"
 	"github.com/rs/zerolog/log"
 	"github.com/zapier/tfbuddy/pkg/hooks_stream"
 )
