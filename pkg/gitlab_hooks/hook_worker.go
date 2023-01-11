@@ -38,11 +38,25 @@ func NewGitlabEventWorker(h *GitlabHooksHandler, js nats.JetStreamContext) *Gitl
 }
 
 func (w *GitlabEventWorker) processNoteEventStreamMsg(msg *NoteEventMsg) error {
-	_, err := w.processNoteEvent(msg)
-	return err
+	var noteErr error
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error().Msgf("Unrecoverable error in note event processing %v", r)
+			noteErr = nil
+		}
+	}()
+	_, noteErr = w.processNoteEvent(msg)
+	return noteErr
 }
 
 func (w *GitlabEventWorker) processMREventStreamMsg(msg *MergeRequestEventMsg) error {
-	_, err := w.processMergeRequestEvent(msg)
-	return err
+	var mrErr error
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error().Msgf("Unrecoverable error in MR event processing %v", r)
+			mrErr = nil
+		}
+	}()
+	_, mrErr = w.processMergeRequestEvent(msg)
+	return mrErr
 }

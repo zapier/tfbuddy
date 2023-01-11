@@ -13,6 +13,18 @@ import (
 )
 
 func (h *GithubHooksHandler) processIssueCommentEvent(msg *GithubIssueCommentEventMsg) error {
+	var commentErr error
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error().Msgf("Unrecoverable error in issue comment event processing %v", r)
+			commentErr = nil
+		}
+	}()
+	commentErr = h.processIssueComment(msg)
+	return commentErr
+}
+
+func (h *GithubHooksHandler) processIssueComment(msg *GithubIssueCommentEventMsg) error {
 	if msg == nil || msg.payload == nil {
 		return errors.New("msg is nil")
 	}
@@ -102,7 +114,6 @@ func (h *GithubHooksHandler) processIssueCommentEvent(msg *GithubIssueCommentEve
 		return nil
 	}
 	return tfError
-
 }
 
 func (h *GithubHooksHandler) postPullRequestComment(event *gogithub.IssueCommentEvent, body string) error {

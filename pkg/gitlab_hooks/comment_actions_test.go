@@ -156,6 +156,34 @@ func TestProcessNoteEventPlanError(t *testing.T) {
 		return
 	}
 }
+
+func TestProcessNoteEventPanicHandling(t *testing.T) {
+	os.Setenv(allow_list.GitlabProjectAllowListEnv, "zapier/")
+	defer os.Unsetenv(allow_list.GitlabProjectAllowListEnv)
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
+
+	testSuite.MockProject.EXPECT().GetPathWithNamespace().DoAndReturn(func() string {
+		var a []string
+		return a[0]
+	}).AnyTimes()
+
+	testSuite.InitTestSuite()
+	client := &GitlabEventWorker{
+		gl:        testSuite.MockGitClient,
+		tfc:       testSuite.MockApiClient,
+		runstream: testSuite.MockStreamClient,
+		triggerCreation: func(gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg tfc_trigger.TriggerConfig) tfc_trigger.Trigger {
+			return nil
+		},
+	}
+	err := client.processNoteEventStreamMsg(&NoteEventMsg{})
+	if err != nil {
+		t.Error("unexpected error", err)
+		return
+	}
+}
 func TestProcessNoteEventPlan(t *testing.T) {
 	os.Setenv(allow_list.GitlabProjectAllowListEnv, "zapier/")
 	defer os.Unsetenv(allow_list.GitlabProjectAllowListEnv)
