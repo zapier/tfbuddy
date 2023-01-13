@@ -7,7 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/sideband"
@@ -28,6 +30,14 @@ type Client struct {
 	token  string
 }
 
+const DefaultMaxRetries = 3
+
+func createBackOffWithRetries() backoff.BackOff {
+	exp := backoff.NewExponentialBackOff()
+	exp.MaxElapsedTime = 90 * time.Second
+	return backoff.WithMaxRetries(exp, DefaultMaxRetries)
+
+}
 func NewGithubClient() *Client {
 	token := os.Getenv("GITHUB_TOKEN")
 	ctx := context.Background()
@@ -78,17 +88,19 @@ func (c *Client) GetRepoFile(fullName string, file string, ref string) ([]byte, 
 	if err != nil {
 		return nil, err
 	}
-	fileContent, _, _, err := c.client.Repositories.GetContents(c.ctx, parts[0], parts[1], file, &gogithub.RepositoryContentGetOptions{Ref: ref})
-	if err != nil {
-		return nil, err
-	}
+	return backoff.RetryWithData(func() ([]byte, error) {
+		fileContent, _, _, err := c.client.Repositories.GetContents(c.ctx, parts[0], parts[1], file, &gogithub.RepositoryContentGetOptions{Ref: ref})
+		if err != nil {
+			return nil, err
+		}
 
-	contents, err := fileContent.GetContent()
-	if err != nil {
-		return nil, err
-	}
+		contents, err := fileContent.GetContent()
+		if err != nil {
+			return nil, err
+		}
 
-	return []byte(contents), nil
+		return []byte(contents), nil
+	}, createBackOffWithRetries())
 }
 
 func (c *Client) GetMergeRequestModifiedFiles(prID int, fullName string) ([]string, error) {
@@ -102,19 +114,21 @@ func (c *Client) GetMergeRequestModifiedFiles(prID int, fullName string) ([]stri
 	}
 
 	if pr.GetChangedFiles() > 0 {
-		parts, err := splitFullName(fullName)
-		if err != nil {
-			return nil, err
-		}
-		files, _, err := c.client.PullRequests.ListFiles(c.ctx, parts[0], parts[1], prID, &opts)
-		if err != nil {
-			return nil, err
-		}
-		modifiedFiles := make([]string, len(files))
-		for i, file := range files {
-			modifiedFiles[i] = file.GetFilename()
-		}
-		return modifiedFiles, nil
+		return backoff.RetryWithData(func() ([]string, error) {
+			parts, err := splitFullName(fullName)
+			if err != nil {
+				return nil, err
+			}
+			files, _, err := c.client.PullRequests.ListFiles(c.ctx, parts[0], parts[1], prID, &opts)
+			if err != nil {
+				return nil, err
+			}
+			modifiedFiles := make([]string, len(files))
+			for i, file := range files {
+				modifiedFiles[i] = file.GetFilename()
+			}
+			return modifiedFiles, nil
+		}, createBackOffWithRetries())
 	}
 	return []string{}, nil
 }
@@ -210,8 +224,10 @@ func (c *Client) GetIssue(owner *gogithub.User, repo string, issueId int) (*gogi
 	if err != nil {
 		return nil, err
 	}
-	iss, _, err := c.client.Issues.Get(context.Background(), owName, repo, issueId)
-	return iss, err
+	return backoff.RetryWithData(func() (*gogithub.Issue, error) {
+		iss, _, err := c.client.Issues.Get(context.Background(), owName, repo, issueId)
+		return iss, err
+	}, createBackOffWithRetries())
 }
 
 func (c *Client) GetPullRequest(fullName string, prID int) (*GithubPR, error) {
@@ -219,8 +235,10 @@ func (c *Client) GetPullRequest(fullName string, prID int) (*GithubPR, error) {
 	if err != nil {
 		return nil, err
 	}
-	pr, _, err := c.client.PullRequests.Get(c.ctx, parts[0], parts[1], prID)
-	return &GithubPR{pr}, err
+	return backoff.RetryWithData(func() (*GithubPR, error) {
+		pr, _, err := c.client.PullRequests.Get(c.ctx, parts[0], parts[1], prID)
+		return &GithubPR{pr}, err
+	}, createBackOffWithRetries())
 }
 
 // PostIssueComment adds a comment to an existing Pull Request
@@ -229,29 +247,33 @@ func (c *Client) PostIssueComment(prId int, fullName string, body string) (*gogi
 	if err != nil {
 		return nil, err
 	}
-	comment := &gogithub.IssueComment{
-		Body: String(body),
-	}
-	iss, _, err := c.client.Issues.CreateComment(context.Background(), projectParts[0], projectParts[1], prId, comment)
-	if err != nil {
-		log.Error().Err(err).Msg("github client: could not post issue comment")
-	}
+	return backoff.RetryWithData(func() (*gogithub.IssueComment, error) {
+		comment := &gogithub.IssueComment{
+			Body: String(body),
+		}
+		iss, _, err := c.client.Issues.CreateComment(context.Background(), projectParts[0], projectParts[1], prId, comment)
+		if err != nil {
+			log.Error().Err(err).Msg("github client: could not post issue comment")
+		}
 
-	return iss, err
+		return iss, err
+	}, createBackOffWithRetries())
 }
 
 // PostPullRequestComment adds a review comment to an existing PullRequest
 func (c *Client) PostPullRequestComment(owner, repo string, prId int, body string) error {
 	// TODO: this is broken
-	comment := &gogithub.PullRequestComment{
-		//InReplyTo:           nil,
-		Body: String(body),
-	}
-	_, _, err := c.client.PullRequests.CreateComment(c.ctx, owner, repo, int(prId), comment)
-	if err != nil {
-		log.Error().Err(err).Msg("could not post pull request comment")
-	}
-	return err
+	return backoff.Retry(func() error {
+		comment := &gogithub.PullRequestComment{
+			//InReplyTo:           nil,
+			Body: String(body),
+		}
+		_, _, err := c.client.PullRequests.CreateComment(c.ctx, owner, repo, int(prId), comment)
+		if err != nil {
+			log.Error().Err(err).Msg("could not post pull request comment")
+		}
+		return err
+	}, createBackOffWithRetries())
 }
 
 func String(str string) *string {
