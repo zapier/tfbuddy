@@ -9,6 +9,7 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/rs/zerolog/log"
+	"github.com/zapier/tfbuddy/pkg/utils"
 	"github.com/zapier/tfbuddy/pkg/vcs"
 
 	gogitlab "github.com/xanzy/go-gitlab"
@@ -57,7 +58,7 @@ func NewGitlabClient() *GitlabClient {
 func (c *GitlabClient) ResolveMergeRequestDiscussion(projectWithNamespace string, mrIID int, discussionID string) error {
 	return backoff.Retry(func() error {
 		_, _, err := c.client.Discussions.ResolveMergeRequestDiscussion(projectWithNamespace, mrIID, discussionID, &gogitlab.ResolveMergeRequestDiscussionOptions{Resolved: gogitlab.Bool(true)})
-		return err
+		return utils.CreatePermanentError(err)
 	}, createBackOffWithRetries())
 }
 
@@ -95,7 +96,7 @@ func (gS *GitlabCommitStatus) Info() string {
 func (c *GitlabClient) SetCommitStatus(projectWithNS string, commitSHA string, status vcs.CommitStatusOptions) (vcs.CommitStatus, error) {
 	return backoff.RetryWithData(func() (vcs.CommitStatus, error) {
 		commitStatus, _, err := c.client.Commits.SetCommitStatus(projectWithNS, commitSHA, status.(*GitlabCommitStatusOptions).SetCommitStatusOptions)
-		return &GitlabCommitStatus{commitStatus}, err
+		return &GitlabCommitStatus{commitStatus}, utils.CreatePermanentError(err)
 	}, createBackOffWithRetries())
 }
 func (c *GitlabClient) GetCommitStatuses(projectID, commitSHA string) []*gogitlab.CommitStatus {
@@ -113,10 +114,10 @@ func (c *GitlabClient) CreateMergeRequestComment(mrIID int, projectID, comment s
 		return backoff.Retry(func() error {
 			log.Debug().Str("projectID", projectID).Int("mrIID", mrIID).Msg("posting Gitlab comment")
 			_, _, err := c.client.Notes.CreateMergeRequestNote(projectID, mrIID, &gogitlab.CreateMergeRequestNoteOptions{Body: gogitlab.String(comment)})
-			return err
+			return utils.CreatePermanentError(err)
 		}, createBackOffWithRetries())
 	}
-	return errors.New("comment is empty")
+	return utils.CreatePermanentError(errors.New("comment is empty"))
 }
 
 type GitlabMRDiscussion struct {
@@ -151,13 +152,13 @@ func (c *GitlabClient) CreateMergeRequestDiscussion(mrIID int, project, comment 
 		dis, _, err := c.client.Discussions.CreateMergeRequestDiscussion(project, mrIID, &gogitlab.CreateMergeRequestDiscussionOptions{
 			Body: gogitlab.String(comment),
 		})
-		return &GitlabMRDiscussion{dis}, err
+		return &GitlabMRDiscussion{dis}, utils.CreatePermanentError(err)
 	}, createBackOffWithRetries())
 }
 
 func (c *GitlabClient) UpdateMergeRequestDiscussionNote(mrIID, noteID int, project, discussionID, comment string) (vcs.MRNote, error) {
 	if comment == "" {
-		return nil, errors.New("comment is empty")
+		return nil, utils.CreatePermanentError(errors.New("comment is empty"))
 	}
 	return backoff.RetryWithData(func() (vcs.MRNote, error) {
 		log.Debug().Str("project", project).Int("mrIID", mrIID).Msg("update Gitlab discussion")
@@ -169,7 +170,7 @@ func (c *GitlabClient) UpdateMergeRequestDiscussionNote(mrIID, noteID int, proje
 			&gogitlab.UpdateMergeRequestDiscussionNoteOptions{
 				Body: gogitlab.String(comment),
 			})
-		return &GitlabMRNote{note}, err
+		return &GitlabMRNote{note}, utils.CreatePermanentError(err)
 	}, createBackOffWithRetries())
 }
 
@@ -180,10 +181,10 @@ func (c *GitlabClient) AddMergeRequestDiscussionReply(mrIID int, project, discus
 			log.Debug().Str("project", project).Int("mrIID", mrIID).Msg("posting Gitlab discussion reply")
 			note, _, err := c.client.Discussions.AddMergeRequestDiscussionNote(project, mrIID, discussionID, &gogitlab.AddMergeRequestDiscussionNoteOptions{Body: gogitlab.String(comment)})
 
-			return &GitlabMRNote{note}, err
+			return &GitlabMRNote{note}, utils.CreatePermanentError(err)
 		}, createBackOffWithRetries())
 	}
-	return nil, errors.New("comment is empty")
+	return nil, utils.CreatePermanentError(errors.New("comment is empty"))
 }
 
 // ResolveMergeRequestDiscussionReply marks a discussion thread as resolved /  unresolved.
@@ -191,7 +192,7 @@ func (c *GitlabClient) ResolveMergeRequestDiscussionReply(mrIID int, project, di
 	return backoff.Retry(func() error {
 		log.Debug().Str("project", project).Int("mrIID", mrIID).Msg("posting Gitlab discussion reply")
 		_, _, err := c.client.Discussions.ResolveMergeRequestDiscussion(project, mrIID, discussionID, &gogitlab.ResolveMergeRequestDiscussionOptions{Resolved: gogitlab.Bool(resolved)})
-		return err
+		return utils.CreatePermanentError(err)
 	}, createBackOffWithRetries())
 }
 
@@ -202,7 +203,7 @@ func (g *GitlabClient) GetRepoFile(project, file, ref string) ([]byte, error) {
 	}
 	return backoff.RetryWithData(func() ([]byte, error) {
 		b, _, err := g.client.RepositoryFiles.GetRawFile(project, file, &gogitlab.GetRawFileOptions{Ref: gogitlab.String(ref)})
-		return b, err
+		return b, utils.CreatePermanentError(err)
 	}, createBackOffWithRetries())
 }
 
@@ -222,12 +223,12 @@ func (g *GitlabClient) GetMergeRequestModifiedFiles(mrIID int, projectID string)
 			}
 			req, err := g.client.NewRequest("GET", apiURL, opts, nil)
 			if err != nil {
-				return nil, err
+				return nil, utils.CreatePermanentError(err)
 			}
 			mr := new(gogitlab.MergeRequest)
 			resp, err := g.client.Do(req, mr)
 			if err != nil {
-				return nil, err
+				return nil, utils.CreatePermanentError(err)
 			}
 
 			for _, f := range mr.Changes {
@@ -294,7 +295,7 @@ func (g *GitlabClient) GetMergeRequest(mrIID int, project string) (vcs.DetailedM
 			},
 		)
 		if err != nil {
-			return nil, err
+			return nil, utils.CreatePermanentError(err)
 		}
 		return &GitlabMR{mr}, nil
 	}, createBackOffWithRetries())
@@ -314,7 +315,7 @@ func (g *GitlabClient) GetMergeRequestApprovals(mrIID int, project string) (vcs.
 			mrIID,
 		)
 		if err != nil {
-			return nil, err
+			return nil, utils.CreatePermanentError(err)
 		}
 		return &GitlabMRApproval{approvals}, nil
 	}, createBackOffWithRetries())
@@ -336,7 +337,7 @@ func (g *GitlabClient) GetPipelinesForCommit(project, commitSHA string) ([]vcs.P
 			SHA: gogitlab.String(commitSHA),
 		})
 		if err != nil {
-			return nil, err
+			return nil, utils.CreatePermanentError(err)
 		}
 		output := make([]vcs.ProjectPipeline, len(pipelines))
 		for idx, pipeline := range pipelines {

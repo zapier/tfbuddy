@@ -10,6 +10,7 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/creasty/defaults"
 	"github.com/rs/zerolog/log"
+	"github.com/zapier/tfbuddy/pkg/utils"
 	"github.com/zapier/tfbuddy/pkg/vcs"
 	"gopkg.in/dealancer/validate.v2"
 	"gopkg.in/yaml.v2"
@@ -103,7 +104,7 @@ func getProjectConfigFile(gl vcs.GitClient, trigger *TFCTrigger) (*ProjectConfig
 	}
 	log.Warn().Msg("could not retrieve .tfbuddy.yaml for repo")
 
-	return nil, errors.New("could not retrieve .tfbuddy.yaml for repo")
+	return nil, utils.CreatePermanentError(errors.New("could not retrieve .tfbuddy.yaml for repo"))
 }
 
 func loadProjectConfig(b []byte) (*ProjectConfig, error) {
