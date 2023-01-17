@@ -50,3 +50,19 @@ func TestEmitPermanentError(t *testing.T) {
 	})
 
 }
+
+func TestCreatePermanentError(t *testing.T) {
+	t.Run("handle nil error", func(t *testing.T) {
+		err := CreatePermanentError(nil)
+		if err != nil {
+			t.Error("expected error to be nil")
+		}
+	})
+	t.Run("wrap error as permanent", func(t *testing.T) {
+		baseErr := errors.New("test error")
+		err := CreatePermanentError(baseErr)
+		if !errors.Is(err, ErrPermanent) {
+			t.Error("expected returned error to be permanent")
+		}
+	})
+}
