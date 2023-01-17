@@ -10,6 +10,7 @@ import (
 	"github.com/zapier/tfbuddy/pkg/comment_actions"
 	"github.com/zapier/tfbuddy/pkg/github"
 	"github.com/zapier/tfbuddy/pkg/tfc_trigger"
+	"github.com/zapier/tfbuddy/pkg/utils"
 )
 
 func (h *GithubHooksHandler) processIssueCommentEvent(msg *GithubIssueCommentEventMsg) error {
@@ -21,7 +22,9 @@ func (h *GithubHooksHandler) processIssueCommentEvent(msg *GithubIssueCommentEve
 		}
 	}()
 	commentErr = h.processIssueComment(msg)
-	return commentErr
+	return utils.EmitPermanentError(commentErr, func(err error) {
+		log.Error().Msgf("got a permanent error attempting to process comment event: %s", err.Error())
+	})
 }
 
 func (h *GithubHooksHandler) processIssueComment(msg *GithubIssueCommentEventMsg) error {

@@ -6,6 +6,7 @@ import (
 	"github.com/zapier/tfbuddy/pkg/runstream"
 	"github.com/zapier/tfbuddy/pkg/tfc_api"
 	"github.com/zapier/tfbuddy/pkg/tfc_trigger"
+	"github.com/zapier/tfbuddy/pkg/utils"
 	"github.com/zapier/tfbuddy/pkg/vcs"
 )
 
@@ -46,7 +47,10 @@ func (w *GitlabEventWorker) processNoteEventStreamMsg(msg *NoteEventMsg) error {
 		}
 	}()
 	_, noteErr = w.processNoteEvent(msg)
-	return noteErr
+
+	return utils.EmitPermanentError(noteErr, func(err error) {
+		log.Error().Msgf("got permanent error processing Note event: %s", err.Error())
+	})
 }
 
 func (w *GitlabEventWorker) processMREventStreamMsg(msg *MergeRequestEventMsg) error {
@@ -58,5 +62,8 @@ func (w *GitlabEventWorker) processMREventStreamMsg(msg *MergeRequestEventMsg) e
 		}
 	}()
 	_, mrErr = w.processMergeRequestEvent(msg)
-	return mrErr
+
+	return utils.EmitPermanentError(mrErr, func(err error) {
+		log.Error().Msgf("got permanent error processing MR event: %s", err.Error())
+	})
 }
