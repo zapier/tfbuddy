@@ -34,7 +34,7 @@ const DefaultMaxRetries = 3
 
 func createBackOffWithRetries() backoff.BackOff {
 	exp := backoff.NewExponentialBackOff()
-	exp.MaxElapsedTime = 90 * time.Second
+	exp.MaxElapsedTime = 30 * time.Second
 	return backoff.WithMaxRetries(exp, DefaultMaxRetries)
 
 }
