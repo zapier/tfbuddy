@@ -2,7 +2,6 @@ package github
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,6 +16,7 @@ import (
 	gogithub "github.com/google/go-github/v49/github"
 	"github.com/rs/zerolog/log"
 	zgit "github.com/zapier/tfbuddy/pkg/git"
+	"github.com/zapier/tfbuddy/pkg/utils"
 	"github.com/zapier/tfbuddy/pkg/vcs"
 	"golang.org/x/oauth2"
 )
@@ -91,12 +91,12 @@ func (c *Client) GetRepoFile(fullName string, file string, ref string) ([]byte, 
 	return backoff.RetryWithData(func() ([]byte, error) {
 		fileContent, _, _, err := c.client.Repositories.GetContents(c.ctx, parts[0], parts[1], file, &gogithub.RepositoryContentGetOptions{Ref: ref})
 		if err != nil {
-			return nil, err
+			return nil, utils.CreatePermanentError(err)
 		}
 
 		contents, err := fileContent.GetContent()
 		if err != nil {
-			return nil, err
+			return nil, utils.CreatePermanentError(err)
 		}
 
 		return []byte(contents), nil
@@ -117,11 +117,11 @@ func (c *Client) GetMergeRequestModifiedFiles(prID int, fullName string) ([]stri
 		return backoff.RetryWithData(func() ([]string, error) {
 			parts, err := splitFullName(fullName)
 			if err != nil {
-				return nil, err
+				return nil, utils.CreatePermanentError(err)
 			}
 			files, _, err := c.client.PullRequests.ListFiles(c.ctx, parts[0], parts[1], prID, &opts)
 			if err != nil {
-				return nil, err
+				return nil, utils.CreatePermanentError(err)
 			}
 			modifiedFiles := make([]string, len(files))
 			for i, file := range files {
@@ -143,7 +143,7 @@ func (c *Client) CloneMergeRequest(project string, mr vcs.MR, dest string) (vcs.
 
 	repo, _, err := c.client.Repositories.Get(context.Background(), parts[0], parts[1])
 	if err != nil {
-		return nil, err
+		return nil, utils.CreatePermanentError(err)
 	}
 	log.Debug().Msg(*repo.CloneURL)
 	ref := plumbing.NewBranchReferenceName(mr.GetSourceBranch())
@@ -222,11 +222,11 @@ func (c *Client) GetPipelinesForCommit(projectWithNS string, commitSHA string) (
 func (c *Client) GetIssue(owner *gogithub.User, repo string, issueId int) (*gogithub.Issue, error) {
 	owName, err := ResolveOwnerName(owner)
 	if err != nil {
-		return nil, err
+		return nil, utils.CreatePermanentError(err)
 	}
 	return backoff.RetryWithData(func() (*gogithub.Issue, error) {
 		iss, _, err := c.client.Issues.Get(context.Background(), owName, repo, issueId)
-		return iss, err
+		return iss, utils.CreatePermanentError(err)
 	}, createBackOffWithRetries())
 }
 
@@ -237,7 +237,7 @@ func (c *Client) GetPullRequest(fullName string, prID int) (*GithubPR, error) {
 	}
 	return backoff.RetryWithData(func() (*GithubPR, error) {
 		pr, _, err := c.client.PullRequests.Get(c.ctx, parts[0], parts[1], prID)
-		return &GithubPR{pr}, err
+		return &GithubPR{pr}, utils.CreatePermanentError(err)
 	}, createBackOffWithRetries())
 }
 
@@ -245,7 +245,7 @@ func (c *Client) GetPullRequest(fullName string, prID int) (*GithubPR, error) {
 func (c *Client) PostIssueComment(prId int, fullName string, body string) (*gogithub.IssueComment, error) {
 	projectParts, err := splitFullName(fullName)
 	if err != nil {
-		return nil, err
+		return nil, utils.CreatePermanentError(err)
 	}
 	return backoff.RetryWithData(func() (*gogithub.IssueComment, error) {
 		comment := &gogithub.IssueComment{
@@ -256,7 +256,7 @@ func (c *Client) PostIssueComment(prId int, fullName string, body string) (*gogi
 			log.Error().Err(err).Msg("github client: could not post issue comment")
 		}
 
-		return iss, err
+		return iss, utils.CreatePermanentError(err)
 	}, createBackOffWithRetries())
 }
 
@@ -272,7 +272,7 @@ func (c *Client) PostPullRequestComment(owner, repo string, prId int, body strin
 		if err != nil {
 			log.Error().Err(err).Msg("could not post pull request comment")
 		}
-		return err
+		return utils.CreatePermanentError(err)
 	}, createBackOffWithRetries())
 }
 
@@ -288,7 +288,7 @@ func ResolveOwnerName(owner *gogithub.User) (string, error) {
 		name = owner.Login
 		if name == nil {
 			log.Error().Msg("owner name/login is nil")
-			return "", errors.New("owner name/login is nil")
+			return "", fmt.Errorf("owner name/login is nil. %w", utils.ErrPermanent)
 		}
 	}
 	return *name, nil
@@ -297,7 +297,7 @@ func ResolveOwnerName(owner *gogithub.User) (string, error) {
 func splitFullName(fullName string) ([]string, error) {
 	parts := strings.Split(fullName, "/")
 	if len(parts) != 2 {
-		return nil, fmt.Errorf("github client: invalid repo format")
+		return nil, fmt.Errorf("github client: invalid repo format. %w", utils.ErrPermanent)
 	}
 	return parts, nil
 }
