@@ -18,6 +18,7 @@ import (
 
 	"github.com/zapier/tfbuddy/pkg/runstream"
 	"github.com/zapier/tfbuddy/pkg/tfc_api"
+	"github.com/zapier/tfbuddy/pkg/utils"
 	"github.com/zapier/tfbuddy/pkg/vcs"
 )
 
@@ -239,7 +240,8 @@ func (t *TFCTrigger) getTriggeredWorkspaces(modifiedFiles []string) ([]*TFCWorks
 		}
 		if providedWS == nil {
 			log.Warn().Str("workspace_arg", t.cfg.GetWorkspace()).Msg("provided workspace not configured for project")
-			return nil, t.handleError(ErrWorkspaceNotDefined, t.cfg.GetWorkspace())
+			err := t.handleError(ErrWorkspaceNotDefined, t.cfg.GetWorkspace())
+			return nil, utils.CreatePermanentError(err)
 		}
 		triggeredWorkspaces = append(triggeredWorkspaces, providedWS)
 	} else {

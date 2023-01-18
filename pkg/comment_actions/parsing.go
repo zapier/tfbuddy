@@ -2,9 +2,12 @@ package comment_actions
 
 import (
 	"errors"
+	"fmt"
+	"strings"
+
 	"github.com/jessevdk/go-flags"
 	"github.com/rs/zerolog/log"
-	"strings"
+	"github.com/zapier/tfbuddy/pkg/utils"
 )
 
 var (
@@ -36,7 +39,7 @@ func ParseCommentCommand(noteBody string) (*CommentOpts, error) {
 	_, err := flags.ParseArgs(opts, words)
 	if err != nil {
 		log.Error().Err(err).Msg("error parsing comment as command")
-		return nil, errors.New("could not parse comment as command")
+		return nil, fmt.Errorf("could not parse comment as command. %w", utils.ErrPermanent)
 	}
 
 	if opts.Args.Agent == "terraform" || opts.Args.Agent == "atlantis" {

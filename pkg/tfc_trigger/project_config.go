@@ -111,7 +111,7 @@ func loadProjectConfig(b []byte) (*ProjectConfig, error) {
 	cfg := &ProjectConfig{}
 	err := yaml.Unmarshal(b, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("could not parse Project config file (.tfbuddy.yaml): %v", err)
+		return nil, fmt.Errorf("could not parse Project config file (.tfbuddy.yaml): %v. %w", err, utils.ErrPermanent)
 	}
 
 	defaultOrgName := getDefaultOrgName()
@@ -122,7 +122,7 @@ func loadProjectConfig(b []byte) (*ProjectConfig, error) {
 	}
 
 	if err := validate.Validate(cfg); err != nil {
-		return nil, err
+		return nil, utils.CreatePermanentError(err)
 	}
 
 	return cfg, nil
