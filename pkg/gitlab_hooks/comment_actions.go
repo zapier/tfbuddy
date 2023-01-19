@@ -90,6 +90,9 @@ func (w *GitlabEventWorker) processNoteEvent(event vcs.MRCommentEvent) (projectN
 			return proj, nil
 		}
 	}
+	if tfError != nil {
+		w.postMessageToMergeRequest(event, fmt.Sprintf(":no_entry: could not be run because: %s", tfError.Error()))
+	}
 	return proj, tfError
 
 }

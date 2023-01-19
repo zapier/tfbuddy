@@ -313,7 +313,7 @@ func (t *TFCTrigger) cloneGitRepo(mr vcs.MR) (vcs.GitRepo, error) {
 	}
 	repo, err := t.gl.CloneMergeRequest(t.cfg.GetProjectNameWithNamespace(), mr, cloneDir)
 	if err != nil {
-		return nil, err
+		return nil, utils.CreatePermanentError(err)
 	}
 	return repo, nil
 }

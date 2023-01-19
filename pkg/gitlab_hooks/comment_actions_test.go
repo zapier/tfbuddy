@@ -105,11 +105,11 @@ func TestProcessNoteEventPlanError(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	mockGitClient := mocks.NewMockGitClient(mockCtrl)
-
+	mockGitClient.EXPECT().CreateMergeRequestComment(101, "zapier/service-tf-buddy", ":no_entry: could not be run because: something went wrong")
 	mockApiClient := mocks.NewMockApiClient(mockCtrl)
 	mockStreamClient := mocks.NewMockStreamClient(mockCtrl)
 	mockProject := mocks.NewMockProject(mockCtrl)
-	mockProject.EXPECT().GetPathWithNamespace().Return("zapier/service-tf-buddy")
+	mockProject.EXPECT().GetPathWithNamespace().Return("zapier/service-tf-buddy").Times(2)
 
 	mockLastCommit := mocks.NewMockCommit(mockCtrl)
 	mockLastCommit.EXPECT().GetSHA().Return("abvc12345")
@@ -120,15 +120,15 @@ func TestProcessNoteEventPlanError(t *testing.T) {
 	mockAttributes.EXPECT().GetType().Return("SomeNote")
 
 	mockMREvent := mocks.NewMockMRCommentEvent(mockCtrl)
-	mockMREvent.EXPECT().GetProject().Return(mockProject)
+	mockMREvent.EXPECT().GetProject().Return(mockProject).Times(2)
 	mockMREvent.EXPECT().GetAttributes().Return(mockAttributes).Times(2)
 	mockMREvent.EXPECT().GetLastCommit().Return(mockLastCommit)
 
 	mockSimpleMR := mocks.NewMockMR(mockCtrl)
 	mockSimpleMR.EXPECT().GetSourceBranch().Return("DTA-2009")
 
-	mockSimpleMR.EXPECT().GetInternalID().Return(101)
-	mockMREvent.EXPECT().GetMR().Return(mockSimpleMR).Times(2)
+	mockSimpleMR.EXPECT().GetInternalID().Return(101).Times(2)
+	mockMREvent.EXPECT().GetMR().Return(mockSimpleMR).Times(3)
 
 	mockTFCTrigger := mocks.NewMockTrigger(mockCtrl)
 	mockTFCConfig := mocks.NewMockTriggerConfig(mockCtrl)

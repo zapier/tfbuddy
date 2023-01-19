@@ -363,7 +363,7 @@ func TestTFCEvents_SingleWorkspaceApplyError(t *testing.T) {
 		t.Fatal("expected error to be returned")
 		return
 	}
-	if err.Error() != "could not clone repo" {
+	if err.Error() != "could not clone repo permanent error. cannot be retried" {
 		t.Fatal("unexpected error returned", err)
 	}
 	lastEntry := testLogger.LastEntry()
