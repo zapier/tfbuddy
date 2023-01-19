@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
+	"github.com/zapier/tfbuddy/pkg/utils"
 )
 
 type Repository struct {
@@ -36,7 +37,7 @@ func (gr *Repository) FetchUpstreamBranch(branch string) error {
 		Auth:     gr.authentication,
 	})
 	if err != nil && err.Error() != git.NoErrAlreadyUpToDate.Error() {
-		return err
+		return utils.CreatePermanentError(err)
 	}
 	return nil
 }
@@ -45,7 +46,7 @@ func (gr *Repository) GetMergeBase(oldest, newest string) (string, error) {
 	for _, rev := range []string{oldest, newest} {
 		hash, err := gr.ResolveRevision(plumbing.Revision(rev))
 		if err != nil {
-			return "", err
+			return "", utils.CreatePermanentError(err)
 		}
 		hashes = append(hashes, hash)
 	}
@@ -53,13 +54,13 @@ func (gr *Repository) GetMergeBase(oldest, newest string) (string, error) {
 	for _, hash := range hashes {
 		commit, err := gr.CommitObject(*hash)
 		if err != nil {
-			return "", err
+			return "", utils.CreatePermanentError(err)
 		}
 		commits = append(commits, commit)
 	}
 	res, err := commits[0].MergeBase(commits[1])
 	if err != nil {
-		return "", err
+		return "", utils.CreatePermanentError(err)
 	}
 
 	if len(res) > 0 {
@@ -67,29 +68,29 @@ func (gr *Repository) GetMergeBase(oldest, newest string) (string, error) {
 		return res[0].Hash.String(), nil
 
 	}
-	return "", fmt.Errorf("could not find merge base")
+	return "", utils.CreatePermanentError(fmt.Errorf("could not find merge base"))
 }
 func (gr *Repository) GetModifiedFileNamesBetweenCommits(oldest, newest string) ([]string, error) {
 
 	oldestSha, err := gr.ResolveRevision(plumbing.Revision(oldest))
 	if err != nil {
-		return nil, err
+		return nil, utils.CreatePermanentError(err)
 	}
 	newestSha, err := gr.ResolveRevision(plumbing.Revision(newest))
 	if err != nil {
-		return nil, err
+		return nil, utils.CreatePermanentError(err)
 	}
 	oldestCommit, err := gr.CommitObject(*oldestSha)
 	if err != nil {
-		return nil, err
+		return nil, utils.CreatePermanentError(err)
 	}
 	newestCommit, err := gr.CommitObject(*newestSha)
 	if err != nil {
-		return nil, err
+		return nil, utils.CreatePermanentError(err)
 	}
 	patch, err := oldestCommit.Patch(newestCommit)
 	if err != nil {
-		return nil, err
+		return nil, utils.CreatePermanentError(err)
 	}
 	filePatches := patch.FilePatches()
 

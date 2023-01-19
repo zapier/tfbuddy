@@ -10,9 +10,24 @@ import (
 	"github.com/zapier/tfbuddy/pkg/comment_actions"
 	"github.com/zapier/tfbuddy/pkg/github"
 	"github.com/zapier/tfbuddy/pkg/tfc_trigger"
+	"github.com/zapier/tfbuddy/pkg/utils"
 )
 
 func (h *GithubHooksHandler) processIssueCommentEvent(msg *GithubIssueCommentEventMsg) error {
+	var commentErr error
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error().Msgf("Unrecoverable error in issue comment event processing %v", r)
+			commentErr = nil
+		}
+	}()
+	commentErr = h.processIssueComment(msg)
+	return utils.EmitPermanentError(commentErr, func(err error) {
+		log.Error().Msgf("got a permanent error attempting to process comment event: %s", err.Error())
+	})
+}
+
+func (h *GithubHooksHandler) processIssueComment(msg *GithubIssueCommentEventMsg) error {
 	if msg == nil || msg.payload == nil {
 		return errors.New("msg is nil")
 	}
@@ -102,7 +117,6 @@ func (h *GithubHooksHandler) processIssueCommentEvent(msg *GithubIssueCommentEve
 		return nil
 	}
 	return tfError
-
 }
 
 func (h *GithubHooksHandler) postPullRequestComment(event *gogithub.IssueCommentEvent, body string) error {

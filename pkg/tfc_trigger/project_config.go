@@ -10,6 +10,7 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/creasty/defaults"
 	"github.com/rs/zerolog/log"
+	"github.com/zapier/tfbuddy/pkg/utils"
 	"github.com/zapier/tfbuddy/pkg/vcs"
 	"gopkg.in/dealancer/validate.v2"
 	"gopkg.in/yaml.v2"
@@ -103,14 +104,14 @@ func getProjectConfigFile(gl vcs.GitClient, trigger *TFCTrigger) (*ProjectConfig
 	}
 	log.Warn().Msg("could not retrieve .tfbuddy.yaml for repo")
 
-	return nil, errors.New("could not retrieve .tfbuddy.yaml for repo")
+	return nil, utils.CreatePermanentError(errors.New("could not retrieve .tfbuddy.yaml for repo"))
 }
 
 func loadProjectConfig(b []byte) (*ProjectConfig, error) {
 	cfg := &ProjectConfig{}
 	err := yaml.Unmarshal(b, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("could not parse Project config file (.tfbuddy.yaml): %v", err)
+		return nil, fmt.Errorf("could not parse Project config file (.tfbuddy.yaml): %v. %w", err, utils.ErrPermanent)
 	}
 
 	defaultOrgName := getDefaultOrgName()
@@ -121,7 +122,7 @@ func loadProjectConfig(b []byte) (*ProjectConfig, error) {
 	}
 
 	if err := validate.Validate(cfg); err != nil {
-		return nil, err
+		return nil, utils.CreatePermanentError(err)
 	}
 
 	return cfg, nil

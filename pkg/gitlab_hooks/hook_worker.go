@@ -6,6 +6,7 @@ import (
 	"github.com/zapier/tfbuddy/pkg/runstream"
 	"github.com/zapier/tfbuddy/pkg/tfc_api"
 	"github.com/zapier/tfbuddy/pkg/tfc_trigger"
+	"github.com/zapier/tfbuddy/pkg/utils"
 	"github.com/zapier/tfbuddy/pkg/vcs"
 )
 
@@ -38,11 +39,31 @@ func NewGitlabEventWorker(h *GitlabHooksHandler, js nats.JetStreamContext) *Gitl
 }
 
 func (w *GitlabEventWorker) processNoteEventStreamMsg(msg *NoteEventMsg) error {
-	_, err := w.processNoteEvent(msg)
-	return err
+	var noteErr error
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error().Msgf("Unrecoverable error in note event processing %v", r)
+			noteErr = nil
+		}
+	}()
+	_, noteErr = w.processNoteEvent(msg)
+
+	return utils.EmitPermanentError(noteErr, func(err error) {
+		log.Error().Msgf("got permanent error processing Note event: %s", err.Error())
+	})
 }
 
 func (w *GitlabEventWorker) processMREventStreamMsg(msg *MergeRequestEventMsg) error {
-	_, err := w.processMergeRequestEvent(msg)
-	return err
+	var mrErr error
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error().Msgf("Unrecoverable error in MR event processing %v", r)
+			mrErr = nil
+		}
+	}()
+	_, mrErr = w.processMergeRequestEvent(msg)
+
+	return utils.EmitPermanentError(mrErr, func(err error) {
+		log.Error().Msgf("got permanent error processing MR event: %s", err.Error())
+	})
 }
