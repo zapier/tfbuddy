@@ -155,7 +155,6 @@ func TestTFCEvents_SingleWorkspacePlanError(t *testing.T) {
 	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: ws}, t)
 
 	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, "Starting TFC plan for Workspace: `zapier-test/service-tfbuddy`.").Return(testSuite.MockGitDisc, nil)
-	testSuite.MockGitClient.EXPECT().CreateMergeRequestComment(testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, "Error: could not create TFC run: could not create run from source").Return(nil)
 
 	testSuite.MockApiClient.EXPECT().CreateRunFromSource(gomock.Any()).Return(nil, fmt.Errorf("could not create run from source"))
 
@@ -191,7 +190,7 @@ func TestTFCEvents_SingleWorkspacePlanError(t *testing.T) {
 	if triggeredWS.Errored[0].Name != "service-tfbuddy" {
 		t.Fatal("expected workspace", triggeredWS.Errored[0].Name)
 	}
-	if triggeredWS.Errored[0].Error != "could not trigger Run for Workspace" {
+	if triggeredWS.Errored[0].Error != "could not trigger Run for Workspace. could not create TFC run. could not create run from source" {
 		t.Fatal("expected error", triggeredWS.Errored[0].Error)
 	}
 }
@@ -372,7 +371,7 @@ func TestTFCEvents_SingleWorkspaceApplyError(t *testing.T) {
 		t.Fatal("expected log message not nil")
 		return
 	}
-	lastEntry.ExpMsg("could not clone repo")
+	lastEntry.ExpMsg("considering branch test-branch")
 
 	if triggeredWS != nil {
 		t.Fatal("expected no triggered workspaces")
@@ -400,7 +399,6 @@ func TestTFCEvents_MultiWorkspaceApplyError(t *testing.T) {
 
 	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, "Starting TFC apply for Workspace: `zapier-test/service-tfbuddy`.").Return(testSuite.MockGitDisc, nil)
 	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, "Starting TFC apply for Workspace: `zapier-test/service-tfbuddy-staging`.").Return(testSuite.MockGitDisc, nil)
-	testSuite.MockGitClient.EXPECT().CreateMergeRequestComment(testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, "Error: could not create TFC run: api error with terraform cloud")
 
 	testSuite.MockApiClient.EXPECT().GetWorkspaceByName(gomock.Any(), "zapier-test", gomock.Any()).DoAndReturn(func(a interface{}, b, c string) (*tfe.Workspace, error) {
 		return &tfe.Workspace{ID: c}, nil
@@ -446,7 +444,7 @@ func TestTFCEvents_MultiWorkspaceApplyError(t *testing.T) {
 	if triggeredWS.Errored[0].Name != "service-tfbuddy" {
 		t.Fatal("unexpected workspace", triggeredWS.Errored[0].Name)
 	}
-	if triggeredWS.Errored[0].Error != "could not trigger Run for Workspace" {
+	if triggeredWS.Errored[0].Error != "could not trigger Run for Workspace. could not create TFC run. api error with terraform cloud" {
 		t.Fatal("unexpected error", triggeredWS.Errored[0].Error)
 	}
 

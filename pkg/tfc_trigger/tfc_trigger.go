@@ -222,7 +222,7 @@ func (t *TFCTrigger) getTriggeredWorkspaces(modifiedFiles []string) ([]*TFCWorks
 	cfg, err := getProjectConfigFile(t.gl, t)
 	if err != nil {
 		if t.cfg.GetTriggerSource() == CommentTrigger {
-			return nil, t.handleError(err, "could not read .tfbuddy.yml file for this repo")
+			return nil, fmt.Errorf("could not read .tfbuddy.yml file for this repo. %w", err)
 		}
 		// we got a webhook for a repo that has not enabled TFBuddy yet. Ignore.
 		log.Debug().Msg("ignoring TFC trigger for project, missing .tfbuddy.yaml")
@@ -240,8 +240,7 @@ func (t *TFCTrigger) getTriggeredWorkspaces(modifiedFiles []string) ([]*TFCWorks
 		}
 		if providedWS == nil {
 			log.Warn().Str("workspace_arg", t.cfg.GetWorkspace()).Msg("provided workspace not configured for project")
-			err := t.handleError(ErrWorkspaceNotDefined, t.cfg.GetWorkspace())
-			return nil, utils.CreatePermanentError(err)
+			return nil, utils.CreatePermanentError(ErrWorkspaceNotDefined)
 		}
 		triggeredWorkspaces = append(triggeredWorkspaces, providedWS)
 	} else {
@@ -265,19 +264,19 @@ func (t *TFCTrigger) getModifiedWorkspaceBetweenMergeBaseTargetBranch(mr vcs.MR,
 	// update the cloned repo to have the latest commits from target branch (usually main)
 	err := repo.FetchUpstreamBranch(mr.GetTargetBranch())
 	if err != nil {
-		return modifiedWSMap, t.handleError(err, fmt.Sprintf("could not fetch target branch %s", mr.GetTargetBranch()))
+		return modifiedWSMap, fmt.Errorf("could not fetch target branch %s. %w", mr.GetTargetBranch(), err)
 	}
 	// find merge base. This is the common commit between the source branch and the target branch. This is usually the commit a branch was forked from.
 	commonSHA, err := repo.GetMergeBase(mr.GetSourceBranch(), mr.GetTargetBranch())
 	if err != nil {
-		return nil, t.handleError(err, "could not find merge base")
+		return nil, fmt.Errorf("could not find merge base. %w", err)
 	}
 	log.Debug().Msgf("got common hash %s for source branch %s and target branch %s", commonSHA, mr.GetSourceBranch(), mr.GetTargetBranch())
 	// got a merge base and two up to date branches. We can grab the target diffs now
 	// we find files modified between the merge base and the HEAD of the target branch
 	targetModifiedFiles, err := repo.GetModifiedFileNamesBetweenCommits(commonSHA, mr.GetTargetBranch())
 	if err != nil {
-		return modifiedWSMap, t.handleError(err, fmt.Sprintf("could not find file diffs between %s and %s", commonSHA, mr.GetTargetBranch()))
+		return modifiedWSMap, fmt.Errorf("could not find file diffs between %s and %s. %w", commonSHA, mr.GetTargetBranch(), err)
 	}
 	log.Debug().Msgf("%+v files modified between merge base and target branch (%s)", targetModifiedFiles, mr.GetTargetBranch())
 	// if there's no modified files we can assume it's safe to continue
@@ -286,7 +285,7 @@ func (t *TFCTrigger) getModifiedWorkspaceBetweenMergeBaseTargetBranch(mr vcs.MR,
 		// forked and the current HEAD of the target branch
 		targetBranchWorkspaces, err := t.getTriggeredWorkspaces(targetModifiedFiles)
 		if err != nil {
-			return modifiedWSMap, t.handleError(err, "could not find modified workspaces for target branch")
+			return modifiedWSMap, fmt.Errorf("could not find modified workspaces for target branch. %w", err)
 		}
 		for _, ws := range targetBranchWorkspaces {
 			modifiedWSMap[ws.Name] = struct{}{}
@@ -298,7 +297,7 @@ func (t *TFCTrigger) getTriggeredWorkspacesForRequest(mr vcs.MR) ([]*TFCWorkspac
 
 	mrModifiedFiles, err := t.gl.GetMergeRequestModifiedFiles(mr.GetInternalID(), t.cfg.GetProjectNameWithNamespace())
 	if err != nil {
-		return nil, t.handleError(err, "failed to get a list of modified files")
+		return nil, fmt.Errorf("failed to get a list of modified files. %w", err)
 	}
 	log.Debug().Strs("modifiedFiles", mrModifiedFiles).Msg("modified files")
 	return t.getTriggeredWorkspaces(mrModifiedFiles)
@@ -310,22 +309,22 @@ func (t *TFCTrigger) cloneGitRepo(mr vcs.MR) (vcs.GitRepo, error) {
 	safeProj := strings.ReplaceAll(t.cfg.GetProjectNameWithNamespace(), "/", "-")
 	cloneDir, err := ioutil.TempDir("", fmt.Sprintf("%s-%d-*", safeProj, t.cfg.GetMergeRequestIID()))
 	if err != nil {
-		return nil, t.handleError(err, "could not create tmp directory")
+		return nil, fmt.Errorf("could not create tmp directory. %w", err)
 	}
 	repo, err := t.gl.CloneMergeRequest(t.cfg.GetProjectNameWithNamespace(), mr, cloneDir)
 	if err != nil {
-		return nil, t.handleError(err, "could not clone repo")
+		return nil, err
 	}
 	return repo, nil
 }
 func (t *TFCTrigger) TriggerTFCEvents() (*TriggeredTFCWorkspaces, error) {
 	mr, err := t.gl.GetMergeRequest(t.cfg.GetMergeRequestIID(), t.cfg.GetProjectNameWithNamespace())
 	if err != nil {
-		return nil, t.handleError(err, "could not read MergeRequest data from Gitlab API")
+		return nil, fmt.Errorf("could not read MergeRequest data from Gitlab API. %w", err)
 	}
 	triggeredWorkspaces, err := t.getTriggeredWorkspacesForRequest(mr)
 	if err != nil {
-		return nil, t.handleError(err, "could not read triggered workspaces")
+		return nil, fmt.Errorf("could not read triggered workspaces. %w", err)
 	}
 	workspaceStatus := &TriggeredTFCWorkspaces{
 		Errored:  make([]*ErroredWorkspace, 0),
@@ -335,7 +334,7 @@ func (t *TFCTrigger) TriggerTFCEvents() (*TriggeredTFCWorkspaces, error) {
 
 		repo, err := t.cloneGitRepo(mr)
 		if err != nil {
-			return nil, t.handleError(err, "could not clone repo")
+			return nil, err
 		}
 		defer os.Remove(repo.GetLocalDirectory())
 
@@ -369,7 +368,7 @@ func (t *TFCTrigger) TriggerTFCEvents() (*TriggeredTFCWorkspaces, error) {
 				log.Error().Err(err).Msg("could not trigger Run for Workspace")
 				workspaceStatus.Errored = append(workspaceStatus.Errored, &ErroredWorkspace{
 					Name:  cfgWS.Name,
-					Error: "could not trigger Run for Workspace",
+					Error: fmt.Sprintf("could not trigger Run for Workspace. %v", err),
 				})
 				continue
 			}
@@ -392,12 +391,12 @@ func (t *TFCTrigger) TriggerTFCEvents() (*TriggeredTFCWorkspaces, error) {
 func (t *TFCTrigger) TriggerCleanupEvent() error {
 	mr, err := t.gl.GetMergeRequest(t.cfg.GetMergeRequestIID(), t.cfg.GetProjectNameWithNamespace())
 	if err != nil {
-		return t.handleError(err, "could not read MergeRequest data from Gitlab API")
+		return fmt.Errorf("could not read MergeRequest data from Gitlab API. %w", err)
 	}
 	var wsNames []string
 	cfg, err := getProjectConfigFile(t.gl, t)
 	if err != nil {
-		return t.handleError(err, "ignoring cleanup trigger for project, missing .tfbuddy.yaml")
+		return fmt.Errorf("ignoring cleanup trigger for project, missing .tfbuddy.yaml. %w", err)
 	}
 	tag := fmt.Sprintf("%s-%d", tfPrefix, mr.GetInternalID())
 	for _, cfgWS := range cfg.Workspaces {
@@ -428,7 +427,7 @@ func (t *TFCTrigger) TriggerCleanupEvent() error {
 		fmt.Sprintf("Released locks for workspaces: %s", strings.Join(wsNames, ",")),
 	)
 	if err != nil {
-		return t.handleError(err, "could not create MR discussion thread for TFC run status updates")
+		return fmt.Errorf("could not create MR discussion thread for TFC run status updates. %w", err)
 	}
 	return nil
 }
@@ -464,15 +463,12 @@ func (t *TFCTrigger) triggerRunForWorkspace(cfgWS *TFCWorkspace, mr vcs.Detailed
 	// retrieve TFC workspace details, so we can sanity check this request.
 	ws, err := t.tfc.GetWorkspaceByName(context.Background(), org, wsName)
 	if err != nil {
-		return t.handleError(err, "could not get Workspace from TFC API")
+		return fmt.Errorf("could not get Workspace from TFC API. %w", err)
 	}
 
 	// Check if workspace allows API driven runs
 	if ws.VCSRepo != nil && t.cfg.GetAction() == ApplyAction {
-		return t.handleError(
-			fmt.Errorf("cannot trigger apply for VCS workspace"),
-			"TFC workspace is configured with a VCS backend, must merge to trigger an Apply.",
-		)
+		return fmt.Errorf("cannot trigger apply for VCS workspace. TFC workspace is configured with a VCS backend, must merge to trigger an Apply")
 	}
 
 	// if the run is a lock or unlock call that function and return.
@@ -480,14 +476,14 @@ func (t *TFCTrigger) triggerRunForWorkspace(cfgWS *TFCWorkspace, mr vcs.Detailed
 	if t.cfg.GetAction() == LockAction || t.cfg.GetAction() == UnlockAction {
 		err = t.LockUnlockWorkspace(ws, mr, t.cfg.GetAction() == LockAction)
 		if err != nil {
-			return t.handleError(err, "Error modifying the TFC lock on the workspace")
+			return fmt.Errorf("error modifying the TFC lock on the workspace. %w", err)
 		}
 		_, err := t.gl.CreateMergeRequestDiscussion(mr.GetInternalID(),
 			t.cfg.GetProjectNameWithNamespace(),
 			fmt.Sprintf("Successfully %sed Workspace `%s/%s`", t.cfg.GetAction(), org, wsName),
 		)
 		if err != nil {
-			return t.handleError(err, "Error posting successful lock modification status")
+			return fmt.Errorf("error posting successful lock modification status. %w", err)
 		}
 		return nil
 	}
@@ -502,16 +498,16 @@ func (t *TFCTrigger) triggerRunForWorkspace(cfgWS *TFCWorkspace, mr vcs.Detailed
 	if t.cfg.GetAction() == ApplyAction {
 		isApply = true
 	} else if t.cfg.GetAction() != PlanAction {
-		return t.handleError(nil, "Run action was not apply or plan")
+		return fmt.Errorf("run action was not apply or plan. %w", err)
 	}
 	// If the workspace is locked tell the user and don't queue a run
 	// Otherwise, TFC wil queue an apply, which might put them out of order
 	if isApply {
 		lockingMR := t.getLockingMR(ws.ID)
 		if ws.Locked {
-			return t.handleError(nil, "Refusing to Apply changes to a locked workspace")
+			return fmt.Errorf("refusing to Apply changes to a locked workspace. %w", err)
 		} else if lockingMR != "" {
-			return t.handleError(nil, fmt.Sprintf("Workspace is locked by another MR! %s", lockingMR))
+			return fmt.Errorf("workspace is locked by another MR! %s", lockingMR)
 		} else {
 			err = t.tfc.AddTags(context.Background(),
 				ws.ID,
@@ -519,7 +515,7 @@ func (t *TFCTrigger) triggerRunForWorkspace(cfgWS *TFCWorkspace, mr vcs.Detailed
 				fmt.Sprintf("%d", t.cfg.GetMergeRequestIID()),
 			)
 			if err != nil {
-				return t.handleError(err, "Error adding tags to workspace")
+				return fmt.Errorf("error adding tags to workspace. %w", err)
 			}
 		}
 	}
@@ -529,7 +525,7 @@ func (t *TFCTrigger) triggerRunForWorkspace(cfgWS *TFCWorkspace, mr vcs.Detailed
 		fmt.Sprintf("Starting TFC %v for Workspace: `%s/%s`.", t.cfg.GetAction(), org, wsName),
 	)
 	if err != nil {
-		return t.handleError(err, "could not create MR discussion thread for TFC run status updates")
+		return fmt.Errorf("could not create MR discussion thread for TFC run status updates. %w", err)
 	}
 	t.GetConfig().SetMergeRequestDiscussionID(disc.GetDiscussionID())
 	if len(disc.GetMRNotes()) > 0 {
@@ -547,7 +543,7 @@ func (t *TFCTrigger) triggerRunForWorkspace(cfgWS *TFCWorkspace, mr vcs.Detailed
 		Workspace:    wsName,
 	})
 	if err != nil {
-		return t.handleError(err, "could not create TFC run")
+		return fmt.Errorf("could not create TFC run. %w", err)
 	}
 
 	tfcRunsStarted.WithLabelValues(org, wsName, t.cfg.GetAction().String()).Inc()
@@ -577,7 +573,7 @@ func (t *TFCTrigger) publishRunToStream(run *tfe.Run) error {
 	}
 	err := t.runstream.AddRunMeta(rmd)
 	if err != nil {
-		return t.handleError(err, "Could not publish Run metadata to event stream, updates may not be posted to MR")
+		return fmt.Errorf("could not publish Run metadata to event stream, updates may not be posted to MR. %w", err)
 	}
 
 	if run.ConfigurationVersion.Speculative {
@@ -586,7 +582,7 @@ func (t *TFCTrigger) publishRunToStream(run *tfe.Run) error {
 		err := task.Schedule()
 
 		if err != nil {
-			return t.handleError(err, "Failed to create TFC plan polling task. Updates may not be posted to MR")
+			return fmt.Errorf("failed to create TFC plan polling task. Updates may not be posted to MR. %w", err)
 		}
 
 	}
