@@ -26,7 +26,7 @@ const GitlabHookIgnoreReasonUnhandledEventType = "unhandled-event-type"
 type TriggerCreationFunc func(gl vcs.GitClient,
 	tfc tfc_api.ApiClient,
 	runstream runstream.StreamClient,
-	cfg tfc_trigger.TriggerConfig) tfc_trigger.Trigger
+	cfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger
 
 type GitlabHooksHandler struct {
 	tfc             tfc_api.ApiClient

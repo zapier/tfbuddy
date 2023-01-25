@@ -196,7 +196,7 @@ func Test_loadProjectConfig(t *testing.T) {
 				os.Unsetenv(DefaultTfcOrganizationEnvName)
 			},
 			want: &ProjectConfig{Workspaces: []*TFCWorkspace{
-				&TFCWorkspace{
+				{
 					Name:         "service-tfbuddy-dev",
 					Organization: "foo-corp",
 					Dir:          "terraform/dev/",

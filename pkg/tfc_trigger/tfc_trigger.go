@@ -29,6 +29,7 @@ const (
 	PlanAction
 	RefreshAction
 	UnlockAction
+	InvalidAction
 )
 
 const tfPrefix = "tfbuddylock"
@@ -54,19 +55,38 @@ func (a TriggerAction) String() string {
 	}
 }
 
+func CheckTriggerAction(action string) TriggerAction {
+	switch strings.ToLower(action) {
+	case "plan":
+		return PlanAction
+	case "apply":
+		return ApplyAction
+	case "destroy":
+		return DestroyAction
+	case "lock":
+		return LockAction
+	case "unlock":
+		return UnlockAction
+	case "refresh":
+		return RefreshAction
+	default:
+		return InvalidAction
+	}
+}
+
 const (
 	CommentTrigger TriggerSource = iota
 	MergeRequestEventTrigger
 )
 
 type TFCTrigger struct {
-	cfg       TriggerConfig
+	cfg       *TFCTriggerOptions
 	gl        vcs.GitClient
 	tfc       tfc_api.ApiClient
 	runstream runstream.StreamClient
 }
 
-type TFCTriggerConfig struct {
+type TFCTriggerOptions struct {
 	Action                   TriggerAction
 	Branch                   string
 	CommitSHA                string
@@ -76,14 +96,32 @@ type TFCTriggerConfig struct {
 	MergeRequestRootNoteID   int64
 	TriggerSource            TriggerSource
 	VcsProvider              string
-	Workspace                string
+	Workspace                string `short:"w" long:"workspace" description:"A specific terraform Workspace to use" required:"false"`
+	TFVersion                string `short:"v" long:"tf_version" description:"A specific terraform version to use" required:"false"`
+}
+
+func NewTFCTriggerConfig(opts *TFCTriggerOptions) (*TFCTriggerOptions, error) {
+	err := opts.validate()
+	if err != nil {
+		return nil, err
+	}
+
+	return opts, nil
+}
+
+func (tfcOpts *TFCTriggerOptions) validate() error {
+	if tfcOpts == nil {
+		return errors.New("cannot pass nil trigger options")
+	}
+
+	return nil
 }
 
 func NewTFCTrigger(
 	gl vcs.GitClient,
 	tfc tfc_api.ApiClient,
 	runstream runstream.StreamClient,
-	cfg TriggerConfig,
+	cfg *TFCTriggerOptions,
 ) Trigger {
 
 	return &TFCTrigger{
@@ -112,50 +150,42 @@ func init() {
 	r := prometheus.DefaultRegisterer
 	r.MustRegister(tfcRunsStarted)
 }
-func (t *TFCTrigger) GetConfig() TriggerConfig {
-	return t.cfg
+
+func (t *TFCTrigger) SetMergeRequestRootNoteID(id int64) {
+	t.cfg.MergeRequestRootNoteID = id
 }
-func (tC *TFCTriggerConfig) SetMergeRequestRootNoteID(id int64) {
-	tC.MergeRequestRootNoteID = id
+func (t *TFCTrigger) SetMergeRequestDiscussionID(mrDiscID string) {
+	t.cfg.MergeRequestDiscussionID = mrDiscID
 }
-func (tC *TFCTriggerConfig) SetAction(action TriggerAction) {
-	tC.Action = action
+func (t *TFCTrigger) GetAction() TriggerAction {
+	return t.cfg.Action
 }
-func (tC *TFCTriggerConfig) SetWorkspace(workspace string) {
-	tC.Workspace = workspace
+func (t *TFCTrigger) GetBranch() string {
+	return t.cfg.Branch
 }
-func (tC *TFCTriggerConfig) SetMergeRequestDiscussionID(mrDiscID string) {
-	tC.MergeRequestDiscussionID = mrDiscID
+func (t *TFCTrigger) GetCommitSHA() string {
+	return t.cfg.CommitSHA
 }
-func (tC *TFCTriggerConfig) GetAction() TriggerAction {
-	return tC.Action
+func (t *TFCTrigger) GetProjectNameWithNamespace() string {
+	return t.cfg.ProjectNameWithNamespace
 }
-func (tC *TFCTriggerConfig) GetBranch() string {
-	return tC.Branch
+func (t *TFCTrigger) GetMergeRequestIID() int {
+	return t.cfg.MergeRequestIID
 }
-func (tC *TFCTriggerConfig) GetCommitSHA() string {
-	return tC.CommitSHA
+func (t *TFCTrigger) GetMergeRequestDiscussionID() string {
+	return t.cfg.MergeRequestDiscussionID
 }
-func (tC *TFCTriggerConfig) GetProjectNameWithNamespace() string {
-	return tC.ProjectNameWithNamespace
+func (t *TFCTrigger) GetMergeRequestRootNoteID() int64 {
+	return t.cfg.MergeRequestRootNoteID
 }
-func (tC *TFCTriggerConfig) GetMergeRequestIID() int {
-	return tC.MergeRequestIID
+func (t *TFCTrigger) GetTriggerSource() TriggerSource {
+	return t.cfg.TriggerSource
 }
-func (tC *TFCTriggerConfig) GetMergeRequestDiscussionID() string {
-	return tC.MergeRequestDiscussionID
+func (t *TFCTrigger) GetVcsProvider() string {
+	return t.cfg.VcsProvider
 }
-func (tC *TFCTriggerConfig) GetMergeRequestRootNoteID() int64 {
-	return tC.MergeRequestRootNoteID
-}
-func (tC *TFCTriggerConfig) GetTriggerSource() TriggerSource {
-	return tC.TriggerSource
-}
-func (tC *TFCTriggerConfig) GetVcsProvider() string {
-	return tC.VcsProvider
-}
-func (tC *TFCTriggerConfig) GetWorkspace() string {
-	return tC.Workspace
+func (t *TFCTrigger) GetWorkspace() string {
+	return t.cfg.Workspace
 }
 
 // predefined errors
@@ -193,7 +223,7 @@ func FindLockingMR(tags []string, thisMR string) string {
 // the returned error is identical to the input parameter as a convenience
 func (t *TFCTrigger) handleError(err error, msg string) error {
 	log.Error().Err(err).Msg(msg)
-	if err := t.gl.CreateMergeRequestComment(t.cfg.GetMergeRequestIID(), t.cfg.GetProjectNameWithNamespace(), fmt.Sprintf("Error: %s: %v", msg, err)); err != nil {
+	if err := t.gl.CreateMergeRequestComment(t.GetMergeRequestIID(), t.GetProjectNameWithNamespace(), fmt.Sprintf("Error: %s: %v", msg, err)); err != nil {
 		log.Error().Err(err).Msg("could not post error to Gitlab MR")
 	}
 	return err
@@ -201,7 +231,7 @@ func (t *TFCTrigger) handleError(err error, msg string) error {
 
 // / postUpdate puts a message on a relevant MR
 func (t *TFCTrigger) postUpdate(msg string) error {
-	return t.gl.CreateMergeRequestComment(t.cfg.GetMergeRequestIID(), t.cfg.GetProjectNameWithNamespace(), msg)
+	return t.gl.CreateMergeRequestComment(t.GetMergeRequestIID(), t.GetProjectNameWithNamespace(), msg)
 
 }
 
@@ -214,14 +244,14 @@ func (t *TFCTrigger) getLockingMR(workspace string) string {
 		log.Info().Msg("no tags returned")
 		return ""
 	}
-	lockingMR := FindLockingMR(tags, fmt.Sprintf("%d", t.cfg.GetMergeRequestIID()))
+	lockingMR := FindLockingMR(tags, fmt.Sprintf("%d", t.GetMergeRequestIID()))
 	return lockingMR
 }
 
 func (t *TFCTrigger) getTriggeredWorkspaces(modifiedFiles []string) ([]*TFCWorkspace, error) {
 	cfg, err := getProjectConfigFile(t.gl, t)
 	if err != nil {
-		if t.cfg.GetTriggerSource() == CommentTrigger {
+		if t.GetTriggerSource() == CommentTrigger {
 			return nil, fmt.Errorf("could not read .tfbuddy.yml file for this repo. %w", err)
 		}
 		// we got a webhook for a repo that has not enabled TFBuddy yet. Ignore.
@@ -230,16 +260,16 @@ func (t *TFCTrigger) getTriggeredWorkspaces(modifiedFiles []string) ([]*TFCWorks
 	}
 
 	var triggeredWorkspaces []*TFCWorkspace
-	if t.cfg.GetWorkspace() != "" {
+	if t.GetWorkspace() != "" {
 		var providedWS *TFCWorkspace
 		for _, ws := range cfg.Workspaces {
 			log.Debug().Msg(ws.Name)
-			if t.cfg.GetWorkspace() == ws.Name {
+			if t.GetWorkspace() == ws.Name {
 				providedWS = ws
 			}
 		}
 		if providedWS == nil {
-			log.Warn().Str("workspace_arg", t.cfg.GetWorkspace()).Msg("provided workspace not configured for project")
+			log.Warn().Str("workspace_arg", t.GetWorkspace()).Msg("provided workspace not configured for project")
 			return nil, utils.CreatePermanentError(ErrWorkspaceNotDefined)
 		}
 		triggeredWorkspaces = append(triggeredWorkspaces, providedWS)
@@ -295,7 +325,7 @@ func (t *TFCTrigger) getModifiedWorkspaceBetweenMergeBaseTargetBranch(mr vcs.MR,
 }
 func (t *TFCTrigger) getTriggeredWorkspacesForRequest(mr vcs.MR) ([]*TFCWorkspace, error) {
 
-	mrModifiedFiles, err := t.gl.GetMergeRequestModifiedFiles(mr.GetInternalID(), t.cfg.GetProjectNameWithNamespace())
+	mrModifiedFiles, err := t.gl.GetMergeRequestModifiedFiles(mr.GetInternalID(), t.GetProjectNameWithNamespace())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get a list of modified files. %w", err)
 	}
@@ -306,19 +336,19 @@ func (t *TFCTrigger) getTriggeredWorkspacesForRequest(mr vcs.MR) ([]*TFCWorkspac
 
 // cloneGitRepo will clone the git repo for a specific MR and returns the temp path to be cleaned up later
 func (t *TFCTrigger) cloneGitRepo(mr vcs.MR) (vcs.GitRepo, error) {
-	safeProj := strings.ReplaceAll(t.cfg.GetProjectNameWithNamespace(), "/", "-")
-	cloneDir, err := ioutil.TempDir("", fmt.Sprintf("%s-%d-*", safeProj, t.cfg.GetMergeRequestIID()))
+	safeProj := strings.ReplaceAll(t.GetProjectNameWithNamespace(), "/", "-")
+	cloneDir, err := ioutil.TempDir("", fmt.Sprintf("%s-%d-*", safeProj, t.GetMergeRequestIID()))
 	if err != nil {
 		return nil, fmt.Errorf("could not create tmp directory. %w", err)
 	}
-	repo, err := t.gl.CloneMergeRequest(t.cfg.GetProjectNameWithNamespace(), mr, cloneDir)
+	repo, err := t.gl.CloneMergeRequest(t.GetProjectNameWithNamespace(), mr, cloneDir)
 	if err != nil {
 		return nil, utils.CreatePermanentError(err)
 	}
 	return repo, nil
 }
 func (t *TFCTrigger) TriggerTFCEvents() (*TriggeredTFCWorkspaces, error) {
-	mr, err := t.gl.GetMergeRequest(t.cfg.GetMergeRequestIID(), t.cfg.GetProjectNameWithNamespace())
+	mr, err := t.gl.GetMergeRequest(t.GetMergeRequestIID(), t.GetProjectNameWithNamespace())
 	if err != nil {
 		return nil, fmt.Errorf("could not read MergeRequest data from Gitlab API. %w", err)
 	}
@@ -375,7 +405,7 @@ func (t *TFCTrigger) TriggerTFCEvents() (*TriggeredTFCWorkspaces, error) {
 			workspaceStatus.Executed = append(workspaceStatus.Executed, cfgWS.Name)
 		}
 
-	} else if t.cfg.GetTriggerSource() == CommentTrigger {
+	} else if t.GetTriggerSource() == CommentTrigger {
 		log.Error().Err(ErrNoChangesDetected)
 		t.postUpdate(ErrNoChangesDetected.Error())
 		return nil, nil
@@ -389,7 +419,7 @@ func (t *TFCTrigger) TriggerTFCEvents() (*TriggeredTFCWorkspaces, error) {
 }
 
 func (t *TFCTrigger) TriggerCleanupEvent() error {
-	mr, err := t.gl.GetMergeRequest(t.cfg.GetMergeRequestIID(), t.cfg.GetProjectNameWithNamespace())
+	mr, err := t.gl.GetMergeRequest(t.GetMergeRequestIID(), t.GetProjectNameWithNamespace())
 	if err != nil {
 		return fmt.Errorf("could not read MergeRequest data from Gitlab API. %w", err)
 	}
@@ -423,7 +453,7 @@ func (t *TFCTrigger) TriggerCleanupEvent() error {
 		}
 	}
 	_, err = t.gl.CreateMergeRequestDiscussion(mr.GetInternalID(),
-		t.cfg.GetProjectNameWithNamespace(),
+		t.GetProjectNameWithNamespace(),
 		fmt.Sprintf("Released locks for workspaces: %s", strings.Join(wsNames, ",")),
 	)
 	if err != nil {
@@ -467,20 +497,20 @@ func (t *TFCTrigger) triggerRunForWorkspace(cfgWS *TFCWorkspace, mr vcs.Detailed
 	}
 
 	// Check if workspace allows API driven runs
-	if ws.VCSRepo != nil && t.cfg.GetAction() == ApplyAction {
+	if ws.VCSRepo != nil && t.GetAction() == ApplyAction {
 		return fmt.Errorf("cannot trigger apply for VCS workspace. TFC workspace is configured with a VCS backend, must merge to trigger an Apply")
 	}
 
 	// if the run is a lock or unlock call that function and return.
 	// the context in the repo isn't necessary
-	if t.cfg.GetAction() == LockAction || t.cfg.GetAction() == UnlockAction {
-		err = t.LockUnlockWorkspace(ws, mr, t.cfg.GetAction() == LockAction)
+	if t.GetAction() == LockAction || t.GetAction() == UnlockAction {
+		err = t.LockUnlockWorkspace(ws, mr, t.GetAction() == LockAction)
 		if err != nil {
 			return fmt.Errorf("error modifying the TFC lock on the workspace. %w", err)
 		}
 		_, err := t.gl.CreateMergeRequestDiscussion(mr.GetInternalID(),
-			t.cfg.GetProjectNameWithNamespace(),
-			fmt.Sprintf("Successfully %sed Workspace `%s/%s`", t.cfg.GetAction(), org, wsName),
+			t.GetProjectNameWithNamespace(),
+			fmt.Sprintf("Successfully %sed Workspace `%s/%s`", t.GetAction(), org, wsName),
 		)
 		if err != nil {
 			return fmt.Errorf("error posting successful lock modification status. %w", err)
@@ -495,9 +525,9 @@ func (t *TFCTrigger) triggerRunForWorkspace(cfgWS *TFCWorkspace, mr vcs.Detailed
 	}
 
 	isApply := false
-	if t.cfg.GetAction() == ApplyAction {
+	if t.GetAction() == ApplyAction {
 		isApply = true
-	} else if t.cfg.GetAction() != PlanAction {
+	} else if t.GetAction() != PlanAction {
 		return fmt.Errorf("run action was not apply or plan. %w", err)
 	}
 	// If the workspace is locked tell the user and don't queue a run
@@ -512,7 +542,7 @@ func (t *TFCTrigger) triggerRunForWorkspace(cfgWS *TFCWorkspace, mr vcs.Detailed
 			err = t.tfc.AddTags(context.Background(),
 				ws.ID,
 				tfPrefix,
-				fmt.Sprintf("%d", t.cfg.GetMergeRequestIID()),
+				fmt.Sprintf("%d", t.GetMergeRequestIID()),
 			)
 			if err != nil {
 				return fmt.Errorf("error adding tags to workspace. %w", err)
@@ -521,15 +551,15 @@ func (t *TFCTrigger) triggerRunForWorkspace(cfgWS *TFCWorkspace, mr vcs.Detailed
 	}
 	// create a new Merge Request discussion thread where status updates will be nested
 	disc, err := t.gl.CreateMergeRequestDiscussion(mr.GetInternalID(),
-		t.cfg.GetProjectNameWithNamespace(),
-		fmt.Sprintf("Starting TFC %v for Workspace: `%s/%s`.", t.cfg.GetAction(), org, wsName),
+		t.GetProjectNameWithNamespace(),
+		fmt.Sprintf("Starting TFC %v for Workspace: `%s/%s`.", t.GetAction(), org, wsName),
 	)
 	if err != nil {
 		return fmt.Errorf("could not create MR discussion thread for TFC run status updates. %w", err)
 	}
-	t.GetConfig().SetMergeRequestDiscussionID(disc.GetDiscussionID())
+	t.SetMergeRequestDiscussionID(disc.GetDiscussionID())
 	if len(disc.GetMRNotes()) > 0 {
-		t.GetConfig().SetMergeRequestRootNoteID(disc.GetMRNotes()[0].GetNoteID())
+		t.SetMergeRequestRootNoteID(disc.GetMRNotes()[0].GetNoteID())
 	} else {
 		log.Debug().Msg("No MR Notes found")
 	}
@@ -538,15 +568,16 @@ func (t *TFCTrigger) triggerRunForWorkspace(cfgWS *TFCWorkspace, mr vcs.Detailed
 	run, err := t.tfc.CreateRunFromSource(&tfc_api.ApiRunOptions{
 		IsApply:      isApply,
 		Path:         pkgDir,
-		Message:      fmt.Sprintf("MR [!%d]: %s", t.cfg.GetMergeRequestIID(), mr.GetTitle()),
+		Message:      fmt.Sprintf("MR [!%d]: %s", t.GetMergeRequestIID(), mr.GetTitle()),
 		Organization: org,
 		Workspace:    wsName,
+		TFVersion:    t.cfg.TFVersion,
 	})
 	if err != nil {
 		return fmt.Errorf("could not create TFC run. %w", err)
 	}
 
-	tfcRunsStarted.WithLabelValues(org, wsName, t.cfg.GetAction().String()).Inc()
+	tfcRunsStarted.WithLabelValues(org, wsName, t.GetAction().String()).Inc()
 	log.Debug().
 		Str("RunID", run.ID).
 		Str("Org", org).
@@ -563,13 +594,13 @@ func (t *TFCTrigger) publishRunToStream(run *tfe.Run) error {
 		Organization:                         run.Workspace.Organization.Name,
 		Workspace:                            run.Workspace.Name,
 		Source:                               "merge_request",
-		Action:                               t.cfg.GetAction().String(),
-		CommitSHA:                            t.cfg.GetCommitSHA(),
-		MergeRequestProjectNameWithNamespace: t.cfg.GetProjectNameWithNamespace(),
-		MergeRequestIID:                      t.cfg.GetMergeRequestIID(),
-		DiscussionID:                         t.cfg.GetMergeRequestDiscussionID(),
-		RootNoteID:                           t.cfg.GetMergeRequestRootNoteID(),
-		VcsProvider:                          t.cfg.GetVcsProvider(),
+		Action:                               t.GetAction().String(),
+		CommitSHA:                            t.GetCommitSHA(),
+		MergeRequestProjectNameWithNamespace: t.GetProjectNameWithNamespace(),
+		MergeRequestIID:                      t.GetMergeRequestIID(),
+		DiscussionID:                         t.GetMergeRequestDiscussionID(),
+		RootNoteID:                           t.GetMergeRequestRootNoteID(),
+		VcsProvider:                          t.GetVcsProvider(),
 	}
 	err := t.runstream.AddRunMeta(rmd)
 	if err != nil {

@@ -24,16 +24,21 @@ func (w *GitlabEventWorker) processMergeRequestEvent(msg *MergeRequestEventMsg) 
 		return projectName, nil
 	}
 
-	trigger := tfc_trigger.NewTFCTrigger(w.gl, w.tfc, w.runstream,
-		&tfc_trigger.TFCTriggerConfig{
-			Action:                   tfc_trigger.PlanAction,
-			Branch:                   event.ObjectAttributes.SourceBranch,
-			CommitSHA:                event.ObjectAttributes.LastCommit.ID,
-			ProjectNameWithNamespace: event.ObjectAttributes.Source.PathWithNamespace,
-			MergeRequestIID:          event.ObjectAttributes.IID,
-			TriggerSource:            tfc_trigger.MergeRequestEventTrigger,
-			VcsProvider:              "gitlab",
-		})
+	cfg, err := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
+		Action:                   tfc_trigger.PlanAction,
+		Branch:                   event.ObjectAttributes.SourceBranch,
+		CommitSHA:                event.ObjectAttributes.LastCommit.ID,
+		ProjectNameWithNamespace: event.ObjectAttributes.Source.PathWithNamespace,
+		MergeRequestIID:          event.ObjectAttributes.IID,
+		TriggerSource:            tfc_trigger.MergeRequestEventTrigger,
+		VcsProvider:              "gitlab",
+	})
+	if err != nil {
+		log.Error().Err(err).Msg("could not create TFCTriggerConfig")
+		return projectName, err
+	}
+
+	trigger := tfc_trigger.NewTFCTrigger(w.gl, w.tfc, w.runstream, cfg)
 	switch event.ObjectAttributes.Action {
 	case "open", "reopen":
 		_, err := trigger.TriggerTFCEvents()

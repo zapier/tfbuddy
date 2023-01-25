@@ -27,6 +27,10 @@ TFBuddy consists of the webhook handler and a NATS cluster.
 
 See [Installation Docs](https://tfbuddy.readthedocs.io/en/stable/usage/)
 
+## Contributing
+
+The [contributing](./docs/contributing.md) has everything you need to start working on TFBuddy.
+
 
 ## Documentation
 
