@@ -29,7 +29,7 @@ See [Installation Docs](https://tfbuddy.readthedocs.io/en/stable/usage/)
 
 ## Contributing
 
-The [contributing](./docs/contributing.md) has everything you need to start working on TFBuddy.
+The [contributing](https://tfbuddy.readthedocs.io/en/stable/contributing/) has everything you need to start working on TFBuddy.
 
 
 ## Documentation

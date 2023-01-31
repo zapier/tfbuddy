@@ -14,7 +14,7 @@ import (
 var (
 	ErrNotTFCCommand = errors.New("not a TFC command")
 	ErrOtherTFTool   = errors.New("use 'tfc' to interact with tfbuddy")
-	ErrNoNotePassed  = errors.New("no notes passed in not block")
+	ErrNoNotePassed  = errors.New("no notes passed in note block")
 	ErrInvalidAction = errors.New("invalid tfc action")
 )
 

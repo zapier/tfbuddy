@@ -119,12 +119,11 @@ type TestMetaData struct {
 	TFBuddyConfig []byte
 }
 type TestSuite struct {
-	MockGitClient *MockGitClient
-	MockGitMR     *MockDetailedMR
-	MockGitRepo   *MockGitRepo
-	MockGitDisc   *MockMRDiscussionNotes
-	MockMRNote    *MockMRNote
-	// MockTriggerConfig *MockTriggerConfig
+	MockGitClient    *MockGitClient
+	MockGitMR        *MockDetailedMR
+	MockGitRepo      *MockGitRepo
+	MockGitDisc      *MockMRDiscussionNotes
+	MockMRNote       *MockMRNote
 	MockApiClient    *MockApiClient
 	MockStreamClient *MockStreamClient
 	MockProject      *MockProject
@@ -211,8 +210,6 @@ func CreateTestSuite(mockCtrl *gomock.Controller, overrides TestOverrides, t *te
 	mockGitDisc := NewMockMRDiscussionNotes(mockCtrl)
 	mockMRNote := NewMockMRNote(mockCtrl)
 
-	// mockTriggerConfig := NewMockTriggerConfig(mockCtrl)
-
 	mockApiClient := NewMockApiClient(mockCtrl)
 
 	mockStreamClient := NewMockStreamClient(mockCtrl)
@@ -220,12 +217,11 @@ func CreateTestSuite(mockCtrl *gomock.Controller, overrides TestOverrides, t *te
 	mockProject := NewMockProject(mockCtrl)
 
 	return &TestSuite{
-		MockGitClient: mockGitClient,
-		MockGitMR:     mockGitMR,
-		MockGitRepo:   mockGitRepo,
-		MockGitDisc:   mockGitDisc,
-		MockMRNote:    mockMRNote,
-		// MockTriggerConfig: mockTriggerConfig,
+		MockGitClient:    mockGitClient,
+		MockGitMR:        mockGitMR,
+		MockGitRepo:      mockGitRepo,
+		MockGitDisc:      mockGitDisc,
+		MockMRNote:       mockMRNote,
 		MockApiClient:    mockApiClient,
 		MockStreamClient: mockStreamClient,
 		MockProject:      mockProject,
