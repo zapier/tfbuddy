@@ -103,7 +103,7 @@ type TFCTriggerOptions struct {
 func NewTFCTriggerConfig(opts *TFCTriggerOptions) (*TFCTriggerOptions, error) {
 	err := opts.validate()
 	if err != nil {
-		return nil, err
+		return nil, utils.CreatePermanentError(err)
 	}
 
 	return opts, nil
