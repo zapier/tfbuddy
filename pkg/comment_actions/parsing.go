@@ -7,17 +7,20 @@ import (
 
 	"github.com/jessevdk/go-flags"
 	"github.com/rs/zerolog/log"
+	"github.com/zapier/tfbuddy/pkg/tfc_trigger"
 	"github.com/zapier/tfbuddy/pkg/utils"
 )
 
 var (
 	ErrNotTFCCommand = errors.New("not a TFC command")
-	ErrOtherTFTool   = errors.New("Use 'tfc' to interact with tfbuddy.")
+	ErrOtherTFTool   = errors.New("use 'tfc' to interact with tfbuddy")
+	ErrNoNotePassed  = errors.New("no notes passed in note block")
+	ErrInvalidAction = errors.New("invalid tfc action")
 )
 
 type CommentOpts struct {
-	Args      CommentArgs `positional-args:"yes" required:"yes"`
-	Workspace string      `short:"w" long:"workspace" description:"A specific terraform Workspace to use" required:"false"`
+	TriggerOpts *tfc_trigger.TFCTriggerOptions
+	Args        CommentArgs `positional-args:"yes" required:"yes"`
 }
 
 type CommentArgs struct {
@@ -28,14 +31,20 @@ type CommentArgs struct {
 
 func ParseCommentCommand(noteBody string) (*CommentOpts, error) {
 	comment := strings.TrimSpace(strings.ToLower(noteBody))
-
 	words := strings.Fields(comment)
-	if len(words) < 2 || len(words) > 4 {
+
+	if len(words) == 0 {
+		return nil, ErrNoNotePassed
+	}
+
+	if len(words)%2 != 0 {
 		log.Debug().Str("comment", comment[0:10]).Msg("not a tfc command")
 		return nil, ErrNotTFCCommand
 	}
 
-	opts := &CommentOpts{}
+	opts := &CommentOpts{
+		TriggerOpts: &tfc_trigger.TFCTriggerOptions{},
+	}
 	_, err := flags.ParseArgs(opts, words)
 	if err != nil {
 		log.Error().Err(err).Msg("error parsing comment as command")
@@ -48,6 +57,11 @@ func ParseCommentCommand(noteBody string) (*CommentOpts, error) {
 	}
 	if opts.Args.Agent != "tfc" {
 		return nil, ErrNotTFCCommand
+	}
+
+	opts.TriggerOpts.Action = tfc_trigger.CheckTriggerAction(opts.Args.Command)
+	if opts.TriggerOpts.Action == tfc_trigger.InvalidAction {
+		return nil, ErrInvalidAction
 	}
 
 	return opts, nil

@@ -36,7 +36,10 @@ func Test_parseCommentCommand(t *testing.T) {
 					Command: "plan",
 					Rest:    nil,
 				},
-				Workspace: "",
+				TriggerOpts: &tfc_trigger.TFCTriggerOptions{
+					Workspace: "",
+					Action:    tfc_trigger.PlanAction,
+				},
 			},
 			wantErr: false,
 		},
@@ -49,7 +52,10 @@ func Test_parseCommentCommand(t *testing.T) {
 					Command: "apply",
 					Rest:    nil,
 				},
-				Workspace: "",
+				TriggerOpts: &tfc_trigger.TFCTriggerOptions{
+					Workspace: "",
+					Action:    tfc_trigger.ApplyAction,
+				},
 			},
 			wantErr: false,
 		},
@@ -62,7 +68,10 @@ func Test_parseCommentCommand(t *testing.T) {
 					Command: "plan",
 					Rest:    nil,
 				},
-				Workspace: "service-foo",
+				TriggerOpts: &tfc_trigger.TFCTriggerOptions{
+					Workspace: "service-foo",
+					Action:    tfc_trigger.PlanAction,
+				},
 			},
 			wantErr: false,
 		},
@@ -75,7 +84,10 @@ func Test_parseCommentCommand(t *testing.T) {
 					Command: "apply",
 					Rest:    nil,
 				},
-				Workspace: "service-foo",
+				TriggerOpts: &tfc_trigger.TFCTriggerOptions{
+					Workspace: "service-foo",
+					Action:    tfc_trigger.ApplyAction,
+				},
 			},
 			wantErr: false,
 		},
@@ -131,17 +143,13 @@ func TestProcessNoteEventPlanError(t *testing.T) {
 	mockMREvent.EXPECT().GetMR().Return(mockSimpleMR).Times(3)
 
 	mockTFCTrigger := mocks.NewMockTrigger(mockCtrl)
-	mockTFCConfig := mocks.NewMockTriggerConfig(mockCtrl)
-	mockTFCConfig.EXPECT().SetAction(tfc_trigger.PlanAction)
-	mockTFCConfig.EXPECT().SetWorkspace("service-tf-buddy")
-	mockTFCTrigger.EXPECT().GetConfig().Return(mockTFCConfig).Times(2)
 	mockTFCTrigger.EXPECT().TriggerTFCEvents().Return(nil, fmt.Errorf("something went wrong"))
 
 	client := &GitlabEventWorker{
 		gl:        mockGitClient,
 		tfc:       mockApiClient,
 		runstream: mockStreamClient,
-		triggerCreation: func(gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg tfc_trigger.TriggerConfig) tfc_trigger.Trigger {
+		triggerCreation: func(gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger {
 			return mockTFCTrigger
 		},
 	}
@@ -174,7 +182,7 @@ func TestProcessNoteEventPanicHandling(t *testing.T) {
 		gl:        testSuite.MockGitClient,
 		tfc:       testSuite.MockApiClient,
 		runstream: testSuite.MockStreamClient,
-		triggerCreation: func(gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg tfc_trigger.TriggerConfig) tfc_trigger.Trigger {
+		triggerCreation: func(gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger {
 			return nil
 		},
 	}
@@ -216,10 +224,6 @@ func TestProcessNoteEventPlan(t *testing.T) {
 	mockMREvent.EXPECT().GetMR().Return(mockSimpleMR).Times(2)
 
 	mockTFCTrigger := mocks.NewMockTrigger(mockCtrl)
-	mockTFCConfig := mocks.NewMockTriggerConfig(mockCtrl)
-	mockTFCConfig.EXPECT().SetAction(tfc_trigger.PlanAction)
-	mockTFCConfig.EXPECT().SetWorkspace("service-tf-buddy")
-	mockTFCTrigger.EXPECT().GetConfig().Return(mockTFCConfig).Times(2)
 	mockTFCTrigger.EXPECT().TriggerTFCEvents().Return(&tfc_trigger.TriggeredTFCWorkspaces{
 		Executed: []string{"service-tf-buddy"},
 	}, nil)
@@ -228,7 +232,7 @@ func TestProcessNoteEventPlan(t *testing.T) {
 		gl:        mockGitClient,
 		tfc:       mockApiClient,
 		runstream: mockStreamClient,
-		triggerCreation: func(gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg tfc_trigger.TriggerConfig) tfc_trigger.Trigger {
+		triggerCreation: func(gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger {
 			return mockTFCTrigger
 		},
 	}
@@ -269,7 +273,7 @@ func TestProcessNoteEventPlanFailedWorkspace(t *testing.T) {
 
 	mockTFCTrigger := mocks.NewMockTrigger(mockCtrl)
 
-	mockTFCTrigger.EXPECT().GetConfig().Return(testSuite.MockTriggerConfig).Times(2)
+	// mockTFCTrigger.EXPECT().GetConfig().Return(testSuite.MockTriggerConfig).Times(2)
 	mockTFCTrigger.EXPECT().TriggerTFCEvents().Return(&tfc_trigger.TriggeredTFCWorkspaces{
 		Errored: []*tfc_trigger.ErroredWorkspace{{
 			Name:  "service-tf-buddy",
@@ -284,7 +288,7 @@ func TestProcessNoteEventPlanFailedWorkspace(t *testing.T) {
 		tfc:       testSuite.MockApiClient,
 		gl:        testSuite.MockGitClient,
 		runstream: testSuite.MockStreamClient,
-		triggerCreation: func(gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg tfc_trigger.TriggerConfig) tfc_trigger.Trigger {
+		triggerCreation: func(gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger {
 			return mockTFCTrigger
 		},
 	}
@@ -324,10 +328,6 @@ func TestProcessNoteEventPlanFailedMultipleWorkspaces(t *testing.T) {
 	mockMREvent.EXPECT().GetMR().Return(testSuite.MockGitMR).AnyTimes()
 
 	mockTFCTrigger := mocks.NewMockTrigger(mockCtrl)
-	mockTFCConfig := mocks.NewMockTriggerConfig(mockCtrl)
-	mockTFCConfig.EXPECT().SetAction(tfc_trigger.PlanAction)
-	mockTFCConfig.EXPECT().SetWorkspace("")
-	mockTFCTrigger.EXPECT().GetConfig().Return(mockTFCConfig).Times(2)
 	mockTFCTrigger.EXPECT().TriggerTFCEvents().Return(&tfc_trigger.TriggeredTFCWorkspaces{
 		Errored: []*tfc_trigger.ErroredWorkspace{{
 			Name:  "service-tf-buddy",
@@ -346,7 +346,7 @@ func TestProcessNoteEventPlanFailedMultipleWorkspaces(t *testing.T) {
 		gl:        testSuite.MockGitClient,
 		tfc:       testSuite.MockApiClient,
 		runstream: testSuite.MockStreamClient,
-		triggerCreation: func(gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg tfc_trigger.TriggerConfig) tfc_trigger.Trigger {
+		triggerCreation: func(gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger {
 			return mockTFCTrigger
 		},
 	}
@@ -392,17 +392,13 @@ func TestProcessNoteEventNoErrorNoRuns(t *testing.T) {
 	mockMREvent.EXPECT().GetMR().Return(mockSimpleMR).Times(2)
 
 	mockTFCTrigger := mocks.NewMockTrigger(mockCtrl)
-	mockTFCConfig := mocks.NewMockTriggerConfig(mockCtrl)
-	mockTFCConfig.EXPECT().SetAction(tfc_trigger.PlanAction)
-	mockTFCConfig.EXPECT().SetWorkspace("service-tf-buddy")
-	mockTFCTrigger.EXPECT().GetConfig().Return(mockTFCConfig).Times(2)
 	mockTFCTrigger.EXPECT().TriggerTFCEvents().Return(nil, nil)
 
 	client := &GitlabEventWorker{
 		gl:        mockGitClient,
 		tfc:       mockApiClient,
 		runstream: mockStreamClient,
-		triggerCreation: func(gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg tfc_trigger.TriggerConfig) tfc_trigger.Trigger {
+		triggerCreation: func(gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger {
 			return mockTFCTrigger
 		},
 	}

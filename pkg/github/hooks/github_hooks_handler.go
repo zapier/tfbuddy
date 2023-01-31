@@ -21,7 +21,7 @@ type TriggerCreationFunc func(
 	vcs vcs.GitClient,
 	tfc tfc_api.ApiClient,
 	runstream runstream.StreamClient,
-	cfg tfc_trigger.TriggerConfig,
+	cfg *tfc_trigger.TFCTriggerOptions,
 ) tfc_trigger.Trigger
 
 type GithubHooksHandler struct {

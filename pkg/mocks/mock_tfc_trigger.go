@@ -34,18 +34,168 @@ func (m *MockTrigger) EXPECT() *MockTriggerMockRecorder {
 	return m.recorder
 }
 
-// GetConfig mocks base method.
-func (m *MockTrigger) GetConfig() tfc_trigger.TriggerConfig {
+// GetAction mocks base method.
+func (m *MockTrigger) GetAction() tfc_trigger.TriggerAction {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetConfig")
-	ret0, _ := ret[0].(tfc_trigger.TriggerConfig)
+	ret := m.ctrl.Call(m, "GetAction")
+	ret0, _ := ret[0].(tfc_trigger.TriggerAction)
 	return ret0
 }
 
-// GetConfig indicates an expected call of GetConfig.
-func (mr *MockTriggerMockRecorder) GetConfig() *gomock.Call {
+// GetAction indicates an expected call of GetAction.
+func (mr *MockTriggerMockRecorder) GetAction() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetConfig", reflect.TypeOf((*MockTrigger)(nil).GetConfig))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAction", reflect.TypeOf((*MockTrigger)(nil).GetAction))
+}
+
+// GetBranch mocks base method.
+func (m *MockTrigger) GetBranch() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetBranch")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetBranch indicates an expected call of GetBranch.
+func (mr *MockTriggerMockRecorder) GetBranch() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBranch", reflect.TypeOf((*MockTrigger)(nil).GetBranch))
+}
+
+// GetCommitSHA mocks base method.
+func (m *MockTrigger) GetCommitSHA() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetCommitSHA")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetCommitSHA indicates an expected call of GetCommitSHA.
+func (mr *MockTriggerMockRecorder) GetCommitSHA() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCommitSHA", reflect.TypeOf((*MockTrigger)(nil).GetCommitSHA))
+}
+
+// GetMergeRequestDiscussionID mocks base method.
+func (m *MockTrigger) GetMergeRequestDiscussionID() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetMergeRequestDiscussionID")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetMergeRequestDiscussionID indicates an expected call of GetMergeRequestDiscussionID.
+func (mr *MockTriggerMockRecorder) GetMergeRequestDiscussionID() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMergeRequestDiscussionID", reflect.TypeOf((*MockTrigger)(nil).GetMergeRequestDiscussionID))
+}
+
+// GetMergeRequestIID mocks base method.
+func (m *MockTrigger) GetMergeRequestIID() int {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetMergeRequestIID")
+	ret0, _ := ret[0].(int)
+	return ret0
+}
+
+// GetMergeRequestIID indicates an expected call of GetMergeRequestIID.
+func (mr *MockTriggerMockRecorder) GetMergeRequestIID() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMergeRequestIID", reflect.TypeOf((*MockTrigger)(nil).GetMergeRequestIID))
+}
+
+// GetMergeRequestRootNoteID mocks base method.
+func (m *MockTrigger) GetMergeRequestRootNoteID() int64 {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetMergeRequestRootNoteID")
+	ret0, _ := ret[0].(int64)
+	return ret0
+}
+
+// GetMergeRequestRootNoteID indicates an expected call of GetMergeRequestRootNoteID.
+func (mr *MockTriggerMockRecorder) GetMergeRequestRootNoteID() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMergeRequestRootNoteID", reflect.TypeOf((*MockTrigger)(nil).GetMergeRequestRootNoteID))
+}
+
+// GetProjectNameWithNamespace mocks base method.
+func (m *MockTrigger) GetProjectNameWithNamespace() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetProjectNameWithNamespace")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetProjectNameWithNamespace indicates an expected call of GetProjectNameWithNamespace.
+func (mr *MockTriggerMockRecorder) GetProjectNameWithNamespace() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetProjectNameWithNamespace", reflect.TypeOf((*MockTrigger)(nil).GetProjectNameWithNamespace))
+}
+
+// GetTriggerSource mocks base method.
+func (m *MockTrigger) GetTriggerSource() tfc_trigger.TriggerSource {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetTriggerSource")
+	ret0, _ := ret[0].(tfc_trigger.TriggerSource)
+	return ret0
+}
+
+// GetTriggerSource indicates an expected call of GetTriggerSource.
+func (mr *MockTriggerMockRecorder) GetTriggerSource() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetTriggerSource", reflect.TypeOf((*MockTrigger)(nil).GetTriggerSource))
+}
+
+// GetVcsProvider mocks base method.
+func (m *MockTrigger) GetVcsProvider() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetVcsProvider")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetVcsProvider indicates an expected call of GetVcsProvider.
+func (mr *MockTriggerMockRecorder) GetVcsProvider() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVcsProvider", reflect.TypeOf((*MockTrigger)(nil).GetVcsProvider))
+}
+
+// GetWorkspace mocks base method.
+func (m *MockTrigger) GetWorkspace() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetWorkspace")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetWorkspace indicates an expected call of GetWorkspace.
+func (mr *MockTriggerMockRecorder) GetWorkspace() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetWorkspace", reflect.TypeOf((*MockTrigger)(nil).GetWorkspace))
+}
+
+// SetMergeRequestDiscussionID mocks base method.
+func (m *MockTrigger) SetMergeRequestDiscussionID(mrdisID string) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "SetMergeRequestDiscussionID", mrdisID)
+}
+
+// SetMergeRequestDiscussionID indicates an expected call of SetMergeRequestDiscussionID.
+func (mr *MockTriggerMockRecorder) SetMergeRequestDiscussionID(mrdisID interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetMergeRequestDiscussionID", reflect.TypeOf((*MockTrigger)(nil).SetMergeRequestDiscussionID), mrdisID)
+}
+
+// SetMergeRequestRootNoteID mocks base method.
+func (m *MockTrigger) SetMergeRequestRootNoteID(id int64) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "SetMergeRequestRootNoteID", id)
+}
+
+// SetMergeRequestRootNoteID indicates an expected call of SetMergeRequestRootNoteID.
+func (mr *MockTriggerMockRecorder) SetMergeRequestRootNoteID(id interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetMergeRequestRootNoteID", reflect.TypeOf((*MockTrigger)(nil).SetMergeRequestRootNoteID), id)
 }
 
 // TriggerCleanupEvent mocks base method.
@@ -75,215 +225,4 @@ func (m *MockTrigger) TriggerTFCEvents() (*tfc_trigger.TriggeredTFCWorkspaces, e
 func (mr *MockTriggerMockRecorder) TriggerTFCEvents() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TriggerTFCEvents", reflect.TypeOf((*MockTrigger)(nil).TriggerTFCEvents))
-}
-
-// MockTriggerConfig is a mock of TriggerConfig interface.
-type MockTriggerConfig struct {
-	ctrl     *gomock.Controller
-	recorder *MockTriggerConfigMockRecorder
-}
-
-// MockTriggerConfigMockRecorder is the mock recorder for MockTriggerConfig.
-type MockTriggerConfigMockRecorder struct {
-	mock *MockTriggerConfig
-}
-
-// NewMockTriggerConfig creates a new mock instance.
-func NewMockTriggerConfig(ctrl *gomock.Controller) *MockTriggerConfig {
-	mock := &MockTriggerConfig{ctrl: ctrl}
-	mock.recorder = &MockTriggerConfigMockRecorder{mock}
-	return mock
-}
-
-// EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockTriggerConfig) EXPECT() *MockTriggerConfigMockRecorder {
-	return m.recorder
-}
-
-// GetAction mocks base method.
-func (m *MockTriggerConfig) GetAction() tfc_trigger.TriggerAction {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetAction")
-	ret0, _ := ret[0].(tfc_trigger.TriggerAction)
-	return ret0
-}
-
-// GetAction indicates an expected call of GetAction.
-func (mr *MockTriggerConfigMockRecorder) GetAction() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAction", reflect.TypeOf((*MockTriggerConfig)(nil).GetAction))
-}
-
-// GetBranch mocks base method.
-func (m *MockTriggerConfig) GetBranch() string {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetBranch")
-	ret0, _ := ret[0].(string)
-	return ret0
-}
-
-// GetBranch indicates an expected call of GetBranch.
-func (mr *MockTriggerConfigMockRecorder) GetBranch() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBranch", reflect.TypeOf((*MockTriggerConfig)(nil).GetBranch))
-}
-
-// GetCommitSHA mocks base method.
-func (m *MockTriggerConfig) GetCommitSHA() string {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetCommitSHA")
-	ret0, _ := ret[0].(string)
-	return ret0
-}
-
-// GetCommitSHA indicates an expected call of GetCommitSHA.
-func (mr *MockTriggerConfigMockRecorder) GetCommitSHA() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCommitSHA", reflect.TypeOf((*MockTriggerConfig)(nil).GetCommitSHA))
-}
-
-// GetMergeRequestDiscussionID mocks base method.
-func (m *MockTriggerConfig) GetMergeRequestDiscussionID() string {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetMergeRequestDiscussionID")
-	ret0, _ := ret[0].(string)
-	return ret0
-}
-
-// GetMergeRequestDiscussionID indicates an expected call of GetMergeRequestDiscussionID.
-func (mr *MockTriggerConfigMockRecorder) GetMergeRequestDiscussionID() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMergeRequestDiscussionID", reflect.TypeOf((*MockTriggerConfig)(nil).GetMergeRequestDiscussionID))
-}
-
-// GetMergeRequestIID mocks base method.
-func (m *MockTriggerConfig) GetMergeRequestIID() int {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetMergeRequestIID")
-	ret0, _ := ret[0].(int)
-	return ret0
-}
-
-// GetMergeRequestIID indicates an expected call of GetMergeRequestIID.
-func (mr *MockTriggerConfigMockRecorder) GetMergeRequestIID() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMergeRequestIID", reflect.TypeOf((*MockTriggerConfig)(nil).GetMergeRequestIID))
-}
-
-// GetMergeRequestRootNoteID mocks base method.
-func (m *MockTriggerConfig) GetMergeRequestRootNoteID() int64 {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetMergeRequestRootNoteID")
-	ret0, _ := ret[0].(int64)
-	return ret0
-}
-
-// GetMergeRequestRootNoteID indicates an expected call of GetMergeRequestRootNoteID.
-func (mr *MockTriggerConfigMockRecorder) GetMergeRequestRootNoteID() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMergeRequestRootNoteID", reflect.TypeOf((*MockTriggerConfig)(nil).GetMergeRequestRootNoteID))
-}
-
-// GetProjectNameWithNamespace mocks base method.
-func (m *MockTriggerConfig) GetProjectNameWithNamespace() string {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetProjectNameWithNamespace")
-	ret0, _ := ret[0].(string)
-	return ret0
-}
-
-// GetProjectNameWithNamespace indicates an expected call of GetProjectNameWithNamespace.
-func (mr *MockTriggerConfigMockRecorder) GetProjectNameWithNamespace() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetProjectNameWithNamespace", reflect.TypeOf((*MockTriggerConfig)(nil).GetProjectNameWithNamespace))
-}
-
-// GetTriggerSource mocks base method.
-func (m *MockTriggerConfig) GetTriggerSource() tfc_trigger.TriggerSource {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetTriggerSource")
-	ret0, _ := ret[0].(tfc_trigger.TriggerSource)
-	return ret0
-}
-
-// GetTriggerSource indicates an expected call of GetTriggerSource.
-func (mr *MockTriggerConfigMockRecorder) GetTriggerSource() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetTriggerSource", reflect.TypeOf((*MockTriggerConfig)(nil).GetTriggerSource))
-}
-
-// GetVcsProvider mocks base method.
-func (m *MockTriggerConfig) GetVcsProvider() string {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetVcsProvider")
-	ret0, _ := ret[0].(string)
-	return ret0
-}
-
-// GetVcsProvider indicates an expected call of GetVcsProvider.
-func (mr *MockTriggerConfigMockRecorder) GetVcsProvider() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVcsProvider", reflect.TypeOf((*MockTriggerConfig)(nil).GetVcsProvider))
-}
-
-// GetWorkspace mocks base method.
-func (m *MockTriggerConfig) GetWorkspace() string {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetWorkspace")
-	ret0, _ := ret[0].(string)
-	return ret0
-}
-
-// GetWorkspace indicates an expected call of GetWorkspace.
-func (mr *MockTriggerConfigMockRecorder) GetWorkspace() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetWorkspace", reflect.TypeOf((*MockTriggerConfig)(nil).GetWorkspace))
-}
-
-// SetAction mocks base method.
-func (m *MockTriggerConfig) SetAction(action tfc_trigger.TriggerAction) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "SetAction", action)
-}
-
-// SetAction indicates an expected call of SetAction.
-func (mr *MockTriggerConfigMockRecorder) SetAction(action interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetAction", reflect.TypeOf((*MockTriggerConfig)(nil).SetAction), action)
-}
-
-// SetMergeRequestDiscussionID mocks base method.
-func (m *MockTriggerConfig) SetMergeRequestDiscussionID(mrdisID string) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "SetMergeRequestDiscussionID", mrdisID)
-}
-
-// SetMergeRequestDiscussionID indicates an expected call of SetMergeRequestDiscussionID.
-func (mr *MockTriggerConfigMockRecorder) SetMergeRequestDiscussionID(mrdisID interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetMergeRequestDiscussionID", reflect.TypeOf((*MockTriggerConfig)(nil).SetMergeRequestDiscussionID), mrdisID)
-}
-
-// SetMergeRequestRootNoteID mocks base method.
-func (m *MockTriggerConfig) SetMergeRequestRootNoteID(id int64) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "SetMergeRequestRootNoteID", id)
-}
-
-// SetMergeRequestRootNoteID indicates an expected call of SetMergeRequestRootNoteID.
-func (mr *MockTriggerConfigMockRecorder) SetMergeRequestRootNoteID(id interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetMergeRequestRootNoteID", reflect.TypeOf((*MockTriggerConfig)(nil).SetMergeRequestRootNoteID), id)
-}
-
-// SetWorkspace mocks base method.
-func (m *MockTriggerConfig) SetWorkspace(workspace string) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "SetWorkspace", workspace)
-}
-
-// SetWorkspace indicates an expected call of SetWorkspace.
-func (mr *MockTriggerConfigMockRecorder) SetWorkspace(workspace interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetWorkspace", reflect.TypeOf((*MockTriggerConfig)(nil).SetWorkspace), workspace)
 }
