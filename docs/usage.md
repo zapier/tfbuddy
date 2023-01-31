@@ -1,7 +1,4 @@
-# Usage 
-
-How to deploy TF Buddy onto your infrastructure. We provide a helm chart to simplify deployment. 
-
+# Usage
 
 ## Installation
 
@@ -68,7 +65,7 @@ secrets:
   # envs: []
 ```
 
-An ingress resource is provided for setting external access. 
+An ingress resource is provided for setting external access.
 ```yaml
 ingress:
   create: true
@@ -83,5 +80,35 @@ ingress:
           pathType: Prefix
 ```
 
-
 For `nats` helm specific configurations go [here](https://github.com/nats-io/k8s/tree/main/helm/charts/nats#jetstream)
+
+##### .tfbuddy.yaml
+
+To use TF Buddy in a given repo, place a file named `.tfbuddy.yaml` in its root, with contents similar to this:
+
+```yaml
+workspaces:
+    # The actual name of the TFC workspace you want to control with TF Buddy
+  - name: team_name_prod
+    # The main directory (relative to this file) to monitor for changes
+    dir: terraform/production/
+    # Any additional directories (relative to this file) to monitor for changes
+    triggerDirs:
+      - terraform/production/**
+    # Additional configuration, with a separate TFC workspace and directories
+  - name: team_name_staging
+    dir: terraform/staging/
+    triggerDirs:
+      - terraform/staging/**/*.tf
+      - terraform/staging/{foo,bar}/**
+      - terraform/staging/**/[^0-9]*
+```
+
+TF Buddy uses [doublestar](https://github.com/bmatcuk/doublestar#about) for its path matching. In the example above, the following directories/files would be watched:
+
+* `terraform/$ENV` - anything that is a direct child of `terraform/production` or `terraform/staging`
+* `terraform/production/**` - anything that has `terraform/production` as an ancestor
+* `terraform/staging/**/*.tf` - any Terraform files that have `terraform/staging` as an ancestor
+* `terraform/staging/{foo,bar}/**` - anything that has `terraform/staging/foo` or `terraform/staging/bar` as an ancestor
+* `terraform/staging/**/[^0-9]*` - anything that has `terraform/staging` as an ancestor and does _not_ start with an integer
+

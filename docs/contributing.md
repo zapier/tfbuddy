@@ -124,4 +124,5 @@ testSuite.InitTestSuite()
 
 ### Documentation Changes
 
-We use [mkdocs](https://www.mkdocs.org/) to build our docs locally. Ensure that you have `poetry` installed and run `poetry install` in the root of the repo. Once it pulls all of the required dependencies you can run `poetry run mkdocs serve` to launch a local server that will serve `docs/`. It will also auto reload when any file is changed in that directory. By default you can view the docs under `http://localhost:8000`. Please confirm that any changes to documentation render correctly and that your changes display as expected. 
+We use [mkdocs](https://www.mkdocs.org/) to build our docs locally. Ensure that you have `poetry` installed and run `poetry install` in the root of the repo. Once it pulls all of the required dependencies you can run `poetry run mkdocs serve` to launch a local server that will serve `docs/`. It will also auto reload when any file is changed in that directory. By default you can view the docs under `http://localhost:8000`. Please confirm that any changes to documentation render correctly and that your changes display as expected.
+
