@@ -119,16 +119,15 @@ type TestMetaData struct {
 	TFBuddyConfig []byte
 }
 type TestSuite struct {
-	MockGitClient     *MockGitClient
-	MockGitMR         *MockDetailedMR
-	MockGitRepo       *MockGitRepo
-	MockGitDisc       *MockMRDiscussionNotes
-	MockMRNote        *MockMRNote
-	MockTriggerConfig *MockTriggerConfig
-	MockApiClient     *MockApiClient
-	MockStreamClient  *MockStreamClient
-	MockProject       *MockProject
-	MetaData          *TestMetaData
+	MockGitClient    *MockGitClient
+	MockGitMR        *MockDetailedMR
+	MockGitRepo      *MockGitRepo
+	MockGitDisc      *MockMRDiscussionNotes
+	MockMRNote       *MockMRNote
+	MockApiClient    *MockApiClient
+	MockStreamClient *MockStreamClient
+	MockProject      *MockProject
+	MetaData         *TestMetaData
 }
 type TestOverrides struct {
 	ProjectConfig *tfc_trigger.ProjectConfig
@@ -171,20 +170,6 @@ func (ts *TestSuite) InitTestSuite() {
 	ts.MockGitClient.EXPECT().CloneMergeRequest(ts.MetaData.ProjectNameNS, gomock.Any(), gomock.Any()).Return(ts.MockGitRepo, nil).AnyTimes()
 	ts.MockGitClient.EXPECT().CreateMergeRequestDiscussion(ts.MetaData.MRIID, ts.MetaData.ProjectNameNS, &RegexMatcher{regex: regexp.MustCompile("Starting TFC apply for Workspace: `([A-z\\-]){1,}/([A-z\\-]){1,}`.")}).Return(ts.MockGitDisc, nil).AnyTimes()
 
-	ts.MockTriggerConfig.EXPECT().GetAction().Return(tfc_trigger.ApplyAction).AnyTimes()
-	ts.MockTriggerConfig.EXPECT().SetAction(gomock.Any()).AnyTimes()
-	ts.MockTriggerConfig.EXPECT().GetMergeRequestIID().Return(ts.MetaData.MRIID).AnyTimes()
-	ts.MockTriggerConfig.EXPECT().GetProjectNameWithNamespace().Return(ts.MetaData.ProjectNameNS).AnyTimes()
-	ts.MockTriggerConfig.EXPECT().GetBranch().Return(ts.MetaData.SourceBranch).AnyTimes()
-	ts.MockTriggerConfig.EXPECT().GetWorkspace().Return("").AnyTimes()
-	ts.MockTriggerConfig.EXPECT().SetWorkspace(gomock.Any()).AnyTimes()
-	ts.MockTriggerConfig.EXPECT().SetMergeRequestDiscussionID(gomock.Any()).AnyTimes()
-	ts.MockTriggerConfig.EXPECT().SetMergeRequestRootNoteID(gomock.Any()).AnyTimes()
-	ts.MockTriggerConfig.EXPECT().GetCommitSHA().Return("abcd12233").AnyTimes()
-	ts.MockTriggerConfig.EXPECT().GetMergeRequestDiscussionID().Return("1010").AnyTimes()
-	ts.MockTriggerConfig.EXPECT().GetMergeRequestRootNoteID().Return(int64(202)).AnyTimes()
-	ts.MockTriggerConfig.EXPECT().GetVcsProvider().Return("vcs").AnyTimes()
-
 	ts.MockApiClient.EXPECT().GetWorkspaceByName(gomock.Any(), gomock.Any(), gomock.Any()).Return(&tfe.Workspace{ID: "service-tfbuddy"}, nil).AnyTimes()
 	ts.MockApiClient.EXPECT().GetTagsByQuery(gomock.Any(), gomock.Any(), "tfbuddylock").AnyTimes()
 	ts.MockApiClient.EXPECT().AddTags(gomock.Any(), gomock.Any(), "tfbuddylock", "101").AnyTimes()
@@ -225,8 +210,6 @@ func CreateTestSuite(mockCtrl *gomock.Controller, overrides TestOverrides, t *te
 	mockGitDisc := NewMockMRDiscussionNotes(mockCtrl)
 	mockMRNote := NewMockMRNote(mockCtrl)
 
-	mockTriggerConfig := NewMockTriggerConfig(mockCtrl)
-
 	mockApiClient := NewMockApiClient(mockCtrl)
 
 	mockStreamClient := NewMockStreamClient(mockCtrl)
@@ -234,15 +217,14 @@ func CreateTestSuite(mockCtrl *gomock.Controller, overrides TestOverrides, t *te
 	mockProject := NewMockProject(mockCtrl)
 
 	return &TestSuite{
-		MockGitClient:     mockGitClient,
-		MockGitMR:         mockGitMR,
-		MockGitRepo:       mockGitRepo,
-		MockGitDisc:       mockGitDisc,
-		MockMRNote:        mockMRNote,
-		MockTriggerConfig: mockTriggerConfig,
-		MockApiClient:     mockApiClient,
-		MockStreamClient:  mockStreamClient,
-		MockProject:       mockProject,
+		MockGitClient:    mockGitClient,
+		MockGitMR:        mockGitMR,
+		MockGitRepo:      mockGitRepo,
+		MockGitDisc:      mockGitDisc,
+		MockMRNote:       mockMRNote,
+		MockApiClient:    mockApiClient,
+		MockStreamClient: mockStreamClient,
+		MockProject:      mockProject,
 		MetaData: &TestMetaData{
 			MRIID:         mrIID,
 			ProjectNameNS: projectNameNS,

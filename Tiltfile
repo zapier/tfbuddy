@@ -251,7 +251,7 @@ cfgInputs = {
   'TFBUDDY_LOG_LEVEL': 'debug',
   'TFBUDDY_DEFAULT_TFC_ORGANIZATION' : os.getenv('TFC_ORGANIZATION'),
   'TFBUDDY_WORKSPACE_ALLOW_LIST' : tfcOutputs.setdefault('tfc_workspace', '') if tfcOutputs else '',
-  'GITLAB_TOKEN_USER' : os.getenv('GITLAB_TOKEN_USER'),
+  'GITLAB_TOKEN' : os.getenv('GITLAB_TOKEN'),
 }
 if cfg.get('enable_gitlab') and gitlabOutputs:
   cfgInputs.update({'TFBUDDY_PROJECT_ALLOW_LIST': gitlabOutputs.setdefault('gitlab_project_name', '')})

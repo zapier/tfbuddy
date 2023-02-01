@@ -118,7 +118,7 @@ func TestTFCEvents_SingleWorkspacePlan(t *testing.T) {
 
 	testSuite.InitTestSuite()
 
-	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, &tfc_trigger.TFCTriggerConfig{
+	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
 		Action:                   tfc_trigger.PlanAction,
 		Branch:                   testSuite.MetaData.SourceBranch,
 		CommitSHA:                "abcd12233",
@@ -126,6 +126,7 @@ func TestTFCEvents_SingleWorkspacePlan(t *testing.T) {
 		MergeRequestIID:          testSuite.MetaData.MRIID,
 		TriggerSource:            tfc_trigger.CommentTrigger,
 	})
+	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
 	triggeredWS, err := trigger.TriggerTFCEvents()
 	if err != nil {
 		t.Fatal(err)
@@ -163,7 +164,7 @@ func TestTFCEvents_SingleWorkspacePlanError(t *testing.T) {
 	testLogger := zltest.New(t)
 	log.Logger = log.Logger.Output(testLogger)
 
-	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, &tfc_trigger.TFCTriggerConfig{
+	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
 		Action:                   tfc_trigger.PlanAction,
 		Branch:                   "test-branch",
 		CommitSHA:                "abcd12233",
@@ -171,6 +172,7 @@ func TestTFCEvents_SingleWorkspacePlanError(t *testing.T) {
 		MergeRequestIID:          testSuite.MetaData.MRIID,
 		TriggerSource:            tfc_trigger.CommentTrigger,
 	})
+	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
 	triggeredWS, err := trigger.TriggerTFCEvents()
 	if err != nil {
 		t.Fatal(err)
@@ -219,7 +221,7 @@ func TestTFCEvents_SingleWorkspaceApply(t *testing.T) {
 	testLogger := zltest.New(t)
 	log.Logger = log.Logger.Output(testLogger)
 
-	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, &tfc_trigger.TFCTriggerConfig{
+	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
 		Action:                   tfc_trigger.ApplyAction,
 		Branch:                   "test-branch",
 		CommitSHA:                "abcd12233",
@@ -227,6 +229,7 @@ func TestTFCEvents_SingleWorkspaceApply(t *testing.T) {
 		MergeRequestIID:          testSuite.MetaData.MRIID,
 		TriggerSource:            tfc_trigger.CommentTrigger,
 	})
+	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
 	triggeredWS, err := trigger.TriggerTFCEvents()
 	if err != nil {
 		t.Fatal(err)
@@ -291,7 +294,7 @@ func TestTFCEvents_MultiWorkspaceApply(t *testing.T) {
 	testLogger := zltest.New(t)
 	log.Logger = log.Logger.Output(testLogger)
 
-	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, &tfc_trigger.TFCTriggerConfig{
+	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
 		Action:                   tfc_trigger.ApplyAction,
 		Branch:                   testSuite.MetaData.SourceBranch,
 		CommitSHA:                "abcd12233",
@@ -299,6 +302,7 @@ func TestTFCEvents_MultiWorkspaceApply(t *testing.T) {
 		MergeRequestIID:          testSuite.MetaData.MRIID,
 		TriggerSource:            tfc_trigger.CommentTrigger,
 	})
+	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
 	triggeredWS, err := trigger.TriggerTFCEvents()
 	if err != nil {
 		t.Fatal(err)
@@ -350,7 +354,7 @@ func TestTFCEvents_SingleWorkspaceApplyError(t *testing.T) {
 	testLogger := zltest.New(t)
 	log.Logger = log.Logger.Output(testLogger)
 
-	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, &tfc_trigger.TFCTriggerConfig{
+	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
 		Action:                   tfc_trigger.ApplyAction,
 		Branch:                   "test-branch",
 		CommitSHA:                "abcd12233",
@@ -358,6 +362,8 @@ func TestTFCEvents_SingleWorkspaceApplyError(t *testing.T) {
 		MergeRequestIID:          testSuite.MetaData.MRIID,
 		TriggerSource:            tfc_trigger.CommentTrigger,
 	})
+	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+
 	triggeredWS, err := trigger.TriggerTFCEvents()
 	if err == nil {
 		t.Fatal("expected error to be returned")
@@ -418,7 +424,7 @@ func TestTFCEvents_MultiWorkspaceApplyError(t *testing.T) {
 
 	testSuite.InitTestSuite()
 
-	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, &tfc_trigger.TFCTriggerConfig{
+	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
 		Action:                   tfc_trigger.ApplyAction,
 		Branch:                   "test-branch",
 		CommitSHA:                "abcd12233",
@@ -426,6 +432,7 @@ func TestTFCEvents_MultiWorkspaceApplyError(t *testing.T) {
 		MergeRequestIID:          testSuite.MetaData.MRIID,
 		TriggerSource:            tfc_trigger.CommentTrigger,
 	})
+	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
 	triggeredWS, err := trigger.TriggerTFCEvents()
 	if err != nil {
 		t.Fatal(err)
@@ -466,7 +473,7 @@ func TestTFCEvents_WorkspaceApplyModifiedBothSrcDstBranches(t *testing.T) {
 	testLogger := zltest.New(t)
 	log.Logger = log.Logger.Output(testLogger)
 
-	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, mockStreamClient, &tfc_trigger.TFCTriggerConfig{
+	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
 		Action:                   tfc_trigger.ApplyAction,
 		Branch:                   testSuite.MetaData.SourceBranch,
 		CommitSHA:                "abcd12233",
@@ -474,6 +481,7 @@ func TestTFCEvents_WorkspaceApplyModifiedBothSrcDstBranches(t *testing.T) {
 		MergeRequestIID:          testSuite.MetaData.MRIID,
 		TriggerSource:            tfc_trigger.CommentTrigger,
 	})
+	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, mockStreamClient, tCfg)
 	triggeredWS, err := trigger.TriggerTFCEvents()
 	if err != nil {
 		t.Fatal(err)
@@ -533,7 +541,15 @@ func TestTFCEvents_MultiWorkspaceApplyModifiedBothSrcDstBranches(t *testing.T) {
 	testLogger := zltest.New(t)
 	log.Logger = log.Logger.Output(testLogger)
 
-	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, testSuite.MockTriggerConfig)
+	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
+		Action:                   tfc_trigger.ApplyAction,
+		MergeRequestIID:          testSuite.MetaData.MRIID,
+		ProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
+		Branch:                   testSuite.MetaData.SourceBranch,
+		Workspace:                "",
+		CommitSHA:                "abcd12233",
+	})
+	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
 	triggeredWS, err := trigger.TriggerTFCEvents()
 	if err != nil {
 		t.Fatal(err)

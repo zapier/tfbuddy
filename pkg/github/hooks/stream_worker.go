@@ -64,15 +64,20 @@ func (h *GithubHooksHandler) processIssueComment(msg *GithubIssueCommentEventMsg
 	}
 	pullReq := pr.(*github.GithubPR)
 
-	trigger := h.triggerCreation(h.vcs, h.tfc, h.runstream,
-		&tfc_trigger.TFCTriggerConfig{
-			Branch:                   pr.GetSourceBranch(),
-			CommitSHA:                pullReq.GetBase().GetSHA(),
-			ProjectNameWithNamespace: event.GetRepo().GetFullName(),
-			MergeRequestIID:          *event.Issue.Number,
-			TriggerSource:            tfc_trigger.CommentTrigger,
-			VcsProvider:              "github",
-		})
+	opts.TriggerOpts.Branch = pr.GetSourceBranch()
+	opts.TriggerOpts.CommitSHA = pullReq.GetBase().GetSHA()
+	opts.TriggerOpts.ProjectNameWithNamespace = event.GetRepo().GetFullName()
+	opts.TriggerOpts.MergeRequestIID = *event.Issue.Number
+	opts.TriggerOpts.TriggerSource = tfc_trigger.CommentTrigger
+	opts.TriggerOpts.VcsProvider = "github"
+
+	cfg, err := tfc_trigger.NewTFCTriggerConfig(opts.TriggerOpts)
+	if err != nil {
+		log.Error().Err(err).Msg("could not create TFCTriggerConfig")
+		return err
+	}
+
+	trigger := h.triggerCreation(h.vcs, h.tfc, h.runstream, cfg)
 
 	//// TODO: support additional commands and arguments (e.g. destroy, refresh, lock, unlock)
 	//// TODO: this should be refactored and be agnostic to the VCS type
@@ -88,24 +93,12 @@ func (h *GithubHooksHandler) processIssueComment(msg *GithubIssueCommentEventMsg
 			h.postPullRequestComment(event, ":no_entry: Apply failed. Pull Request has conflicts that need to be resolved.")
 			return nil
 		}
-		trigger.GetConfig().SetAction(tfc_trigger.ApplyAction)
-		trigger.GetConfig().SetWorkspace(opts.Workspace)
-
 	case "lock":
 		log.Info().Msg("Got TFC lock command")
-		trigger.GetConfig().SetAction(tfc_trigger.LockAction)
-		trigger.GetConfig().SetWorkspace(opts.Workspace)
-
 	case "plan":
 		log.Info().Msg("Got TFC plan command")
-		trigger.GetConfig().SetAction(tfc_trigger.PlanAction)
-		trigger.GetConfig().SetWorkspace(opts.Workspace)
-
 	case "unlock":
 		log.Info().Msg("Got TFC unlock command")
-		trigger.GetConfig().SetAction(tfc_trigger.UnlockAction)
-		trigger.GetConfig().SetWorkspace(opts.Workspace)
-
 	default:
 		return fmt.Errorf("could not parse command")
 	}

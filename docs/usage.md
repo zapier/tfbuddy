@@ -31,12 +31,10 @@ helm install tfbuddy charts/tfbuddy \
 ```console
 export TFC_TOKEN="" \
        GITLAB_TOKEN="" \
-       GITLAB_TOKEN_USER=""
 
 helm install tfbuddy charts/tfbuddy \
   --set secrets.env.TFC_TOKEN="${TFC_TOKEN}" \
   --set secrets.env.GITLAB_TOKEN="${GITLAB_TOKEN}" \
-  --set secrets.env.GITLAB_TOKEN_USER="${GITLAB_TOKEN_USER}" \
   --dependency-update
 ```
 

@@ -40,6 +40,7 @@ func NewGitlabClient() *GitlabClient {
 			return nil
 		}
 	}
+	//TODO: I believe this is legacy and can be removed?
 	tokenUser := os.Getenv("GITLAB_TOKEN_USER")
 	if token == "" {
 		if token == "" {

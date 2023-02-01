@@ -92,10 +92,10 @@ type TFCWorkspace struct {
 }
 
 func getProjectConfigFile(gl vcs.GitClient, trigger *TFCTrigger) (*ProjectConfig, error) {
-	branches := []string{trigger.cfg.GetBranch(), "master", "main"}
+	branches := []string{trigger.GetBranch(), "master", "main"}
 	for _, branch := range branches {
 		log.Debug().Msg(fmt.Sprintf("considering branch %s", branch))
-		b, err := gl.GetRepoFile(trigger.cfg.GetProjectNameWithNamespace(), ProjectConfigFilename, branch)
+		b, err := gl.GetRepoFile(trigger.GetProjectNameWithNamespace(), ProjectConfigFilename, branch)
 		if err != nil {
 			log.Info().Err(err).Msg(fmt.Sprintf("no file on branch %s", branch))
 			continue

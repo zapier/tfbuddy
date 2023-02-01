@@ -33,18 +33,23 @@ func (w *GitlabEventWorker) processNoteEvent(event vcs.MRCommentEvent) (projectN
 		return proj, err
 	}
 
-	trigger := w.triggerCreation(w.gl, w.tfc, w.runstream,
-		&tfc_trigger.TFCTriggerConfig{
-			Branch:                   event.GetMR().GetSourceBranch(),
-			CommitSHA:                event.GetLastCommit().GetSHA(),
-			ProjectNameWithNamespace: proj,
-			MergeRequestIID:          event.GetMR().GetInternalID(),
-			TriggerSource:            tfc_trigger.CommentTrigger,
-			VcsProvider:              "gitlab",
-		})
+	opts.TriggerOpts.Branch = event.GetMR().GetSourceBranch()
+	opts.TriggerOpts.CommitSHA = event.GetLastCommit().GetSHA()
+	opts.TriggerOpts.ProjectNameWithNamespace = proj
+	opts.TriggerOpts.MergeRequestIID = event.GetMR().GetInternalID()
+	opts.TriggerOpts.TriggerSource = tfc_trigger.CommentTrigger
+	opts.TriggerOpts.VcsProvider = "gitlab"
+
+	cfg, err := tfc_trigger.NewTFCTriggerConfig(opts.TriggerOpts)
+	if err != nil {
+		log.Error().Err(err).Msg("could not create TFCTriggerConfig")
+		return proj, err
+	}
+
+	trigger := w.triggerCreation(w.gl, w.tfc, w.runstream, cfg)
 
 	if event.GetAttributes().GetType() == string(gitlab.DiscussionNote) {
-		trigger.GetConfig().SetMergeRequestDiscussionID(event.GetAttributes().GetDiscussionID())
+		trigger.SetMergeRequestDiscussionID(event.GetAttributes().GetDiscussionID())
 	}
 
 	// TODO: support additional commands and arguments (e.g. destroy, refresh, lock, unlock)
@@ -60,24 +65,12 @@ func (w *GitlabEventWorker) processNoteEvent(event vcs.MRCommentEvent) (projectN
 			w.postMessageToMergeRequest(event, ":no_entry: Apply failed. Merge Request has conflicts that need to be resolved.")
 			return proj, nil
 		}
-		trigger.GetConfig().SetAction(tfc_trigger.ApplyAction)
-		trigger.GetConfig().SetWorkspace(opts.Workspace)
-
 	case "lock":
 		log.Info().Msg("Got TFC lock command")
-		trigger.GetConfig().SetAction(tfc_trigger.LockAction)
-		trigger.GetConfig().SetWorkspace(opts.Workspace)
-
 	case "plan":
 		log.Info().Msg("Got TFC plan command")
-		trigger.GetConfig().SetAction(tfc_trigger.PlanAction)
-		trigger.GetConfig().SetWorkspace(opts.Workspace)
-
 	case "unlock":
 		log.Info().Msg("Got TFC unlock command")
-		trigger.GetConfig().SetAction(tfc_trigger.UnlockAction)
-		trigger.GetConfig().SetWorkspace(opts.Workspace)
-
 	default:
 		return proj, nil
 	}

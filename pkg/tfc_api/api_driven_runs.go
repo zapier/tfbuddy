@@ -20,6 +20,8 @@ type ApiRunOptions struct {
 	Organization string
 	// Workspace is the Terraform Cloud workspace name
 	Workspace string
+	// Terraform Version
+	TFVersion string
 }
 
 // CreateRunFromSource creates a new Terraform Cloud run from source files
@@ -38,20 +40,32 @@ func (c *TFCClient) CreateRunFromSource(opts *ApiRunOptions) (*tfe.Run, error) {
 		return nil, err
 	}
 
+	// TODO: Clean this up maybe check for valid Versions from TFCloud
+	var tfVersion *string = nil
+	var tfPlanOnly *bool = nil
+	if opts.TFVersion != "" && !opts.IsApply {
+		log.Debug().Str("version", opts.TFVersion).Msg("setting tf version")
+		tfVersion = tfe.String(opts.TFVersion)
+		tfPlanOnly = tfe.Bool(true)
+	}
+
 	// create run for new CV
 	run, err := c.Client.Runs.Create(ctx, tfe.RunCreateOptions{
 		Message:              tfe.String(opts.Message),
 		ConfigurationVersion: cv,
 		Workspace:            ws,
 		AutoApply:            tfe.Bool(opts.IsApply),
+		PlanOnly:             tfPlanOnly,
+		TerraformVersion:     tfVersion,
 	})
-	run.Workspace = ws
-	// TFC API is weird, it doesn't return the correct value for Speculative, so we override here.
-	run.ConfigurationVersion.Speculative = !opts.IsApply
 	if err != nil {
 		log.Error().Err(err).Msg("could create run")
 		return nil, err
 	}
+
+	run.Workspace = ws
+	// TFC API is weird, it doesn't return the correct value for Speculative, so we override here.
+	run.ConfigurationVersion.Speculative = !opts.IsApply
 
 	return run, nil
 }

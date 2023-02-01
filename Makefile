@@ -13,10 +13,13 @@ docker:
 	docker build -t tfbuddy:dev -f Dockerfile.server ./
 
 minikube-up:
-	minikube start --driver=hyperkit
+	minikube start --driver=docker
 	minikube addons enable ingress
 	minikube addons enable registry
 	echo "Remember to run minikube tunnel on mac before running localdev"
+
+tunnel:
+	minikube tunnel
 
 setup-localdev:
 	tilt up
