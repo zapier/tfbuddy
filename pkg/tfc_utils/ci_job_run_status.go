@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zapier/tfbuddy/pkg/gitlab"
 	"github.com/zapier/tfbuddy/pkg/tfc_api"
+	"github.com/zapier/tfbuddy/pkg/vcs/gitlab"
 
 	tfe "github.com/hashicorp/go-tfe"
 	gogitlab "github.com/xanzy/go-gitlab"

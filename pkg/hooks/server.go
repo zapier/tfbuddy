@@ -7,17 +7,17 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/nats-io/nats.go"
 	"github.com/rs/zerolog/log"
-	"github.com/zapier/tfbuddy/pkg/github"
 	"github.com/zapier/tfbuddy/pkg/hooks_stream"
+	"github.com/zapier/tfbuddy/pkg/vcs/github"
 	"github.com/ziflex/lecho/v3"
 
-	ghHooks "github.com/zapier/tfbuddy/pkg/github/hooks"
-	"github.com/zapier/tfbuddy/pkg/gitlab"
 	"github.com/zapier/tfbuddy/pkg/gitlab_hooks"
 	tfnats "github.com/zapier/tfbuddy/pkg/nats"
 	"github.com/zapier/tfbuddy/pkg/runstream"
 	"github.com/zapier/tfbuddy/pkg/tfc_api"
 	"github.com/zapier/tfbuddy/pkg/tfc_hooks"
+	ghHooks "github.com/zapier/tfbuddy/pkg/vcs/github/hooks"
+	"github.com/zapier/tfbuddy/pkg/vcs/gitlab"
 )
 
 func StartServer() {
