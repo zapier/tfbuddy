@@ -5,9 +5,9 @@ import (
 	"fmt"
 
 	gogitlab "github.com/xanzy/go-gitlab"
-	"github.com/zapier/tfbuddy/pkg/gitlab"
 	"github.com/zapier/tfbuddy/pkg/hooks_stream"
 	"github.com/zapier/tfbuddy/pkg/vcs"
+	"github.com/zapier/tfbuddy/pkg/vcs/gitlab"
 )
 
 const GitlabHooksSubject = "gitlab"

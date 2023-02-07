@@ -13,11 +13,11 @@ import (
 	"github.com/rs/zerolog/log"
 	gogitlab "github.com/xanzy/go-gitlab"
 
-	"github.com/zapier/tfbuddy/pkg/gitlab"
 	"github.com/zapier/tfbuddy/pkg/runstream"
 	"github.com/zapier/tfbuddy/pkg/tfc_api"
 	"github.com/zapier/tfbuddy/pkg/tfc_trigger"
 	"github.com/zapier/tfbuddy/pkg/vcs"
+	"github.com/zapier/tfbuddy/pkg/vcs/gitlab"
 )
 
 const GitlabTokenHeader = "X-Gitlab-Token"
