@@ -1,6 +1,7 @@
 # Architecture
 
 TF Buddy is driven by different webhook events from either a Terraform Cloud workspace, or a supported VCS (Github/Gitlab). These events are either user commands in the form of comments, or changes in state (PR being opened/closed).
+
 ## Overview
 
 ![overview](img/overview.png)
@@ -9,11 +10,11 @@ Once you have TF Buddy deployed you need to register a webhook from each repo th
 
 ![plan](img/plan.png)
 
-If you're happy with the plan you can issue a apply command `tfc apply` or if you're operating on multiple workspaces you can target a specific workspace `tfc apply -w workspace_name`. TF Buddy will verify that the PR is approved if that's required on your repo. It will also reject any applies if the branch has conflicts. Once the apply starts TF Buddy will provide a link to the run in Terraform Cloud for you to follow along with. 
+If you're happy with the plan you can issue a apply command `tfc apply` or if you're operating on multiple workspaces you can target a specific workspace `tfc apply -w workspace_name`. TF Buddy will verify that the PR is approved if that's required on your repo. It will also reject any applies if the branch has conflicts. Once the apply starts TF Buddy will provide a link to the run in Terraform Cloud for you to follow along with.
 
 ![apply](img/apply.png)
 
-Once the apply completes TF Buddy will update the PR indicating what was changed and if there was any errors. 
+Once the apply completes TF Buddy will update the PR indicating what was changed and if there was any errors.
 
 Example of how an error is reported
 
@@ -59,3 +60,4 @@ resource "tfe_notification_configuration" "tfbuddy" {
 }
 
 ```
+
