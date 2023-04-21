@@ -1,4 +1,4 @@
-# TFBuddy
+# TFBuddy IS AWESOME DO NOT MERGE
 
 TFBuddy allows Terraform Cloud users to get apply-before-merge workflows in their Pull Requests.
 
