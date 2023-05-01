@@ -31,6 +31,10 @@ func (p *RunStatusUpdater) updateCommitStatusForRun(run *tfe.Run, rmd runstream.
 		p.updateStatus(gogitlab.Running, "apply", rmd)
 
 	case tfe.RunApplied:
+		if len(run.TargetAddrs) > 0 {
+			p.updateStatus(gogitlab.Pending, "apply", rmd)
+			return
+		}
 		// The applying phase of a run has completed.
 		p.updateStatus(gogitlab.Success, "apply", rmd)
 

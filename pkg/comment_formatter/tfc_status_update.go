@@ -2,6 +2,7 @@ package comment_formatter
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/hashicorp/go-tfe"
 	"github.com/rs/zerolog/log"
@@ -29,8 +30,12 @@ func FormatRunStatusCommentBody(tfc tfc_api.ApiClient, run *tfe.Run, rmd runstre
 		// no extra info
 	case tfe.RunApplied:
 		extraInfo = fmt.Sprintf(successPlanSummaryFormat, run.Apply.ResourceAdditions, run.Apply.ResourceChanges, run.Apply.ResourceDestructions)
-
-		resolveDiscussion = true
+		if len(run.TargetAddrs) > 0 {
+			extraInfo += needToApplyFullWorkSpace
+			extraInfo += fmt.Sprintf(howToApplyFormat, wsName)
+		} else {
+			resolveDiscussion = true
+		}
 	case tfe.RunDiscarded:
 		// no extra info
 	case tfe.RunErrored:
@@ -46,7 +51,11 @@ func FormatRunStatusCommentBody(tfc tfc_api.ApiClient, run *tfe.Run, rmd runstre
 	case tfe.RunPlanned:
 		extraInfo = fmt.Sprintf(successPlanSummaryFormat, run.Plan.ResourceAdditions, run.Plan.ResourceChanges, run.Plan.ResourceDestructions)
 		if !run.AutoApply {
-			extraInfo += fmt.Sprintf(howToApplyFormat, wsName)
+			if len(run.TargetAddrs) > 0 {
+				extraInfo += fmt.Sprintf(howToApplyFormatWithTarget, strings.Join(run.TargetAddrs, ","), wsName, strings.Join(run.TargetAddrs, ","))
+			} else {
+				extraInfo += fmt.Sprintf(howToApplyFormat, wsName)
+			}
 		}
 	case tfe.RunPlannedAndFinished:
 		log.Trace().Interface("plan", run.Plan).Msg("planned_and_finished")
@@ -60,9 +69,18 @@ func FormatRunStatusCommentBody(tfc tfc_api.ApiClient, run *tfe.Run, rmd runstre
 		log.Trace().Str("plan_id", run.Plan.ID).Str("plan_json", string(b)).Msg("")
 
 		if hasChanges(run.Plan) {
-			extraInfo += fmt.Sprintf(howToApplyFormat, wsName)
+			if len(run.TargetAddrs) > 0 {
+				extraInfo += fmt.Sprintf(howToApplyFormatWithTarget, strings.Join(run.TargetAddrs, ","), wsName, strings.Join(run.TargetAddrs, ","))
+			} else {
+				extraInfo += fmt.Sprintf(howToApplyFormat, wsName)
+			}
 		} else {
-			resolveDiscussion = true
+			if len(run.TargetAddrs) > 0 {
+				extraInfo += needToApplyFullWorkSpace
+				extraInfo += fmt.Sprintf(howToApplyFormat, wsName)
+			} else {
+				resolveDiscussion = true
+			}
 		}
 
 	case tfe.RunPolicySoftFailed:
@@ -135,3 +153,19 @@ var howToApplyFormat = `
 	> ` + "`tfc apply -w %s`" + `
 
 Remember to **merge** the MR once the apply has succeeded`
+
+var howToApplyFormatWithTarget = `
+
+---
+* To **apply** the plan for all workspaces, comment:
+	> ` + "`tfc apply -t %s`" + `
+
+* To **apply** the plan for this workspace only, comment:
+	> ` + "`tfc apply -w %s -t %s`" + `
+
+Remember to **merge** the MR once the apply has succeeded`
+
+var needToApplyFullWorkSpace = `
+
+**Need to Apply Full Workspace Before Merging**
+`

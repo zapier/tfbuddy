@@ -3,6 +3,7 @@ package tfc_api
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/hashicorp/go-tfe"
@@ -22,6 +23,8 @@ type ApiRunOptions struct {
 	Workspace string
 	// Terraform Version
 	TFVersion string
+	// Terraform Target
+	Target string
 }
 
 // CreateRunFromSource creates a new Terraform Cloud run from source files
@@ -43,10 +46,15 @@ func (c *TFCClient) CreateRunFromSource(opts *ApiRunOptions) (*tfe.Run, error) {
 	// TODO: Clean this up maybe check for valid Versions from TFCloud
 	var tfVersion *string = nil
 	var tfPlanOnly *bool = nil
+	tfTarget := []string{}
 	if opts.TFVersion != "" && !opts.IsApply {
 		log.Debug().Str("version", opts.TFVersion).Msg("setting tf version")
 		tfVersion = tfe.String(opts.TFVersion)
 		tfPlanOnly = tfe.Bool(true)
+	}
+
+	if opts.Target != "" {
+		tfTarget = append(tfTarget, strings.Split(opts.Target, ",")...)
 	}
 
 	// create run for new CV
@@ -55,6 +63,7 @@ func (c *TFCClient) CreateRunFromSource(opts *ApiRunOptions) (*tfe.Run, error) {
 		ConfigurationVersion: cv,
 		Workspace:            ws,
 		AutoApply:            tfe.Bool(opts.IsApply),
+		TargetAddrs:          tfTarget,
 		PlanOnly:             tfPlanOnly,
 		TerraformVersion:     tfVersion,
 	})

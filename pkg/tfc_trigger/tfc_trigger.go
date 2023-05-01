@@ -98,6 +98,7 @@ type TFCTriggerOptions struct {
 	VcsProvider              string
 	Workspace                string `short:"w" long:"workspace" description:"A specific terraform Workspace to use" required:"false"`
 	TFVersion                string `short:"v" long:"tf_version" description:"A specific terraform version to use" required:"false"`
+	Target                   string `short:"t" long:"target" description:"A specific terraform target to use" required:"false"`
 }
 
 func NewTFCTriggerConfig(opts *TFCTriggerOptions) (*TFCTriggerOptions, error) {
@@ -572,6 +573,7 @@ func (t *TFCTrigger) triggerRunForWorkspace(cfgWS *TFCWorkspace, mr vcs.Detailed
 		Organization: org,
 		Workspace:    wsName,
 		TFVersion:    t.cfg.TFVersion,
+		Target:       t.cfg.Target,
 	})
 	if err != nil {
 		return fmt.Errorf("could not create TFC run. %w", err)
