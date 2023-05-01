@@ -30,8 +30,12 @@ func FormatRunStatusCommentBody(tfc tfc_api.ApiClient, run *tfe.Run, rmd runstre
 		// no extra info
 	case tfe.RunApplied:
 		extraInfo = fmt.Sprintf(successPlanSummaryFormat, run.Apply.ResourceAdditions, run.Apply.ResourceChanges, run.Apply.ResourceDestructions)
-
-		resolveDiscussion = true
+		if len(run.TargetAddrs) > 0 {
+			extraInfo += needToApplyFullWorkSpace
+			extraInfo += fmt.Sprintf(howToApplyFormat, wsName)
+		} else {
+			resolveDiscussion = true
+		}
 	case tfe.RunDiscarded:
 		// no extra info
 	case tfe.RunErrored:
@@ -71,7 +75,12 @@ func FormatRunStatusCommentBody(tfc tfc_api.ApiClient, run *tfe.Run, rmd runstre
 				extraInfo += fmt.Sprintf(howToApplyFormat, wsName)
 			}
 		} else {
-			resolveDiscussion = true
+			if len(run.TargetAddrs) > 0 {
+				extraInfo += needToApplyFullWorkSpace
+				extraInfo += fmt.Sprintf(howToApplyFormat, wsName)
+			} else {
+				resolveDiscussion = true
+			}
 		}
 
 	case tfe.RunPolicySoftFailed:
@@ -155,3 +164,8 @@ var howToApplyFormatWithTarget = `
 	> ` + "`tfc apply -w %s -t %s`" + `
 
 Remember to **merge** the MR once the apply has succeeded`
+
+var needToApplyFullWorkSpace = `
+
+**Need to Apply Full Workspace Before Merging**
+`
