@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/rs/zerolog/log"
+	"github.com/spf13/viper"
 	"github.com/zapier/tfbuddy/pkg/utils"
 	"github.com/zapier/tfbuddy/pkg/vcs"
 
@@ -109,9 +111,61 @@ func (c *GitlabClient) GetCommitStatuses(projectID, commitSHA string) []*gogitla
 	return statuses
 }
 
+// Crawl the comments on this MR for tfbuddy comments, grab any TFC urls out of them, and delete them.
+func (c *GitlabClient) pruneNotes(mrIID int, projectID string) (string, error) {
+	notes, _, err := c.client.Notes.ListMergeRequestNotes(projectID, mrIID, &gogitlab.ListMergeRequestNotesOptions{})
+	if err != nil {
+		return "", utils.CreatePermanentError(err)
+	}
+
+	var oldRunUrls []string
+	var oldRunBlock string
+	for _, note := range notes {
+		if note.Author.Username == c.tokenUser {
+			runUrl := utils.CaptureSubstring(note.Body, utils.URL_RUN_PREFIX, utils.URL_RUN_SUFFIX)
+			runStatus := utils.CaptureSubstring(note.Body, utils.URL_RUN_STATUS_PREFIX, utils.URL_RUN_SUFFIX)
+			if runUrl != "" && runStatus != "" {
+				oldRunUrls = append(oldRunUrls, fmt.Sprintf("%s - %s", runUrl, runStatus))
+			}
+
+			// Gitlab default sort is order by created by, so take the last match on this
+			oldRunBlockTest := utils.CaptureSubstring(note.Body, utils.URL_RUN_GROUP_PREFIX, utils.URL_RUN_GROUP_SUFFIX)
+			if oldRunBlockTest != "" {
+				oldRunBlock = oldRunBlockTest
+			}
+
+			log.Debug().Str("projectID", projectID).Int("mrIID", mrIID).Msgf("deleting note %d", note.ID)
+			_, err := c.client.Notes.DeleteMergeRequestNote(projectID, mrIID, note.ID)
+			if err != nil {
+				return "", utils.CreatePermanentError(err)
+			}
+		}
+	}
+
+	// Add new urls into block
+	if len(oldRunUrls) > 0 {
+		return fmt.Sprintf("%s\n%s\n%s\n%s", utils.URL_RUN_GROUP_PREFIX, oldRunBlock, strings.Join(oldRunUrls, "\n"), utils.URL_RUN_GROUP_SUFFIX), nil
+	}
+	return oldRunBlock, nil
+}
+
 // CreateMergeRequestComment creates a comment on the merge request.
 func (c *GitlabClient) CreateMergeRequestComment(mrIID int, projectID, comment string) error {
+	var oldUrls string
+	var err error
+
 	if comment != "" {
+		// Delete old comments, but save the URLs for further evaluation
+		if viper.GetString("prune-comments") != "" {
+			oldUrls, err = c.pruneNotes(mrIID, projectID)
+			if err != nil {
+				return err
+			}
+			if oldUrls != "" {
+				comment = fmt.Sprintf("%s\n%s", oldUrls, comment)
+			}
+		}
+
 		return backoff.Retry(func() error {
 			log.Debug().Str("projectID", projectID).Int("mrIID", mrIID).Msg("posting Gitlab comment")
 			_, _, err := c.client.Notes.CreateMergeRequestNote(projectID, mrIID, &gogitlab.CreateMergeRequestNoteOptions{Body: gogitlab.String(comment)})
