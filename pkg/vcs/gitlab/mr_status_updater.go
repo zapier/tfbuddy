@@ -1,13 +1,19 @@
 package gitlab
 
 import (
+	"errors"
 	"fmt"
+	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/hashicorp/go-tfe"
 	"github.com/rs/zerolog/log"
 	gogitlab "github.com/xanzy/go-gitlab"
 	"github.com/zapier/tfbuddy/pkg/runstream"
 )
+
+// Sentinel error
+var errNoPipelineStatus = errors.New("nil pipeline status")
 
 func (p *RunStatusUpdater) updateCommitStatusForRun(run *tfe.Run, rmd runstream.RunMetadata) {
 	switch run.Status {
@@ -92,7 +98,27 @@ func (p *RunStatusUpdater) updateStatus(state gogitlab.BuildStateValue, action s
 		TargetURL:   runUrlForTFRunMetadata(rmd),
 		Description: descriptionForState(state),
 		State:       state,
-		PipelineID:  p.getLatestPipelineID(rmd),
+	}
+
+	// Look up the latest pipeline ID for this MR, since Gitlab is eventually consistent
+	// Once we have a pipeline ID returned, we know we have a valid pipeline to set commit status for
+	var pipelineID *int
+	getPipelineIDFn := func() error {
+		log.Debug().Msg("getting pipeline status")
+		pipelineID := p.getLatestPipelineID(rmd)
+		if pipelineID == nil {
+			return errNoPipelineStatus
+		}
+		return nil
+	}
+
+	err := backoff.Retry(getPipelineIDFn, configureBackOff())
+	if err != nil {
+		log.Warn().Msg("could not retrieve pipeline id after multiple attempts")
+	}
+	if pipelineID != nil {
+		log.Trace().Int("pipeline_id", *pipelineID).Msg("pipeline status")
+		status.PipelineID = pipelineID
 	}
 
 	log.Debug().Interface("new_status", status).Msg("updating Gitlab commit status")
@@ -150,4 +176,15 @@ func (p *RunStatusUpdater) getLatestPipelineID(rmd runstream.RunMetadata) *int {
 		}
 	}
 	return nil
+}
+
+// configureBackOff returns a backoff configuration to use to retry requests
+func configureBackOff() *backoff.ExponentialBackOff {
+
+	// Lets setup backoff logic to retry this request for 30 seconds
+	expBackOff := backoff.NewExponentialBackOff()
+	expBackOff.MaxInterval = 10 * time.Second
+	expBackOff.MaxElapsedTime = 30 * time.Second
+
+	return expBackOff
 }
