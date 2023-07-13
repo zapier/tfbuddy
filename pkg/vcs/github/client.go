@@ -15,7 +15,6 @@ import (
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	gogithub "github.com/google/go-github/v49/github"
 	"github.com/rs/zerolog/log"
-	"github.com/spf13/viper"
 	zgit "github.com/zapier/tfbuddy/pkg/git"
 	"github.com/zapier/tfbuddy/pkg/utils"
 	"github.com/zapier/tfbuddy/pkg/vcs"
@@ -63,7 +62,8 @@ func (c *Client) GetMergeRequestApprovals(id int, project string) (vcs.MRApprove
 }
 
 // Go over all comments on a PR, trying to grab any old TFC run urls and deleting the bodies
-func (c *Client) pruneComments(prID int, fullName string) (string, error) {
+func (c *Client) GetOldRunUrls(prID int, fullName string, rootCommentID int, deleteComment bool) (string, error) {
+	log.Debug().Msg("pruneComments")
 	projectParts, err := splitFullName(fullName)
 	if err != nil {
 		return "", utils.CreatePermanentError(err)
@@ -96,10 +96,12 @@ func (c *Client) pruneComments(prID int, fullName string) (string, error) {
 				oldRunBlock = oldRunBlockTest
 			}
 
-			log.Debug().Msgf("Deleting comment %d", comment.GetID())
-			_, err := c.client.Issues.DeleteComment(c.ctx, projectParts[0], projectParts[1], comment.GetID())
-			if err != nil {
-				return "", utils.CreatePermanentError(err)
+			if deleteComment && comment.GetID() != int64(rootCommentID) {
+				log.Debug().Msgf("Deleting comment %d", comment.GetID())
+				_, err := c.client.Issues.DeleteComment(c.ctx, projectParts[0], projectParts[1], comment.GetID())
+				if err != nil {
+					return "", utils.CreatePermanentError(err)
+				}
 			}
 		}
 	}
@@ -113,18 +115,7 @@ func (c *Client) pruneComments(prID int, fullName string) (string, error) {
 }
 
 func (c *Client) CreateMergeRequestComment(prID int, fullName string, comment string) error {
-	var oldUrls string
-	var err error
-	if viper.GetString("prune-comments") != "" {
-		oldUrls, err = c.pruneComments(prID, fullName)
-		if err != nil {
-			return err
-		}
-		if oldUrls != "" {
-			comment = fmt.Sprintf("%s\n%s", oldUrls, comment)
-		}
-	}
-	_, err = c.PostIssueComment(prID, fullName, comment)
+	_, err := c.PostIssueComment(prID, fullName, comment)
 	return err
 }
 

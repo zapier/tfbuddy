@@ -58,6 +58,9 @@ func (m *MockGitClient) CloneMergeRequest(arg0 string, arg1 vcs.MR, arg2 string)
 	return ret0, ret1
 }
 
+func (m *MockGitClient) GetOldRunUrls(mrIID int, project string, rootNoteID int, deleteNotes bool) (string, error) {
+	return "", nil
+}
 // CloneMergeRequest indicates an expected call of CloneMergeRequest.
 func (mr *MockGitClientMockRecorder) CloneMergeRequest(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()

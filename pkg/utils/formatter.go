@@ -2,14 +2,19 @@ package utils
 
 import (
 	"fmt"
+	"log"
 	"strings"
 )
 
 // We format the URL as **RUN URL**: <url> <br> under tfc_status_update.go
 const (
-	URL_RUN_PREFIX        = "**Run URL**: "
-	URL_RUN_SUFFIX        = "<br>"
-	URL_RUN_GROUP_PREFIX  = "<details><summary>Previous TFC URLS</summary>\n"
+	URL_RUN_PREFIX       = "**Run URL**: "
+	URL_RUN_SUFFIX       = "<br>"
+	URL_RUN_GROUP_PREFIX = `<details><summary>
+
+### Previous TFC Urls:
+
+</summary>`
 	URL_RUN_GROUP_SUFFIX  = "</details>"
 	URL_RUN_STATUS_PREFIX = "**Status**: "
 )
@@ -31,6 +36,8 @@ func CaptureSubstring(body string, prefix string, suffix string) string {
 
 // AI generated these, may not be compresphenive
 func FormatStatus(status string) string {
+	status = strings.Trim(status, "`")
+	log.Printf("Status: %s", status)
 	switch status {
 	case "applied":
 		return "✅ Applied"
@@ -52,24 +59,4 @@ func FormatStatus(status string) string {
 		// anything we can't match just preserve with the ticks
 		return fmt.Sprintf("`%s`", status)
 	}
-}
-
-// Try and find the "Run URL:" string in the body and return it
-// If we can't find it, return nothing
-func CaptureRunURLFromBody(body string) string {
-	// First, see if we already have a grouping, which means this has run before
-	startIndex := strings.Index(body, URL_RUN_PREFIX)
-	if startIndex == -1 {
-		// Can't find a URL to pull out, so we'll just return
-		return ""
-	}
-
-	// At this point we've found a starting index, and se tthe appropriate suffix, now to try and pull a URL out
-	subBody := body[startIndex+len(URL_RUN_PREFIX):]
-	endIndex := strings.Index(subBody, URL_RUN_SUFFIX)
-	if endIndex == -1 {
-		return "" // Couldn't determine where to cut
-	}
-
-	return subBody[:endIndex]
 }
