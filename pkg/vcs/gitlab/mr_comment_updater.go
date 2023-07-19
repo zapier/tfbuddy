@@ -15,6 +15,19 @@ func (p *RunStatusUpdater) postRunStatusComment(run *tfe.Run, rmd runstream.RunM
 
 	commentBody, topLevelNoteBody, resolveDiscussion := comment_formatter.FormatRunStatusCommentBody(p.tfc, run, rmd)
 
+	var oldUrls string
+	var err error
+
+	if run.Status == tfe.RunErrored || run.Status == tfe.RunCanceled || run.Status == tfe.RunDiscarded || run.Status == tfe.RunPlannedAndFinished {
+		oldUrls, err = p.client.GetOldRunUrls(rmd.GetMRInternalID(), rmd.GetMRProjectNameWithNamespace(), int(rmd.GetRootNoteID()))
+		if err != nil {
+			log.Error().Err(err).Msg("could not retrieve old run urls")
+		}
+		if oldUrls != "" {
+			topLevelNoteBody = fmt.Sprintf("%s\n%s", oldUrls, topLevelNoteBody)
+		}
+	}
+	//oldURLBlock := utils.CaptureSubstring(, prefix string, suffix string)
 	if _, err := p.client.UpdateMergeRequestDiscussionNote(
 		rmd.GetMRInternalID(),
 		int(rmd.GetRootNoteID()),

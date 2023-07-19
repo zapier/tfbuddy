@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
@@ -109,6 +110,52 @@ func (c *GitlabClient) GetCommitStatuses(projectID, commitSHA string) []*gogitla
 	return statuses
 }
 
+// Crawl the comments on this MR for tfbuddy comments, grab any TFC urls out of them, and delete them.
+func (c *GitlabClient) GetOldRunUrls(mrIID int, project string, rootNoteID int) (string, error) {
+	log.Debug().Str("projectID", project).Int("mrIID", mrIID).Msg("pruning notes")
+	notes, _, err := c.client.Notes.ListMergeRequestNotes(project, mrIID, &gogitlab.ListMergeRequestNotesOptions{})
+	if err != nil {
+		return "", utils.CreatePermanentError(err)
+	}
+
+	currentUser, _, err := c.client.Users.CurrentUser()
+
+	if err != nil {
+		return "", utils.CreatePermanentError(err)
+	}
+
+	var oldRunUrls []string
+	var oldRunBlock string
+	for _, note := range notes {
+		if note.Author.Username == currentUser.Username {
+			runUrl := utils.CaptureSubstring(note.Body, utils.URL_RUN_PREFIX, utils.URL_RUN_SUFFIX)
+			runStatus := utils.CaptureSubstring(note.Body, utils.URL_RUN_STATUS_PREFIX, utils.URL_RUN_SUFFIX)
+			if runUrl != "" && runStatus != "" {
+				oldRunUrls = append(oldRunUrls, fmt.Sprintf("%s - %s", runUrl, utils.FormatStatus(runStatus)))
+			}
+
+			// Gitlab default sort is order by created by, so take the last match on this
+			oldRunBlockTest := utils.CaptureSubstring(note.Body, utils.URL_RUN_GROUP_PREFIX, utils.URL_RUN_GROUP_SUFFIX)
+			if oldRunBlockTest != "" {
+				oldRunBlock = oldRunBlockTest
+			}
+			if os.Getenv("TFBUDDY_DELETE_OLD_COMMENTS") != "" && note.ID != rootNoteID {
+				log.Debug().Str("projectID", project).Int("mrIID", mrIID).Msgf("deleting note %d", note.ID)
+				_, err := c.client.Notes.DeleteMergeRequestNote(project, mrIID, note.ID)
+				if err != nil {
+					return "", utils.CreatePermanentError(err)
+				}
+			}
+		}
+	}
+
+	// Add new urls into block
+	if len(oldRunUrls) > 0 {
+		return fmt.Sprintf("%s\n%s\n%s\n%s", utils.URL_RUN_GROUP_PREFIX, oldRunBlock, strings.Join(oldRunUrls, "\n"), utils.URL_RUN_GROUP_SUFFIX), nil
+	}
+	return oldRunBlock, nil
+}
+
 // CreateMergeRequestComment creates a comment on the merge request.
 func (c *GitlabClient) CreateMergeRequestComment(mrIID int, projectID, comment string) error {
 	if comment != "" {
@@ -148,6 +195,7 @@ func (c *GitlabClient) CreateMergeRequestDiscussion(mrIID int, project, comment 
 	if comment == "" {
 		return nil, errors.New("comment is empty")
 	}
+
 	return backoff.RetryWithData(func() (vcs.MRDiscussionNotes, error) {
 		log.Debug().Str("project", project).Int("mrIID", mrIID).Msg("create Gitlab discussion")
 		dis, _, err := c.client.Discussions.CreateMergeRequestDiscussion(project, mrIID, &gogitlab.CreateMergeRequestDiscussionOptions{

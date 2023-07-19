@@ -15,6 +15,7 @@ type GitClient interface {
 	AddMergeRequestDiscussionReply(mrIID int, project, discussionID, comment string) (MRNote, error)
 	SetCommitStatus(projectWithNS string, commitSHA string, status CommitStatusOptions) (CommitStatus, error)
 	GetPipelinesForCommit(projectWithNS string, commitSHA string) ([]ProjectPipeline, error)
+	GetOldRunUrls(mrIID int, project string, rootCommentID int) (string, error)
 }
 type GitRepo interface {
 	FetchUpstreamBranch(string) error

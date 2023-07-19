@@ -61,6 +61,59 @@ func (c *Client) GetMergeRequestApprovals(id int, project string) (vcs.MRApprove
 	return pr, nil
 }
 
+// Go over all comments on a PR, trying to grab any old TFC run urls and deleting the bodies
+func (c *Client) GetOldRunUrls(prID int, fullName string, rootCommentID int) (string, error) {
+	log.Debug().Msg("pruneComments")
+	projectParts, err := splitFullName(fullName)
+	if err != nil {
+		return "", utils.CreatePermanentError(err)
+	}
+	comments, _, err := c.client.Issues.ListComments(c.ctx, projectParts[0], projectParts[1], prID, &gogithub.IssueListCommentsOptions{})
+	if err != nil {
+		return "", utils.CreatePermanentError(err)
+	}
+
+	currentUser, _, err := c.client.Users.Get(context.Background(), "")
+	if err != nil {
+		return "", utils.CreatePermanentError(err)
+	}
+
+	var oldRunUrls []string
+	var oldRunBlock string
+	for _, comment := range comments {
+		// If this token user made the comment, and we're making a new comment, pick the TFC url out of the body and delete the comment
+		if comment.GetUser().GetLogin() == currentUser.GetLogin() {
+			runUrl := utils.CaptureSubstring(comment.GetBody(), utils.URL_RUN_PREFIX, utils.URL_RUN_SUFFIX)
+			runStatus := utils.CaptureSubstring(comment.GetBody(), utils.URL_RUN_STATUS_PREFIX, utils.URL_RUN_SUFFIX)
+			if runUrl != "" && runStatus != "" {
+				// Example: <tfc url> - ✅ Applied
+				oldRunUrls = append(oldRunUrls, fmt.Sprintf("%s - %s", runUrl, runStatus))
+			}
+
+			// Github orders comments from earliest -> latest via ID, so we check each comment and take the last match on an "old url" block
+			oldRunBlockTest := utils.CaptureSubstring(comment.GetBody(), utils.URL_RUN_GROUP_PREFIX, utils.URL_RUN_GROUP_SUFFIX)
+			if oldRunBlockTest != "" {
+				oldRunBlock = oldRunBlockTest
+			}
+
+			if os.Getenv("TFBUDDY_DELETE_OLD_COMMENTS") != "" && comment.GetID() != int64(rootCommentID) {
+				log.Debug().Msgf("Deleting comment %d", comment.GetID())
+				_, err := c.client.Issues.DeleteComment(c.ctx, projectParts[0], projectParts[1], comment.GetID())
+				if err != nil {
+					return "", utils.CreatePermanentError(err)
+				}
+			}
+		}
+	}
+
+	// If we found any old run urls, return them formatted
+	if len(oldRunUrls) > 0 {
+		// Try and find any exisitng groupings of old urls, else make a new one
+		return fmt.Sprintf("%s\n%s\n%s\n%s", utils.URL_RUN_GROUP_PREFIX, oldRunBlock, strings.Join(oldRunUrls, "\n"), utils.URL_RUN_GROUP_SUFFIX), nil
+	}
+	return oldRunBlock, nil
+}
+
 func (c *Client) CreateMergeRequestComment(prID int, fullName string, comment string) error {
 	_, err := c.PostIssueComment(prID, fullName, comment)
 	return err
