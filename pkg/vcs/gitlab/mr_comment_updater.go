@@ -17,9 +17,9 @@ func (p *RunStatusUpdater) postRunStatusComment(run *tfe.Run, rmd runstream.RunM
 
 	var oldUrls string
 	var err error
-	// TODO: Make this configurable behaviour
+
 	if run.Status == tfe.RunErrored || run.Status == tfe.RunCanceled || run.Status == tfe.RunDiscarded || run.Status == tfe.RunPlannedAndFinished {
-		oldUrls, err = p.client.GetOldRunUrls(rmd.GetMRInternalID(), rmd.GetMRProjectNameWithNamespace(), int(rmd.GetRootNoteID()), true)
+		oldUrls, err = p.client.GetOldRunUrls(rmd.GetMRInternalID(), rmd.GetMRProjectNameWithNamespace(), int(rmd.GetRootNoteID()))
 		if err != nil {
 			log.Error().Err(err).Msg("could not retrieve old run urls")
 		}

@@ -62,7 +62,7 @@ func (c *Client) GetMergeRequestApprovals(id int, project string) (vcs.MRApprove
 }
 
 // Go over all comments on a PR, trying to grab any old TFC run urls and deleting the bodies
-func (c *Client) GetOldRunUrls(prID int, fullName string, rootCommentID int, deleteComment bool) (string, error) {
+func (c *Client) GetOldRunUrls(prID int, fullName string, rootCommentID int) (string, error) {
 	log.Debug().Msg("pruneComments")
 	projectParts, err := splitFullName(fullName)
 	if err != nil {
@@ -96,7 +96,7 @@ func (c *Client) GetOldRunUrls(prID int, fullName string, rootCommentID int, del
 				oldRunBlock = oldRunBlockTest
 			}
 
-			if deleteComment && comment.GetID() != int64(rootCommentID) {
+			if os.Getenv("TFBUDDY_DELETE_OLD_COMMENTS") != "" && comment.GetID() != int64(rootCommentID) {
 				log.Debug().Msgf("Deleting comment %d", comment.GetID())
 				_, err := c.client.Issues.DeleteComment(c.ctx, projectParts[0], projectParts[1], comment.GetID())
 				if err != nil {

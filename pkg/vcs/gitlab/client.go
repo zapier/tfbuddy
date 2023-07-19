@@ -111,7 +111,7 @@ func (c *GitlabClient) GetCommitStatuses(projectID, commitSHA string) []*gogitla
 }
 
 // Crawl the comments on this MR for tfbuddy comments, grab any TFC urls out of them, and delete them.
-func (c *GitlabClient) GetOldRunUrls(mrIID int, project string, rootNoteID int, deleteNotes bool) (string, error) {
+func (c *GitlabClient) GetOldRunUrls(mrIID int, project string, rootNoteID int) (string, error) {
 	log.Debug().Str("projectID", project).Int("mrIID", mrIID).Msg("pruning notes")
 	notes, _, err := c.client.Notes.ListMergeRequestNotes(project, mrIID, &gogitlab.ListMergeRequestNotesOptions{})
 	if err != nil {
@@ -139,7 +139,7 @@ func (c *GitlabClient) GetOldRunUrls(mrIID int, project string, rootNoteID int, 
 			if oldRunBlockTest != "" {
 				oldRunBlock = oldRunBlockTest
 			}
-			if deleteNotes && note.ID != rootNoteID {
+			if os.Getenv("TFBUDDY_DELETE_OLD_COMMENTS") != "" && note.ID != rootNoteID {
 				log.Debug().Str("projectID", project).Int("mrIID", mrIID).Msgf("deleting note %d", note.ID)
 				_, err := c.client.Notes.DeleteMergeRequestNote(project, mrIID, note.ID)
 				if err != nil {
