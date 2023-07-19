@@ -1,5 +1,5 @@
 locals {
-  tfbuddy_base_url = "${chomp(var.ngrok_url)}"
+  tfbuddy_base_url = chomp(var.ngrok_url)
 
   child_tfvars = <<EOF
 parent_vars = {
@@ -67,7 +67,7 @@ resource "local_file" "child_tfvars" {
   for_each = toset(local.child_tf_dirs)
 
   filename = "${each.value}/parent.auto.tfvars"
-  content = local.child_tfvars
+  content  = local.child_tfvars
 }
 
 
@@ -81,5 +81,5 @@ terraform {
 }
 
 provider "tfe" {
-# requires TFC_TOKEN variable is set
+  # requires TFC_TOKEN variable is set
 }
