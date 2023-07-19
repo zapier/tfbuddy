@@ -41,7 +41,7 @@ func PresentPlanChangesAsMarkdown(b []byte, tfcUrl string) string {
 
 		case chg.Change.Actions.Import():
 			tplData.ImportCount += 1
-			tplData.Imports = append(tplData.Additions, chg.Address)
+			tplData.Imports = append(tplData.Imports, chg.Address)
 
 		case chg.Change.Actions.Create():
 			tplData.AdditionCount += 1
@@ -126,8 +126,8 @@ func isReplace(chg *tfjson.ResourceChange) bool {
 }
 
 type PlanTemplateData struct {
-	ImportCount    int
-	Imports        []string
+	ImportCount      int
+	Imports          []string
 	AdditionCount    int
 	Additions        []string
 	ChangeCount      int
