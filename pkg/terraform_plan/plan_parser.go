@@ -38,11 +38,7 @@ func PresentPlanChangesAsMarkdown(b []byte, tfcUrl string) string {
 		switch {
 		case chg.Change.Actions.NoOp():
 			continue
-
-		case chg.Change.Actions.Import():
-			tplData.ImportCount += 1
-			tplData.Imports = append(tplData.Imports, chg.Address)
-
+			
 		case chg.Change.Actions.Create():
 			tplData.AdditionCount += 1
 			tplData.Additions = append(tplData.Additions, chg.Address)
