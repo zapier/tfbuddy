@@ -1,0 +1,462 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.5.3",
+  "planned_values": {
+    "root_module": {
+      "resources": [
+        {
+          "address": "random_integer.import",
+          "mode": "managed",
+          "type": "random_integer",
+          "name": "import",
+          "provider_name": "registry.terraform.io/hashicorp/random",
+          "schema_version": 0,
+          "values": {
+            "id": "15390",
+            "keepers": {},
+            "max": 5,
+            "min": 2,
+            "result": 15390,
+            "seed": null
+          },
+          "sensitive_values": {
+            "keepers": {}
+          }
+        },
+        {
+          "address": "random_pet.will_it_be_cats",
+          "mode": "managed",
+          "type": "random_pet",
+          "name": "will_it_be_cats",
+          "provider_name": "registry.terraform.io/hashicorp/random",
+          "schema_version": 0,
+          "values": {
+            "keepers": {},
+            "length": 4,
+            "prefix": null,
+            "separator": "-"
+          },
+          "sensitive_values": {
+            "keepers": {}
+          }
+        }
+      ],
+      "child_modules": [
+        {
+          "resources": [
+            {
+              "address": "module.more_cats.random_pet.will_it_be_more_cats[0]",
+              "mode": "managed",
+              "type": "random_pet",
+              "name": "will_it_be_more_cats",
+              "index": 0,
+              "provider_name": "registry.terraform.io/hashicorp/random",
+              "schema_version": 0,
+              "values": {
+                "keepers": {},
+                "length": 0,
+                "prefix": null,
+                "separator": "-"
+              },
+              "sensitive_values": {
+                "keepers": {}
+              }
+            },
+            {
+              "address": "module.more_cats.random_pet.will_it_be_more_cats[1]",
+              "mode": "managed",
+              "type": "random_pet",
+              "name": "will_it_be_more_cats",
+              "index": 1,
+              "provider_name": "registry.terraform.io/hashicorp/random",
+              "schema_version": 0,
+              "values": {
+                "keepers": {},
+                "length": 1,
+                "prefix": null,
+                "separator": "-"
+              },
+              "sensitive_values": {
+                "keepers": {}
+              }
+            },
+            {
+              "address": "module.more_cats.random_pet.will_it_be_more_cats[2]",
+              "mode": "managed",
+              "type": "random_pet",
+              "name": "will_it_be_more_cats",
+              "index": 2,
+              "provider_name": "registry.terraform.io/hashicorp/random",
+              "schema_version": 0,
+              "values": {
+                "keepers": {},
+                "length": 2,
+                "prefix": null,
+                "separator": "-"
+              },
+              "sensitive_values": {
+                "keepers": {}
+              }
+            },
+            {
+              "address": "module.more_cats.random_pet.will_it_be_more_cats[3]",
+              "mode": "managed",
+              "type": "random_pet",
+              "name": "will_it_be_more_cats",
+              "index": 3,
+              "provider_name": "registry.terraform.io/hashicorp/random",
+              "schema_version": 0,
+              "values": {
+                "keepers": {},
+                "length": 3,
+                "prefix": null,
+                "separator": "-"
+              },
+              "sensitive_values": {
+                "keepers": {}
+              }
+            },
+            {
+              "address": "module.more_cats.random_pet.will_it_be_more_cats[4]",
+              "mode": "managed",
+              "type": "random_pet",
+              "name": "will_it_be_more_cats",
+              "index": 4,
+              "provider_name": "registry.terraform.io/hashicorp/random",
+              "schema_version": 0,
+              "values": {
+                "keepers": {},
+                "length": 4,
+                "prefix": null,
+                "separator": "-"
+              },
+              "sensitive_values": {
+                "keepers": {}
+              }
+            }
+          ],
+          "address": "module.more_cats"
+        }
+      ]
+    }
+  },
+  "resource_changes": [
+    {
+      "address": "random_integer.import",
+      "mode": "managed",
+      "type": "random_integer",
+      "name": "import",
+      "provider_name": "registry.terraform.io/hashicorp/random",
+      "change": {
+        "actions": [
+          "no-op"
+        ],
+        "before": {
+          "id": "15390",
+          "keepers": {},
+          "max": 5,
+          "min": 2,
+          "result": 15390,
+          "seed": null
+        },
+        "after": {
+          "id": "15390",
+          "keepers": {},
+          "max": 5,
+          "min": 2,
+          "result": 15390,
+          "seed": null
+        },
+        "after_unknown": {},
+        "before_sensitive": {
+          "keepers": {}
+        },
+        "after_sensitive": {
+          "keepers": {}
+        },
+        "importing": {
+          "id": "15390,2,5"
+        }
+      }
+    },
+    {
+      "address": "random_pet.will_it_be_cats",
+      "mode": "managed",
+      "type": "random_pet",
+      "name": "will_it_be_cats",
+      "provider_name": "registry.terraform.io/hashicorp/random",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "keepers": {},
+          "length": 4,
+          "prefix": null,
+          "separator": "-"
+        },
+        "after_unknown": {
+          "id": true,
+          "keepers": {}
+        },
+        "before_sensitive": false,
+        "after_sensitive": {
+          "keepers": {}
+        }
+      }
+    },
+    {
+      "address": "module.more_cats.random_pet.will_it_be_more_cats[0]",
+      "module_address": "module.more_cats",
+      "mode": "managed",
+      "type": "random_pet",
+      "name": "will_it_be_more_cats",
+      "index": 0,
+      "provider_name": "registry.terraform.io/hashicorp/random",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "keepers": {},
+          "length": 0,
+          "prefix": null,
+          "separator": "-"
+        },
+        "after_unknown": {
+          "id": true,
+          "keepers": {}
+        },
+        "before_sensitive": false,
+        "after_sensitive": {
+          "keepers": {}
+        }
+      }
+    },
+    {
+      "address": "module.more_cats.random_pet.will_it_be_more_cats[1]",
+      "module_address": "module.more_cats",
+      "mode": "managed",
+      "type": "random_pet",
+      "name": "will_it_be_more_cats",
+      "index": 1,
+      "provider_name": "registry.terraform.io/hashicorp/random",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "keepers": {},
+          "length": 1,
+          "prefix": null,
+          "separator": "-"
+        },
+        "after_unknown": {
+          "id": true,
+          "keepers": {}
+        },
+        "before_sensitive": false,
+        "after_sensitive": {
+          "keepers": {}
+        }
+      }
+    },
+    {
+      "address": "module.more_cats.random_pet.will_it_be_more_cats[2]",
+      "module_address": "module.more_cats",
+      "mode": "managed",
+      "type": "random_pet",
+      "name": "will_it_be_more_cats",
+      "index": 2,
+      "provider_name": "registry.terraform.io/hashicorp/random",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "keepers": {},
+          "length": 2,
+          "prefix": null,
+          "separator": "-"
+        },
+        "after_unknown": {
+          "id": true,
+          "keepers": {}
+        },
+        "before_sensitive": false,
+        "after_sensitive": {
+          "keepers": {}
+        }
+      }
+    },
+    {
+      "address": "module.more_cats.random_pet.will_it_be_more_cats[3]",
+      "module_address": "module.more_cats",
+      "mode": "managed",
+      "type": "random_pet",
+      "name": "will_it_be_more_cats",
+      "index": 3,
+      "provider_name": "registry.terraform.io/hashicorp/random",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "keepers": {},
+          "length": 3,
+          "prefix": null,
+          "separator": "-"
+        },
+        "after_unknown": {
+          "id": true,
+          "keepers": {}
+        },
+        "before_sensitive": false,
+        "after_sensitive": {
+          "keepers": {}
+        }
+      }
+    },
+    {
+      "address": "module.more_cats.random_pet.will_it_be_more_cats[4]",
+      "module_address": "module.more_cats",
+      "mode": "managed",
+      "type": "random_pet",
+      "name": "will_it_be_more_cats",
+      "index": 4,
+      "provider_name": "registry.terraform.io/hashicorp/random",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "keepers": {},
+          "length": 4,
+          "prefix": null,
+          "separator": "-"
+        },
+        "after_unknown": {
+          "id": true,
+          "keepers": {}
+        },
+        "before_sensitive": false,
+        "after_sensitive": {
+          "keepers": {}
+        }
+      }
+    }
+  ],
+  "prior_state": {
+    "format_version": "1.0",
+    "terraform_version": "1.5.3",
+    "values": {
+      "root_module": {
+        "resources": [
+          {
+            "address": "random_integer.import",
+            "mode": "managed",
+            "type": "random_integer",
+            "name": "import",
+            "provider_name": "registry.terraform.io/hashicorp/random",
+            "schema_version": 0,
+            "values": {
+              "id": "15390",
+              "keepers": {},
+              "max": 5,
+              "min": 2,
+              "result": 15390,
+              "seed": null
+            },
+            "sensitive_values": {
+              "keepers": {}
+            }
+          }
+        ]
+      }
+    }
+  },
+  "configuration": {
+    "provider_config": {
+      "random": {
+        "name": "random",
+        "full_name": "registry.terraform.io/hashicorp/random"
+      }
+    },
+    "root_module": {
+      "resources": [
+        {
+          "address": "random_integer.import",
+          "mode": "managed",
+          "type": "random_integer",
+          "name": "import",
+          "provider_config_key": "random",
+          "expressions": {
+            "keepers": {
+              "constant_value": {}
+            },
+            "max": {
+              "constant_value": 5
+            },
+            "min": {
+              "constant_value": 2
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "random_pet.will_it_be_cats",
+          "mode": "managed",
+          "type": "random_pet",
+          "name": "will_it_be_cats",
+          "provider_config_key": "random",
+          "expressions": {
+            "keepers": {
+              "constant_value": {}
+            },
+            "length": {
+              "constant_value": 4
+            }
+          },
+          "schema_version": 0
+        }
+      ],
+      "module_calls": {
+        "more_cats": {
+          "source": "./modules/more_cats",
+          "module": {
+            "resources": [
+              {
+                "address": "random_pet.will_it_be_more_cats",
+                "mode": "managed",
+                "type": "random_pet",
+                "name": "will_it_be_more_cats",
+                "provider_config_key": "random",
+                "expressions": {
+                  "keepers": {
+                    "constant_value": {}
+                  },
+                  "length": {
+                    "references": [
+                      "count.index"
+                    ]
+                  }
+                },
+                "schema_version": 0,
+                "count_expression": {
+                  "constant_value": 5
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "timestamp": "2023-07-20T15:17:32Z"
+}
