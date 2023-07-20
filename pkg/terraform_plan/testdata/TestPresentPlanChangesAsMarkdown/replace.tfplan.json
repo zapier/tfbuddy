@@ -1,12 +1,7 @@
 {
-  "format_version": "1.1",
-  "terraform_version": "1.2.1",
+  "format_version": "1.2",
+  "terraform_version": "1.5.3",
   "planned_values": {
-    "outputs": {
-      "pets": {
-        "sensitive": false
-      }
-    },
     "root_module": {
       "resources": [
         {
@@ -17,13 +12,12 @@
           "provider_name": "registry.terraform.io/hashicorp/random",
           "schema_version": 0,
           "values": {
+            "keepers": null,
             "max": 5,
-            "min": 2,
+            "min": 1,
             "seed": null
           },
-          "sensitive_values": {
-            "keepers": {}
-          }
+          "sensitive_values": {}
         },
         {
           "address": "random_pet.rando[0]",
@@ -34,12 +28,12 @@
           "provider_name": "registry.terraform.io/hashicorp/random",
           "schema_version": 0,
           "values": {
+            "keepers": null,
+            "length": 4,
             "prefix": null,
             "separator": "-"
           },
-          "sensitive_values": {
-            "keepers": {}
-          }
+          "sensitive_values": {}
         },
         {
           "address": "random_pet.rando[1]",
@@ -50,12 +44,12 @@
           "provider_name": "registry.terraform.io/hashicorp/random",
           "schema_version": 0,
           "values": {
+            "keepers": null,
+            "length": 4,
             "prefix": null,
             "separator": "-"
           },
-          "sensitive_values": {
-            "keepers": {}
-          }
+          "sensitive_values": {}
         },
         {
           "address": "random_pet.rando[2]",
@@ -66,12 +60,12 @@
           "provider_name": "registry.terraform.io/hashicorp/random",
           "schema_version": 0,
           "values": {
+            "keepers": null,
+            "length": 4,
             "prefix": null,
             "separator": "-"
           },
-          "sensitive_values": {
-            "keepers": {}
-          }
+          "sensitive_values": {}
         },
         {
           "address": "random_pet.rando[3]",
@@ -82,12 +76,12 @@
           "provider_name": "registry.terraform.io/hashicorp/random",
           "schema_version": 0,
           "values": {
+            "keepers": null,
+            "length": 4,
             "prefix": null,
             "separator": "-"
           },
-          "sensitive_values": {
-            "keepers": {}
-          }
+          "sensitive_values": {}
         },
         {
           "address": "time_rotating.moar_pets",
@@ -97,9 +91,9 @@
           "provider_name": "registry.terraform.io/hashicorp/time",
           "schema_version": 0,
           "values": {
-            "rotation_days": null,
+            "rotation_days": 30,
             "rotation_hours": null,
-            "rotation_minutes": 1,
+            "rotation_minutes": null,
             "rotation_months": null,
             "rotation_years": null,
             "triggers": null
@@ -109,42 +103,6 @@
       ]
     }
   },
-  "resource_drift": [
-    {
-      "address": "time_rotating.moar_pets",
-      "mode": "managed",
-      "type": "time_rotating",
-      "name": "moar_pets",
-      "provider_name": "registry.terraform.io/hashicorp/time",
-      "change": {
-        "actions": [
-          "delete"
-        ],
-        "before": {
-          "day": 25,
-          "hour": 1,
-          "id": "2022-05-25T01:23:59Z",
-          "minute": 23,
-          "month": 5,
-          "rfc3339": "2022-05-25T01:23:59Z",
-          "rotation_days": null,
-          "rotation_hours": null,
-          "rotation_minutes": 1,
-          "rotation_months": null,
-          "rotation_rfc3339": "2022-05-25T01:24:59Z",
-          "rotation_years": null,
-          "second": 59,
-          "triggers": null,
-          "unix": 1653441839,
-          "year": 2022
-        },
-        "after": null,
-        "after_unknown": {},
-        "before_sensitive": {},
-        "after_sensitive": false
-      }
-    }
-  ],
   "resource_changes": [
     {
       "address": "random_integer.pet_length",
@@ -158,34 +116,28 @@
           "create"
         ],
         "before": {
-          "id": "3",
-          "keepers": {
-            "rotate": "2022-05-25T01:23:59Z"
-          },
+          "id": "2",
+          "keepers": null,
           "max": 5,
           "min": 2,
-          "result": 3,
+          "result": 2,
           "seed": null
         },
         "after": {
+          "keepers": null,
           "max": 5,
-          "min": 2,
+          "min": 1,
           "seed": null
         },
         "after_unknown": {
           "id": true,
-          "keepers": true,
           "result": true
         },
-        "before_sensitive": {
-          "keepers": {}
-        },
-        "after_sensitive": {
-          "keepers": {}
-        },
+        "before_sensitive": {},
+        "after_sensitive": {},
         "replace_paths": [
           [
-            "keepers"
+            "min"
           ]
         ]
       },
@@ -204,33 +156,24 @@
           "create"
         ],
         "before": {
-          "id": "solely-on-hog",
-          "keepers": {
-            "rotate": "2022-05-25T01:23:59Z"
-          },
-          "length": 3,
+          "id": "selected-chimp",
+          "keepers": null,
+          "length": 2,
           "prefix": null,
           "separator": "-"
         },
         "after": {
+          "keepers": null,
+          "length": 4,
           "prefix": null,
           "separator": "-"
         },
         "after_unknown": {
-          "id": true,
-          "keepers": true,
-          "length": true
+          "id": true
         },
-        "before_sensitive": {
-          "keepers": {}
-        },
-        "after_sensitive": {
-          "keepers": {}
-        },
+        "before_sensitive": {},
+        "after_sensitive": {},
         "replace_paths": [
-          [
-            "keepers"
-          ],
           [
             "length"
           ]
@@ -251,33 +194,24 @@
           "create"
         ],
         "before": {
-          "id": "trivially-more-raven",
-          "keepers": {
-            "rotate": "2022-05-25T01:23:59Z"
-          },
-          "length": 3,
+          "id": "regular-kodiak",
+          "keepers": null,
+          "length": 2,
           "prefix": null,
           "separator": "-"
         },
         "after": {
+          "keepers": null,
+          "length": 4,
           "prefix": null,
           "separator": "-"
         },
         "after_unknown": {
-          "id": true,
-          "keepers": true,
-          "length": true
+          "id": true
         },
-        "before_sensitive": {
-          "keepers": {}
-        },
-        "after_sensitive": {
-          "keepers": {}
-        },
+        "before_sensitive": {},
+        "after_sensitive": {},
         "replace_paths": [
-          [
-            "keepers"
-          ],
           [
             "length"
           ]
@@ -298,33 +232,24 @@
           "create"
         ],
         "before": {
-          "id": "nationally-unique-mantis",
-          "keepers": {
-            "rotate": "2022-05-25T01:23:59Z"
-          },
-          "length": 3,
+          "id": "fit-crappie",
+          "keepers": null,
+          "length": 2,
           "prefix": null,
           "separator": "-"
         },
         "after": {
+          "keepers": null,
+          "length": 4,
           "prefix": null,
           "separator": "-"
         },
         "after_unknown": {
-          "id": true,
-          "keepers": true,
-          "length": true
+          "id": true
         },
-        "before_sensitive": {
-          "keepers": {}
-        },
-        "after_sensitive": {
-          "keepers": {}
-        },
+        "before_sensitive": {},
+        "after_sensitive": {},
         "replace_paths": [
-          [
-            "keepers"
-          ],
           [
             "length"
           ]
@@ -345,33 +270,24 @@
           "create"
         ],
         "before": {
-          "id": "entirely-present-leech",
-          "keepers": {
-            "rotate": "2022-05-25T01:23:59Z"
-          },
-          "length": 3,
+          "id": "meet-jaguar",
+          "keepers": null,
+          "length": 2,
           "prefix": null,
           "separator": "-"
         },
         "after": {
+          "keepers": null,
+          "length": 4,
           "prefix": null,
           "separator": "-"
         },
         "after_unknown": {
-          "id": true,
-          "keepers": true,
-          "length": true
+          "id": true
         },
-        "before_sensitive": {
-          "keepers": {}
-        },
-        "after_sensitive": {
-          "keepers": {}
-        },
+        "before_sensitive": {},
+        "after_sensitive": {},
         "replace_paths": [
-          [
-            "keepers"
-          ],
           [
             "length"
           ]
@@ -391,9 +307,9 @@
         ],
         "before": null,
         "after": {
-          "rotation_days": null,
+          "rotation_days": 30,
           "rotation_hours": null,
-          "rotation_minutes": 1,
+          "rotation_minutes": null,
           "rotation_months": null,
           "rotation_years": null,
           "triggers": null
@@ -415,46 +331,10 @@
       }
     }
   ],
-  "output_changes": {
-    "pets": {
-      "actions": [
-        "update"
-      ],
-      "before": [
-        "solely-on-hog",
-        "trivially-more-raven",
-        "nationally-unique-mantis",
-        "entirely-present-leech"
-      ],
-      "after_unknown": true,
-      "before_sensitive": false,
-      "after_sensitive": false
-    }
-  },
   "prior_state": {
     "format_version": "1.0",
-    "terraform_version": "1.2.1",
+    "terraform_version": "1.5.3",
     "values": {
-      "outputs": {
-        "pets": {
-          "sensitive": false,
-          "value": [
-            "solely-on-hog",
-            "trivially-more-raven",
-            "nationally-unique-mantis",
-            "entirely-present-leech"
-          ],
-          "type": [
-            "tuple",
-            [
-              "string",
-              "string",
-              "string",
-              "string"
-            ]
-          ]
-        }
-      },
       "root_module": {
         "resources": [
           {
@@ -465,21 +345,14 @@
             "provider_name": "registry.terraform.io/hashicorp/random",
             "schema_version": 0,
             "values": {
-              "id": "3",
-              "keepers": {
-                "rotate": "2022-05-25T01:23:59Z"
-              },
+              "id": "2",
+              "keepers": null,
               "max": 5,
               "min": 2,
-              "result": 3,
+              "result": 2,
               "seed": null
             },
-            "sensitive_values": {
-              "keepers": {}
-            },
-            "depends_on": [
-              "time_rotating.moar_pets"
-            ]
+            "sensitive_values": {}
           },
           {
             "address": "random_pet.rando[0]",
@@ -490,21 +363,13 @@
             "provider_name": "registry.terraform.io/hashicorp/random",
             "schema_version": 0,
             "values": {
-              "id": "solely-on-hog",
-              "keepers": {
-                "rotate": "2022-05-25T01:23:59Z"
-              },
-              "length": 3,
+              "id": "selected-chimp",
+              "keepers": null,
+              "length": 2,
               "prefix": null,
               "separator": "-"
             },
-            "sensitive_values": {
-              "keepers": {}
-            },
-            "depends_on": [
-              "random_integer.pet_length",
-              "time_rotating.moar_pets"
-            ]
+            "sensitive_values": {}
           },
           {
             "address": "random_pet.rando[1]",
@@ -515,21 +380,13 @@
             "provider_name": "registry.terraform.io/hashicorp/random",
             "schema_version": 0,
             "values": {
-              "id": "trivially-more-raven",
-              "keepers": {
-                "rotate": "2022-05-25T01:23:59Z"
-              },
-              "length": 3,
+              "id": "regular-kodiak",
+              "keepers": null,
+              "length": 2,
               "prefix": null,
               "separator": "-"
             },
-            "sensitive_values": {
-              "keepers": {}
-            },
-            "depends_on": [
-              "random_integer.pet_length",
-              "time_rotating.moar_pets"
-            ]
+            "sensitive_values": {}
           },
           {
             "address": "random_pet.rando[2]",
@@ -540,21 +397,13 @@
             "provider_name": "registry.terraform.io/hashicorp/random",
             "schema_version": 0,
             "values": {
-              "id": "nationally-unique-mantis",
-              "keepers": {
-                "rotate": "2022-05-25T01:23:59Z"
-              },
-              "length": 3,
+              "id": "fit-crappie",
+              "keepers": null,
+              "length": 2,
               "prefix": null,
               "separator": "-"
             },
-            "sensitive_values": {
-              "keepers": {}
-            },
-            "depends_on": [
-              "random_integer.pet_length",
-              "time_rotating.moar_pets"
-            ]
+            "sensitive_values": {}
           },
           {
             "address": "random_pet.rando[3]",
@@ -565,21 +414,13 @@
             "provider_name": "registry.terraform.io/hashicorp/random",
             "schema_version": 0,
             "values": {
-              "id": "entirely-present-leech",
-              "keepers": {
-                "rotate": "2022-05-25T01:23:59Z"
-              },
-              "length": 3,
+              "id": "meet-jaguar",
+              "keepers": null,
+              "length": 2,
               "prefix": null,
               "separator": "-"
             },
-            "sensitive_values": {
-              "keepers": {}
-            },
-            "depends_on": [
-              "random_integer.pet_length",
-              "time_rotating.moar_pets"
-            ]
+            "sensitive_values": {}
           }
         ]
       }
@@ -597,15 +438,6 @@
       }
     },
     "root_module": {
-      "outputs": {
-        "pets": {
-          "expression": {
-            "references": [
-              "random_pet.rando"
-            ]
-          }
-        }
-      },
       "resources": [
         {
           "address": "random_integer.pet_length",
@@ -614,17 +446,11 @@
           "name": "pet_length",
           "provider_config_key": "random",
           "expressions": {
-            "keepers": {
-              "references": [
-                "time_rotating.moar_pets.id",
-                "time_rotating.moar_pets"
-              ]
-            },
             "max": {
               "constant_value": 5
             },
             "min": {
-              "constant_value": 2
+              "constant_value": 1
             }
           },
           "schema_version": 0
@@ -636,20 +462,8 @@
           "name": "rando",
           "provider_config_key": "random",
           "expressions": {
-            "keepers": {
-              "references": [
-                "time_rotating.moar_pets.id",
-                "time_rotating.moar_pets"
-              ]
-            },
             "length": {
-              "references": [
-                "random_integer.pet_length.result",
-                "random_integer.pet_length"
-              ]
-            },
-            "separator": {
-              "constant_value": "-"
+              "constant_value": 4
             }
           },
           "schema_version": 0,
@@ -664,8 +478,8 @@
           "name": "moar_pets",
           "provider_config_key": "time",
           "expressions": {
-            "rotation_minutes": {
-              "constant_value": 1
+            "rotation_days": {
+              "constant_value": 30
             }
           },
           "schema_version": 0
@@ -673,22 +487,5 @@
       ]
     }
   },
-  "relevant_attributes": [
-    {
-      "resource": "random_pet.rando",
-      "attribute": []
-    },
-    {
-      "resource": "time_rotating.moar_pets",
-      "attribute": [
-        "id"
-      ]
-    },
-    {
-      "resource": "random_integer.pet_length",
-      "attribute": [
-        "result"
-      ]
-    }
-  ]
+  "timestamp": "2023-07-20T15:11:25Z"
 }
