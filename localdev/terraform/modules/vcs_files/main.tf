@@ -69,6 +69,17 @@ resource "random_integer" "import" {
   keepers = {}
 }
 
+import {
+  to = random_integer.import_replacement
+  id = "15390,2,5"
+}
+
+resource "random_integer" "import_replacement" {
+  min     = 1
+  max     = 5
+  keepers = {}
+}
+
 resource "tls_private_key" "rsa-4096-example" {
   algorithm = "RSA"
   rsa_bits  = 4096
