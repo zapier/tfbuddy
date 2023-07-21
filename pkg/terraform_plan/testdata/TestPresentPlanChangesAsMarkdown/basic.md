@@ -6,7 +6,7 @@
 
 :seedling: <b>Additions:</b> 1
 <ul>
-    <li><code>random_pet.will_it_be_one_more_cat</code></li>
+    <li><code>random_pet.will_it_be_cats</code></li>
 </ul>
 
 :cyclone: <b>Changes:</b> 0

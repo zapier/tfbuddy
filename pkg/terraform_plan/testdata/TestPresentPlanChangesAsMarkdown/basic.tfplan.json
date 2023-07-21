@@ -1,7 +1,30 @@
 {
-  "format_version": "1.2",
-  "terraform_version": "1.5.3",
+  "format_version": "1.0",
+  "terraform_version": "1.1.6",
+  "variables": {
+    "aws_account_id": {
+      "value": "123456789120"
+    },
+    "aws_region": {
+      "value": "us-east-1"
+    },
+    "environment_name": {
+      "value": "dev"
+    },
+    "zapier_environment": {
+      "value": "dev"
+    }
+  },
   "planned_values": {
+    "outputs": {
+      "ecr_repository_url": {
+        "sensitive": false,
+        "value": "123456789120.dkr.ecr.us-east-1.amazonaws.com/tfbuddy"
+      },
+      "our_pet": {
+        "sensitive": false
+      }
+    },
     "root_module": {
       "resources": [
         {
@@ -12,139 +35,252 @@
           "provider_name": "registry.terraform.io/hashicorp/random",
           "schema_version": 0,
           "values": {
-            "id": "repeatedly-mentally-ruling-octopus",
-            "keepers": {},
+            "keepers": null,
             "length": 4,
             "prefix": null,
-            "separator": "-"
+            "separator": "/"
           },
-          "sensitive_values": {
-            "keepers": {}
-          }
-        },
-        {
-          "address": "random_pet.will_it_be_one_more_cat",
-          "mode": "managed",
-          "type": "random_pet",
-          "name": "will_it_be_one_more_cat",
-          "provider_name": "registry.terraform.io/hashicorp/random",
-          "schema_version": 0,
-          "values": {
-            "keepers": {},
-            "length": 6,
-            "prefix": null,
-            "separator": "-"
-          },
-          "sensitive_values": {
-            "keepers": {}
-          }
+          "sensitive_values": {}
         }
       ],
       "child_modules": [
         {
           "resources": [
             {
-              "address": "module.more_cats.random_pet.will_it_be_more_cats[0]",
+              "address": "module.ecr_repository.aws_ecr_lifecycle_policy.expiration",
               "mode": "managed",
-              "type": "random_pet",
-              "name": "will_it_be_more_cats",
-              "index": 0,
-              "provider_name": "registry.terraform.io/hashicorp/random",
+              "type": "aws_ecr_lifecycle_policy",
+              "name": "expiration",
+              "provider_name": "registry.terraform.io/hashicorp/aws",
               "schema_version": 0,
               "values": {
-                "id": "immortal-baboon",
-                "keepers": {},
-                "length": 0,
-                "prefix": null,
-                "separator": "-"
+                "id": "tfbuddy",
+                "policy": "{\"rules\":[{\"action\":{\"type\":\"expire\"},\"description\":\"remove untagged \\u003e 1 days\",\"rulePriority\":1,\"selection\":{\"countNumber\":1,\"countType\":\"sinceImagePushed\",\"countUnit\":\"days\",\"tagStatus\":\"untagged\"}},{\"action\":{\"type\":\"expire\"},\"description\":\"remove CI images older than 30 days\",\"rulePriority\":2,\"selection\":{\"countNumber\":30,\"countType\":\"sinceImagePushed\",\"countUnit\":\"days\",\"tagPrefixList\":[\"ci-\"],\"tagStatus\":\"tagged\"}},{\"action\":{\"type\":\"expire\"},\"description\":\"remove any images after we reach 4000 in repo\",\"rulePriority\":3,\"selection\":{\"countNumber\":4000,\"countType\":\"imageCountMoreThan\",\"tagStatus\":\"any\"}}]}",
+                "registry_id": "123456789120",
+                "repository": "tfbuddy"
+              },
+              "sensitive_values": {}
+            },
+            {
+              "address": "module.ecr_repository.aws_ecr_repository.repo",
+              "mode": "managed",
+              "type": "aws_ecr_repository",
+              "name": "repo",
+              "provider_name": "registry.terraform.io/hashicorp/aws",
+              "schema_version": 0,
+              "values": {
+                "arn": "arn:aws:ecr:us-east-1:123456789120:repository/tfbuddy",
+                "encryption_configuration": [
+                  {
+                    "encryption_type": "AES256",
+                    "kms_key": ""
+                  }
+                ],
+                "id": "tfbuddy",
+                "image_scanning_configuration": [
+                  {
+                    "scan_on_push": true
+                  }
+                ],
+                "image_tag_mutability": "MUTABLE",
+                "name": "tfbuddy",
+                "registry_id": "123456789120",
+                "repository_url": "123456789120.dkr.ecr.us-east-1.amazonaws.com/tfbuddy",
+                "tags": {
+                  "managed_by": "terraform",
+                  "name": "tfbuddy",
+                  "service": "tfbuddy"
+                },
+                "tags_all": {
+                  "managed_by": "terraform",
+                  "name": "tfbuddy",
+                  "service": "tfbuddy"
+                },
+                "timeouts": null
               },
               "sensitive_values": {
-                "keepers": {}
+                "encryption_configuration": [
+                  {}
+                ],
+                "image_scanning_configuration": [
+                  {}
+                ],
+                "tags": {},
+                "tags_all": {}
               }
             },
             {
-              "address": "module.more_cats.random_pet.will_it_be_more_cats[1]",
+              "address": "module.ecr_repository.aws_ecr_repository_policy.cross_account",
               "mode": "managed",
-              "type": "random_pet",
-              "name": "will_it_be_more_cats",
-              "index": 1,
-              "provider_name": "registry.terraform.io/hashicorp/random",
+              "type": "aws_ecr_repository_policy",
+              "name": "cross_account",
+              "provider_name": "registry.terraform.io/hashicorp/aws",
               "schema_version": 0,
               "values": {
-                "id": "grouper",
-                "keepers": {},
-                "length": 1,
-                "prefix": null,
-                "separator": "-"
+                "id": "tfbuddy",
+                "policy": "{\"Statement\":[{\"Action\":[\"ecr:BatchCheckLayerAvailability\",\"ecr:BatchGetImage\",\"ecr:CompleteLayerUpload\",\"ecr:GetDownloadUrlForLayer\",\"ecr:InitiateLayerUpload\",\"ecr:PutImage\",\"ecr:UploadLayerPart\"],\"Effect\":\"Allow\",\"Principal\":{\"AWS\":\"arn:aws:iam::123456789120:root\"},\"Sid\":\"AllowPushPull\"}],\"Version\":\"2008-10-17\"}",
+                "registry_id": "123456789120",
+                "repository": "tfbuddy"
               },
-              "sensitive_values": {
-                "keepers": {}
-              }
-            },
-            {
-              "address": "module.more_cats.random_pet.will_it_be_more_cats[2]",
-              "mode": "managed",
-              "type": "random_pet",
-              "name": "will_it_be_more_cats",
-              "index": 2,
-              "provider_name": "registry.terraform.io/hashicorp/random",
-              "schema_version": 0,
-              "values": {
-                "id": "fit-sturgeon",
-                "keepers": {},
-                "length": 2,
-                "prefix": null,
-                "separator": "-"
-              },
-              "sensitive_values": {
-                "keepers": {}
-              }
-            },
-            {
-              "address": "module.more_cats.random_pet.will_it_be_more_cats[3]",
-              "mode": "managed",
-              "type": "random_pet",
-              "name": "will_it_be_more_cats",
-              "index": 3,
-              "provider_name": "registry.terraform.io/hashicorp/random",
-              "schema_version": 0,
-              "values": {
-                "id": "possibly-popular-urchin",
-                "keepers": {},
-                "length": 3,
-                "prefix": null,
-                "separator": "-"
-              },
-              "sensitive_values": {
-                "keepers": {}
-              }
-            },
-            {
-              "address": "module.more_cats.random_pet.will_it_be_more_cats[4]",
-              "mode": "managed",
-              "type": "random_pet",
-              "name": "will_it_be_more_cats",
-              "index": 4,
-              "provider_name": "registry.terraform.io/hashicorp/random",
-              "schema_version": 0,
-              "values": {
-                "id": "nationally-noticeably-electric-lab",
-                "keepers": {},
-                "length": 4,
-                "prefix": null,
-                "separator": "-"
-              },
-              "sensitive_values": {
-                "keepers": {}
-              }
+              "sensitive_values": {}
             }
           ],
-          "address": "module.more_cats"
+          "address": "module.ecr_repository"
         }
       ]
     }
   },
   "resource_changes": [
+    {
+      "address": "module.ecr_repository.aws_ecr_lifecycle_policy.expiration",
+      "module_address": "module.ecr_repository",
+      "mode": "managed",
+      "type": "aws_ecr_lifecycle_policy",
+      "name": "expiration",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "no-op"
+        ],
+        "before": {
+          "id": "tfbuddy",
+          "policy": "{\"rules\":[{\"action\":{\"type\":\"expire\"},\"description\":\"remove untagged \\u003e 1 days\",\"rulePriority\":1,\"selection\":{\"countNumber\":1,\"countType\":\"sinceImagePushed\",\"countUnit\":\"days\",\"tagStatus\":\"untagged\"}},{\"action\":{\"type\":\"expire\"},\"description\":\"remove CI images older than 30 days\",\"rulePriority\":2,\"selection\":{\"countNumber\":30,\"countType\":\"sinceImagePushed\",\"countUnit\":\"days\",\"tagPrefixList\":[\"ci-\"],\"tagStatus\":\"tagged\"}},{\"action\":{\"type\":\"expire\"},\"description\":\"remove any images after we reach 4000 in repo\",\"rulePriority\":3,\"selection\":{\"countNumber\":4000,\"countType\":\"imageCountMoreThan\",\"tagStatus\":\"any\"}}]}",
+          "registry_id": "123456789120",
+          "repository": "tfbuddy"
+        },
+        "after": {
+          "id": "tfbuddy",
+          "policy": "{\"rules\":[{\"action\":{\"type\":\"expire\"},\"description\":\"remove untagged \\u003e 1 days\",\"rulePriority\":1,\"selection\":{\"countNumber\":1,\"countType\":\"sinceImagePushed\",\"countUnit\":\"days\",\"tagStatus\":\"untagged\"}},{\"action\":{\"type\":\"expire\"},\"description\":\"remove CI images older than 30 days\",\"rulePriority\":2,\"selection\":{\"countNumber\":30,\"countType\":\"sinceImagePushed\",\"countUnit\":\"days\",\"tagPrefixList\":[\"ci-\"],\"tagStatus\":\"tagged\"}},{\"action\":{\"type\":\"expire\"},\"description\":\"remove any images after we reach 4000 in repo\",\"rulePriority\":3,\"selection\":{\"countNumber\":4000,\"countType\":\"imageCountMoreThan\",\"tagStatus\":\"any\"}}]}",
+          "registry_id": "123456789120",
+          "repository": "tfbuddy"
+        },
+        "after_unknown": {},
+        "before_sensitive": {},
+        "after_sensitive": {}
+      }
+    },
+    {
+      "address": "module.ecr_repository.aws_ecr_repository.repo",
+      "module_address": "module.ecr_repository",
+      "mode": "managed",
+      "type": "aws_ecr_repository",
+      "name": "repo",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "no-op"
+        ],
+        "before": {
+          "arn": "arn:aws:ecr:us-east-1:123456789120:repository/tfbuddy",
+          "encryption_configuration": [
+            {
+              "encryption_type": "AES256",
+              "kms_key": ""
+            }
+          ],
+          "id": "tfbuddy",
+          "image_scanning_configuration": [
+            {
+              "scan_on_push": true
+            }
+          ],
+          "image_tag_mutability": "MUTABLE",
+          "name": "tfbuddy",
+          "registry_id": "123456789120",
+          "repository_url": "123456789120.dkr.ecr.us-east-1.amazonaws.com/tfbuddy",
+          "tags": {
+            "managed_by": "terraform",
+            "name": "tfbuddy",
+            "service": "tfbuddy"
+          },
+          "tags_all": {
+            "managed_by": "terraform",
+            "name": "tfbuddy",
+            "service": "tfbuddy"
+          },
+          "timeouts": null
+        },
+        "after": {
+          "arn": "arn:aws:ecr:us-east-1:123456789120:repository/tfbuddy",
+          "encryption_configuration": [
+            {
+              "encryption_type": "AES256",
+              "kms_key": ""
+            }
+          ],
+          "id": "tfbuddy",
+          "image_scanning_configuration": [
+            {
+              "scan_on_push": true
+            }
+          ],
+          "image_tag_mutability": "MUTABLE",
+          "name": "tfbuddy",
+          "registry_id": "123456789120",
+          "repository_url": "123456789120.dkr.ecr.us-east-1.amazonaws.com/tfbuddy",
+          "tags": {
+            "managed_by": "terraform",
+            "name": "tfbuddy",
+            "service": "tfbuddy"
+          },
+          "tags_all": {
+            "managed_by": "terraform",
+            "name": "tfbuddy",
+            "service": "tfbuddy"
+          },
+          "timeouts": null
+        },
+        "after_unknown": {},
+        "before_sensitive": {
+          "encryption_configuration": [
+            {}
+          ],
+          "image_scanning_configuration": [
+            {}
+          ],
+          "tags": {},
+          "tags_all": {}
+        },
+        "after_sensitive": {
+          "encryption_configuration": [
+            {}
+          ],
+          "image_scanning_configuration": [
+            {}
+          ],
+          "tags": {},
+          "tags_all": {}
+        }
+      }
+    },
+    {
+      "address": "module.ecr_repository.aws_ecr_repository_policy.cross_account",
+      "module_address": "module.ecr_repository",
+      "mode": "managed",
+      "type": "aws_ecr_repository_policy",
+      "name": "cross_account",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "no-op"
+        ],
+        "before": {
+          "id": "tfbuddy",
+          "policy": "{\"Statement\":[{\"Action\":[\"ecr:BatchCheckLayerAvailability\",\"ecr:BatchGetImage\",\"ecr:CompleteLayerUpload\",\"ecr:GetDownloadUrlForLayer\",\"ecr:InitiateLayerUpload\",\"ecr:PutImage\",\"ecr:UploadLayerPart\"],\"Effect\":\"Allow\",\"Principal\":{\"AWS\":\"arn:aws:iam::123456789120:root\"},\"Sid\":\"AllowPushPull\"}],\"Version\":\"2008-10-17\"}",
+          "registry_id": "123456789120",
+          "repository": "tfbuddy"
+        },
+        "after": {
+          "id": "tfbuddy",
+          "policy": "{\"Statement\":[{\"Action\":[\"ecr:BatchCheckLayerAvailability\",\"ecr:BatchGetImage\",\"ecr:CompleteLayerUpload\",\"ecr:GetDownloadUrlForLayer\",\"ecr:InitiateLayerUpload\",\"ecr:PutImage\",\"ecr:UploadLayerPart\"],\"Effect\":\"Allow\",\"Principal\":{\"AWS\":\"arn:aws:iam::123456789120:root\"},\"Sid\":\"AllowPushPull\"}],\"Version\":\"2008-10-17\"}",
+          "registry_id": "123456789120",
+          "repository": "tfbuddy"
+        },
+        "after_unknown": {},
+        "before_sensitive": {},
+        "after_sensitive": {}
+      }
+    },
     {
       "address": "random_pet.will_it_be_cats",
       "mode": "managed",
@@ -153,359 +289,144 @@
       "provider_name": "registry.terraform.io/hashicorp/random",
       "change": {
         "actions": [
-          "no-op"
-        ],
-        "before": {
-          "id": "repeatedly-mentally-ruling-octopus",
-          "keepers": {},
-          "length": 4,
-          "prefix": null,
-          "separator": "-"
-        },
-        "after": {
-          "id": "repeatedly-mentally-ruling-octopus",
-          "keepers": {},
-          "length": 4,
-          "prefix": null,
-          "separator": "-"
-        },
-        "after_unknown": {},
-        "before_sensitive": {
-          "keepers": {}
-        },
-        "after_sensitive": {
-          "keepers": {}
-        }
-      }
-    },
-    {
-      "address": "random_pet.will_it_be_one_more_cat",
-      "mode": "managed",
-      "type": "random_pet",
-      "name": "will_it_be_one_more_cat",
-      "provider_name": "registry.terraform.io/hashicorp/random",
-      "change": {
-        "actions": [
           "create"
         ],
         "before": null,
         "after": {
-          "keepers": {},
-          "length": 6,
+          "keepers": null,
+          "length": 4,
           "prefix": null,
-          "separator": "-"
+          "separator": "/"
         },
         "after_unknown": {
-          "id": true,
-          "keepers": {}
+          "id": true
         },
         "before_sensitive": false,
-        "after_sensitive": {
-          "keepers": {}
-        }
-      }
-    },
-    {
-      "address": "module.more_cats.random_pet.will_it_be_more_cats[0]",
-      "module_address": "module.more_cats",
-      "mode": "managed",
-      "type": "random_pet",
-      "name": "will_it_be_more_cats",
-      "index": 0,
-      "provider_name": "registry.terraform.io/hashicorp/random",
-      "change": {
-        "actions": [
-          "no-op"
-        ],
-        "before": {
-          "id": "immortal-baboon",
-          "keepers": {},
-          "length": 0,
-          "prefix": null,
-          "separator": "-"
-        },
-        "after": {
-          "id": "immortal-baboon",
-          "keepers": {},
-          "length": 0,
-          "prefix": null,
-          "separator": "-"
-        },
-        "after_unknown": {},
-        "before_sensitive": {
-          "keepers": {}
-        },
-        "after_sensitive": {
-          "keepers": {}
-        }
-      }
-    },
-    {
-      "address": "module.more_cats.random_pet.will_it_be_more_cats[1]",
-      "module_address": "module.more_cats",
-      "mode": "managed",
-      "type": "random_pet",
-      "name": "will_it_be_more_cats",
-      "index": 1,
-      "provider_name": "registry.terraform.io/hashicorp/random",
-      "change": {
-        "actions": [
-          "no-op"
-        ],
-        "before": {
-          "id": "grouper",
-          "keepers": {},
-          "length": 1,
-          "prefix": null,
-          "separator": "-"
-        },
-        "after": {
-          "id": "grouper",
-          "keepers": {},
-          "length": 1,
-          "prefix": null,
-          "separator": "-"
-        },
-        "after_unknown": {},
-        "before_sensitive": {
-          "keepers": {}
-        },
-        "after_sensitive": {
-          "keepers": {}
-        }
-      }
-    },
-    {
-      "address": "module.more_cats.random_pet.will_it_be_more_cats[2]",
-      "module_address": "module.more_cats",
-      "mode": "managed",
-      "type": "random_pet",
-      "name": "will_it_be_more_cats",
-      "index": 2,
-      "provider_name": "registry.terraform.io/hashicorp/random",
-      "change": {
-        "actions": [
-          "no-op"
-        ],
-        "before": {
-          "id": "fit-sturgeon",
-          "keepers": {},
-          "length": 2,
-          "prefix": null,
-          "separator": "-"
-        },
-        "after": {
-          "id": "fit-sturgeon",
-          "keepers": {},
-          "length": 2,
-          "prefix": null,
-          "separator": "-"
-        },
-        "after_unknown": {},
-        "before_sensitive": {
-          "keepers": {}
-        },
-        "after_sensitive": {
-          "keepers": {}
-        }
-      }
-    },
-    {
-      "address": "module.more_cats.random_pet.will_it_be_more_cats[3]",
-      "module_address": "module.more_cats",
-      "mode": "managed",
-      "type": "random_pet",
-      "name": "will_it_be_more_cats",
-      "index": 3,
-      "provider_name": "registry.terraform.io/hashicorp/random",
-      "change": {
-        "actions": [
-          "no-op"
-        ],
-        "before": {
-          "id": "possibly-popular-urchin",
-          "keepers": {},
-          "length": 3,
-          "prefix": null,
-          "separator": "-"
-        },
-        "after": {
-          "id": "possibly-popular-urchin",
-          "keepers": {},
-          "length": 3,
-          "prefix": null,
-          "separator": "-"
-        },
-        "after_unknown": {},
-        "before_sensitive": {
-          "keepers": {}
-        },
-        "after_sensitive": {
-          "keepers": {}
-        }
-      }
-    },
-    {
-      "address": "module.more_cats.random_pet.will_it_be_more_cats[4]",
-      "module_address": "module.more_cats",
-      "mode": "managed",
-      "type": "random_pet",
-      "name": "will_it_be_more_cats",
-      "index": 4,
-      "provider_name": "registry.terraform.io/hashicorp/random",
-      "change": {
-        "actions": [
-          "no-op"
-        ],
-        "before": {
-          "id": "nationally-noticeably-electric-lab",
-          "keepers": {},
-          "length": 4,
-          "prefix": null,
-          "separator": "-"
-        },
-        "after": {
-          "id": "nationally-noticeably-electric-lab",
-          "keepers": {},
-          "length": 4,
-          "prefix": null,
-          "separator": "-"
-        },
-        "after_unknown": {},
-        "before_sensitive": {
-          "keepers": {}
-        },
-        "after_sensitive": {
-          "keepers": {}
-        }
+        "after_sensitive": {}
       }
     }
   ],
+  "output_changes": {
+    "ecr_repository_url": {
+      "actions": [
+        "no-op"
+      ],
+      "before": "123456789120.dkr.ecr.us-east-1.amazonaws.com/tfbuddy",
+      "after": "123456789120.dkr.ecr.us-east-1.amazonaws.com/tfbuddy",
+      "after_unknown": false,
+      "before_sensitive": false,
+      "after_sensitive": false
+    },
+    "our_pet": {
+      "actions": [
+        "create"
+      ],
+      "before": null,
+      "after_unknown": true,
+      "before_sensitive": false,
+      "after_sensitive": false
+    }
+  },
   "prior_state": {
     "format_version": "1.0",
-    "terraform_version": "1.5.3",
+    "terraform_version": "1.1.6",
     "values": {
+      "outputs": {
+        "ecr_repository_url": {
+          "sensitive": false,
+          "value": "123456789120.dkr.ecr.us-east-1.amazonaws.com/tfbuddy"
+        }
+      },
       "root_module": {
-        "resources": [
-          {
-            "address": "random_pet.will_it_be_cats",
-            "mode": "managed",
-            "type": "random_pet",
-            "name": "will_it_be_cats",
-            "provider_name": "registry.terraform.io/hashicorp/random",
-            "schema_version": 0,
-            "values": {
-              "id": "repeatedly-mentally-ruling-octopus",
-              "keepers": {},
-              "length": 4,
-              "prefix": null,
-              "separator": "-"
-            },
-            "sensitive_values": {
-              "keepers": {}
-            }
-          }
-        ],
         "child_modules": [
           {
             "resources": [
               {
-                "address": "module.more_cats.random_pet.will_it_be_more_cats[0]",
+                "address": "module.ecr_repository.aws_ecr_lifecycle_policy.expiration",
                 "mode": "managed",
-                "type": "random_pet",
-                "name": "will_it_be_more_cats",
-                "index": 0,
-                "provider_name": "registry.terraform.io/hashicorp/random",
+                "type": "aws_ecr_lifecycle_policy",
+                "name": "expiration",
+                "provider_name": "registry.terraform.io/hashicorp/aws",
                 "schema_version": 0,
                 "values": {
-                  "id": "immortal-baboon",
-                  "keepers": {},
-                  "length": 0,
-                  "prefix": null,
-                  "separator": "-"
+                  "id": "tfbuddy",
+                  "policy": "{\"rules\":[{\"action\":{\"type\":\"expire\"},\"description\":\"remove untagged \\u003e 1 days\",\"rulePriority\":1,\"selection\":{\"countNumber\":1,\"countType\":\"sinceImagePushed\",\"countUnit\":\"days\",\"tagStatus\":\"untagged\"}},{\"action\":{\"type\":\"expire\"},\"description\":\"remove CI images older than 30 days\",\"rulePriority\":2,\"selection\":{\"countNumber\":30,\"countType\":\"sinceImagePushed\",\"countUnit\":\"days\",\"tagPrefixList\":[\"ci-\"],\"tagStatus\":\"tagged\"}},{\"action\":{\"type\":\"expire\"},\"description\":\"remove any images after we reach 4000 in repo\",\"rulePriority\":3,\"selection\":{\"countNumber\":4000,\"countType\":\"imageCountMoreThan\",\"tagStatus\":\"any\"}}]}",
+                  "registry_id": "123456789120",
+                  "repository": "tfbuddy"
+                },
+                "sensitive_values": {},
+                "depends_on": [
+                  "module.ecr_repository.aws_ecr_repository.repo"
+                ]
+              },
+              {
+                "address": "module.ecr_repository.aws_ecr_repository.repo",
+                "mode": "managed",
+                "type": "aws_ecr_repository",
+                "name": "repo",
+                "provider_name": "registry.terraform.io/hashicorp/aws",
+                "schema_version": 0,
+                "values": {
+                  "arn": "arn:aws:ecr:us-east-1:123456789120:repository/tfbuddy",
+                  "encryption_configuration": [
+                    {
+                      "encryption_type": "AES256",
+                      "kms_key": ""
+                    }
+                  ],
+                  "id": "tfbuddy",
+                  "image_scanning_configuration": [
+                    {
+                      "scan_on_push": true
+                    }
+                  ],
+                  "image_tag_mutability": "MUTABLE",
+                  "name": "tfbuddy",
+                  "registry_id": "123456789120",
+                  "repository_url": "123456789120.dkr.ecr.us-east-1.amazonaws.com/tfbuddy",
+                  "tags": {
+                    "managed_by": "terraform",
+                    "name": "tfbuddy",
+                    "service": "tfbuddy"
+                  },
+                  "tags_all": {
+                    "managed_by": "terraform",
+                    "name": "tfbuddy",
+                    "service": "tfbuddy"
+                  },
+                  "timeouts": null
                 },
                 "sensitive_values": {
-                  "keepers": {}
+                  "encryption_configuration": [
+                    {}
+                  ],
+                  "image_scanning_configuration": [
+                    {}
+                  ],
+                  "tags": {},
+                  "tags_all": {}
                 }
               },
               {
-                "address": "module.more_cats.random_pet.will_it_be_more_cats[1]",
+                "address": "module.ecr_repository.aws_ecr_repository_policy.cross_account",
                 "mode": "managed",
-                "type": "random_pet",
-                "name": "will_it_be_more_cats",
-                "index": 1,
-                "provider_name": "registry.terraform.io/hashicorp/random",
+                "type": "aws_ecr_repository_policy",
+                "name": "cross_account",
+                "provider_name": "registry.terraform.io/hashicorp/aws",
                 "schema_version": 0,
                 "values": {
-                  "id": "grouper",
-                  "keepers": {},
-                  "length": 1,
-                  "prefix": null,
-                  "separator": "-"
+                  "id": "tfbuddy",
+                  "policy": "{\"Statement\":[{\"Action\":[\"ecr:BatchCheckLayerAvailability\",\"ecr:BatchGetImage\",\"ecr:CompleteLayerUpload\",\"ecr:GetDownloadUrlForLayer\",\"ecr:InitiateLayerUpload\",\"ecr:PutImage\",\"ecr:UploadLayerPart\"],\"Effect\":\"Allow\",\"Principal\":{\"AWS\":\"arn:aws:iam::123456789120:root\"},\"Sid\":\"AllowPushPull\"}],\"Version\":\"2008-10-17\"}",
+                  "registry_id": "123456789120",
+                  "repository": "tfbuddy"
                 },
-                "sensitive_values": {
-                  "keepers": {}
-                }
-              },
-              {
-                "address": "module.more_cats.random_pet.will_it_be_more_cats[2]",
-                "mode": "managed",
-                "type": "random_pet",
-                "name": "will_it_be_more_cats",
-                "index": 2,
-                "provider_name": "registry.terraform.io/hashicorp/random",
-                "schema_version": 0,
-                "values": {
-                  "id": "fit-sturgeon",
-                  "keepers": {},
-                  "length": 2,
-                  "prefix": null,
-                  "separator": "-"
-                },
-                "sensitive_values": {
-                  "keepers": {}
-                }
-              },
-              {
-                "address": "module.more_cats.random_pet.will_it_be_more_cats[3]",
-                "mode": "managed",
-                "type": "random_pet",
-                "name": "will_it_be_more_cats",
-                "index": 3,
-                "provider_name": "registry.terraform.io/hashicorp/random",
-                "schema_version": 0,
-                "values": {
-                  "id": "possibly-popular-urchin",
-                  "keepers": {},
-                  "length": 3,
-                  "prefix": null,
-                  "separator": "-"
-                },
-                "sensitive_values": {
-                  "keepers": {}
-                }
-              },
-              {
-                "address": "module.more_cats.random_pet.will_it_be_more_cats[4]",
-                "mode": "managed",
-                "type": "random_pet",
-                "name": "will_it_be_more_cats",
-                "index": 4,
-                "provider_name": "registry.terraform.io/hashicorp/random",
-                "schema_version": 0,
-                "values": {
-                  "id": "nationally-noticeably-electric-lab",
-                  "keepers": {},
-                  "length": 4,
-                  "prefix": null,
-                  "separator": "-"
-                },
-                "sensitive_values": {
-                  "keepers": {}
-                }
+                "sensitive_values": {},
+                "depends_on": [
+                  "module.ecr_repository.aws_ecr_repository.repo"
+                ]
               }
             ],
-            "address": "module.more_cats"
+            "address": "module.ecr_repository"
           }
         ]
       }
@@ -513,12 +434,39 @@
   },
   "configuration": {
     "provider_config": {
-      "random": {
-        "name": "random",
-        "full_name": "registry.terraform.io/hashicorp/random"
+      "aws": {
+        "name": "aws",
+        "expressions": {
+          "allowed_account_ids": {
+            "references": [
+              "var.aws_account_id"
+            ]
+          },
+          "region": {
+            "constant_value": "us-east-1"
+          }
+        }
       }
     },
     "root_module": {
+      "outputs": {
+        "ecr_repository_url": {
+          "expression": {
+            "references": [
+              "module.ecr_repository.ecr_repository_url",
+              "module.ecr_repository"
+            ]
+          }
+        },
+        "our_pet": {
+          "expression": {
+            "references": [
+              "random_pet.will_it_be_cats.id",
+              "random_pet.will_it_be_cats"
+            ]
+          }
+        }
+      },
       "resources": [
         {
           "address": "random_pet.will_it_be_cats",
@@ -527,63 +475,137 @@
           "name": "will_it_be_cats",
           "provider_config_key": "random",
           "expressions": {
-            "keepers": {
-              "constant_value": {}
-            },
             "length": {
               "constant_value": 4
-            }
-          },
-          "schema_version": 0
-        },
-        {
-          "address": "random_pet.will_it_be_one_more_cat",
-          "mode": "managed",
-          "type": "random_pet",
-          "name": "will_it_be_one_more_cat",
-          "provider_config_key": "random",
-          "expressions": {
-            "keepers": {
-              "constant_value": {}
             },
-            "length": {
-              "constant_value": 6
+            "separator": {
+              "constant_value": "/"
             }
           },
           "schema_version": 0
         }
       ],
       "module_calls": {
-        "more_cats": {
-          "source": "./modules/more_cats",
+        "ecr_repository": {
+          "source": "app.terraform.io/zapier/ecr-repository/aws",
+          "expressions": {
+            "name": {
+              "constant_value": "tfbuddy"
+            },
+            "service": {
+              "constant_value": "tfbuddy"
+            }
+          },
           "module": {
+            "outputs": {
+              "ecr_repository_name": {
+                "expression": {
+                  "references": [
+                    "aws_ecr_repository.repo.name",
+                    "aws_ecr_repository.repo"
+                  ]
+                }
+              },
+              "ecr_repository_url": {
+                "expression": {
+                  "references": [
+                    "aws_ecr_repository.repo.repository_url",
+                    "aws_ecr_repository.repo"
+                  ]
+                }
+              }
+            },
             "resources": [
               {
-                "address": "random_pet.will_it_be_more_cats",
+                "address": "aws_ecr_lifecycle_policy.expiration",
                 "mode": "managed",
-                "type": "random_pet",
-                "name": "will_it_be_more_cats",
-                "provider_config_key": "random",
+                "type": "aws_ecr_lifecycle_policy",
+                "name": "expiration",
+                "provider_config_key": "ecr_repository:aws",
                 "expressions": {
-                  "keepers": {
-                    "constant_value": {}
+                  "policy": {
+                    "constant_value": "{\n    \"rules\": [\n      {\n        \"action\": {\n          \"type\": \"expire\"\n        },\n        \"selection\": {\n          \"countType\": \"sinceImagePushed\",\n          \"countUnit\": \"days\",\n          \"countNumber\": 1,\n          \"tagStatus\": \"untagged\"\n        },\n        \"description\": \"remove untagged \u003e 1 days\",\n        \"rulePriority\": 1\n      },\n      {\n        \"action\": {\n          \"type\": \"expire\"\n        },\n        \"selection\": {\n          \"countType\": \"sinceImagePushed\",\n          \"countUnit\": \"days\",\n          \"countNumber\": 30,\n          \"tagStatus\": \"tagged\",\n          \"tagPrefixList\": [\"ci-\"]\n        },\n        \"description\": \"remove CI images older than 30 days\",\n        \"rulePriority\": 2\n      },\n      {\n        \"action\": {\n          \"type\": \"expire\"\n        },\n        \"selection\": {\n          \"countType\": \"imageCountMoreThan\",\n          \"countNumber\": 4000,\n          \"tagStatus\": \"any\"\n        },\n        \"description\": \"remove any images after we reach 4000 in repo\",\n        \"rulePriority\": 3\n      }\n    ]\n  }\n"
                   },
-                  "length": {
+                  "repository": {
                     "references": [
-                      "count.index"
+                      "aws_ecr_repository.repo.name",
+                      "aws_ecr_repository.repo"
                     ]
                   }
                 },
-                "schema_version": 0,
-                "count_expression": {
-                  "constant_value": 5
-                }
+                "schema_version": 0
+              },
+              {
+                "address": "aws_ecr_repository.repo",
+                "mode": "managed",
+                "type": "aws_ecr_repository",
+                "name": "repo",
+                "provider_config_key": "ecr_repository:aws",
+                "expressions": {
+                  "image_scanning_configuration": [
+                    {
+                      "scan_on_push": {
+                        "constant_value": true
+                      }
+                    }
+                  ],
+                  "name": {
+                    "references": [
+                      "var.name"
+                    ]
+                  },
+                  "tags": {
+                    "references": [
+                      "var.name",
+                      "var.service"
+                    ]
+                  }
+                },
+                "schema_version": 0
+              },
+              {
+                "address": "aws_ecr_repository_policy.cross_account",
+                "mode": "managed",
+                "type": "aws_ecr_repository_policy",
+                "name": "cross_account",
+                "provider_config_key": "ecr_repository:aws",
+                "expressions": {
+                  "policy": {
+                    "constant_value": "{\n  \"Version\": \"2008-10-17\",\n  \"Statement\": [\n    {\n      \"Sid\": \"AllowPushPull\",\n      \"Effect\": \"Allow\",\n      \"Principal\": {\n        \"AWS\": \"arn:aws:iam::123456789120:root\"\n      },\n      \"Action\": [\n        \"ecr:BatchCheckLayerAvailability\",\n        \"ecr:BatchGetImage\",\n        \"ecr:CompleteLayerUpload\",\n        \"ecr:GetDownloadUrlForLayer\",\n        \"ecr:InitiateLayerUpload\",\n        \"ecr:PutImage\",\n        \"ecr:UploadLayerPart\"\n      ]\n    }\n  ]\n}\n"
+                  },
+                  "repository": {
+                    "references": [
+                      "aws_ecr_repository.repo.name",
+                      "aws_ecr_repository.repo"
+                    ]
+                  }
+                },
+                "schema_version": 0
               }
-            ]
-          }
+            ],
+            "variables": {
+              "name": {
+                "description": "The ECR repository name"
+              },
+              "service": {
+                "description": "The Zapier service this repository is for."
+              }
+            }
+          },
+          "version_constraint": "0.1.1"
+        }
+      },
+      "variables": {
+        "aws_account_id": {
+          "default": "123456789120"
+        },
+        "aws_region": {
+          "default": "us-east-1"
+        },
+        "environment_name": {
+          "default": "dev"
         }
       }
     }
-  },
-  "timestamp": "2023-07-20T15:01:12Z"
+  }
 }
