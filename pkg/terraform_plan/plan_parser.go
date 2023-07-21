@@ -35,23 +35,42 @@ func PresentPlanChangesAsMarkdown(b []byte, tfcUrl string) string {
 		TfcUrl:       tfcUrl,
 	}
 	for _, chg := range plan.ResourceChanges {
+
 		switch {
 		case chg.Change.Actions.NoOp():
-			continue
-			
+			// There can be scenarios where a resource can be imported and have nothing else happen to it.
+			if chg.Change.Importing != nil {
+				tplData.ImportCount += 1
+				tplData.Imports = append(tplData.Imports, chg.Address)
+			} else {
+				continue
+			}
+
 		case chg.Change.Actions.Create():
 			tplData.AdditionCount += 1
 			tplData.Additions = append(tplData.Additions, chg.Address)
 
 		case chg.Change.Actions.Update():
+			if chg.Change.Importing != nil {
+				tplData.ImportCount += 1
+				tplData.Imports = append(tplData.Imports, chg.Address)
+			}
 			tplData.ChangeCount += 1
 			tplData.Changes[chg.Address] = processChanges(chg)
 
 		case chg.Change.Actions.Delete():
+			if chg.Change.Importing != nil {
+				tplData.ImportCount += 1
+				tplData.Imports = append(tplData.Imports, chg.Address)
+			}
 			tplData.DestructionCount += 1
 			tplData.Destructions = append(tplData.Destructions, chg.Address)
 
 		case chg.Change.Actions.Replace():
+			if chg.Change.Importing != nil {
+				tplData.ImportCount += 1
+				tplData.Imports = append(tplData.Imports, chg.Address)
+			}
 			tplData.ReplacementCount += 1
 			tplData.Replacements[chg.Address] = processChanges(chg)
 		}
