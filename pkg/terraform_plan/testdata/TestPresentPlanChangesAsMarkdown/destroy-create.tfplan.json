@@ -1,7 +1,23 @@
 {
-  "format_version": "1.2",
-  "terraform_version": "1.5.3",
+  "format_version": "1.0",
+  "terraform_version": "1.1.3",
+  "variables": {
+    "aws_account_id": {
+      "value": "12345678910"
+    },
+    "aws_region": {
+      "value": "us-east-1"
+    },
+    "environment_name": {
+      "value": "dev"
+    }
+  },
   "planned_values": {
+    "outputs": {
+      "our_pets": {
+        "sensitive": false
+      }
+    },
     "root_module": {
       "resources": [
         {
@@ -13,14 +29,12 @@
           "provider_name": "registry.terraform.io/hashicorp/random",
           "schema_version": 0,
           "values": {
-            "keepers": {},
-            "length": 2,
+            "keepers": null,
+            "length": 3,
             "prefix": null,
             "separator": "-"
           },
-          "sensitive_values": {
-            "keepers": {}
-          }
+          "sensitive_values": {}
         },
         {
           "address": "random_pet.will_it_be_cats[1]",
@@ -31,14 +45,12 @@
           "provider_name": "registry.terraform.io/hashicorp/random",
           "schema_version": 0,
           "values": {
-            "keepers": {},
-            "length": 2,
+            "keepers": null,
+            "length": 3,
             "prefix": null,
             "separator": "-"
           },
-          "sensitive_values": {
-            "keepers": {}
-          }
+          "sensitive_values": {}
         },
         {
           "address": "random_pet.will_it_be_cats[2]",
@@ -49,14 +61,12 @@
           "provider_name": "registry.terraform.io/hashicorp/random",
           "schema_version": 0,
           "values": {
-            "keepers": {},
-            "length": 2,
+            "keepers": null,
+            "length": 3,
             "prefix": null,
             "separator": "-"
           },
-          "sensitive_values": {
-            "keepers": {}
-          }
+          "sensitive_values": {}
         },
         {
           "address": "random_pet.will_it_be_cats[3]",
@@ -67,14 +77,12 @@
           "provider_name": "registry.terraform.io/hashicorp/random",
           "schema_version": 0,
           "values": {
-            "keepers": {},
-            "length": 2,
+            "keepers": null,
+            "length": 3,
             "prefix": null,
             "separator": "-"
           },
-          "sensitive_values": {
-            "keepers": {}
-          }
+          "sensitive_values": {}
         },
         {
           "address": "random_pet.will_it_be_cats[4]",
@@ -85,14 +93,12 @@
           "provider_name": "registry.terraform.io/hashicorp/random",
           "schema_version": 0,
           "values": {
-            "keepers": {},
-            "length": 2,
+            "keepers": null,
+            "length": 3,
             "prefix": null,
             "separator": "-"
           },
-          "sensitive_values": {
-            "keepers": {}
-          }
+          "sensitive_values": {}
         },
         {
           "address": "random_pet.will_it_be_cats[5]",
@@ -103,14 +109,12 @@
           "provider_name": "registry.terraform.io/hashicorp/random",
           "schema_version": 0,
           "values": {
-            "keepers": {},
-            "length": 2,
+            "keepers": null,
+            "length": 3,
             "prefix": null,
             "separator": "-"
           },
-          "sensitive_values": {
-            "keepers": {}
-          }
+          "sensitive_values": {}
         },
         {
           "address": "random_pet.will_it_be_cats[6]",
@@ -121,14 +125,12 @@
           "provider_name": "registry.terraform.io/hashicorp/random",
           "schema_version": 0,
           "values": {
-            "keepers": {},
-            "length": 2,
+            "keepers": null,
+            "length": 3,
             "prefix": null,
             "separator": "-"
           },
-          "sensitive_values": {
-            "keepers": {}
-          }
+          "sensitive_values": {}
         },
         {
           "address": "random_pet.will_it_be_cats[7]",
@@ -139,14 +141,12 @@
           "provider_name": "registry.terraform.io/hashicorp/random",
           "schema_version": 0,
           "values": {
-            "keepers": {},
-            "length": 2,
+            "keepers": null,
+            "length": 3,
             "prefix": null,
             "separator": "-"
           },
-          "sensitive_values": {
-            "keepers": {}
-          }
+          "sensitive_values": {}
         },
         {
           "address": "random_pet.will_it_be_cats[8]",
@@ -157,14 +157,12 @@
           "provider_name": "registry.terraform.io/hashicorp/random",
           "schema_version": 0,
           "values": {
-            "keepers": {},
-            "length": 2,
+            "keepers": null,
+            "length": 3,
             "prefix": null,
             "separator": "-"
           },
-          "sensitive_values": {
-            "keepers": {}
-          }
+          "sensitive_values": {}
         },
         {
           "address": "random_pet.will_it_be_cats[9]",
@@ -175,16 +173,15 @@
           "provider_name": "registry.terraform.io/hashicorp/random",
           "schema_version": 0,
           "values": {
-            "keepers": {},
-            "length": 2,
+            "keepers": null,
+            "length": 3,
             "prefix": null,
             "separator": "-"
           },
-          "sensitive_values": {
-            "keepers": {}
-          }
+          "sensitive_values": {}
         }
-      ]
+      ],
+      "child_modules": []
     }
   },
   "resource_changes": [
@@ -202,28 +199,23 @@
           "create"
         ],
         "before": {
-          "id": "suddenly-cleanly-secure-parakeet",
-          "keepers": {},
+          "id": "terminally-eminently-proper-donkey",
+          "keepers": null,
           "length": 4,
           "prefix": null,
           "separator": "-"
         },
         "after": {
-          "keepers": {},
-          "length": 2,
+          "keepers": null,
+          "length": 3,
           "prefix": null,
           "separator": "-"
         },
         "after_unknown": {
-          "id": true,
-          "keepers": {}
+          "id": true
         },
-        "before_sensitive": {
-          "keepers": {}
-        },
-        "after_sensitive": {
-          "keepers": {}
-        },
+        "before_sensitive": {},
+        "after_sensitive": {},
         "replace_paths": [
           [
             "length"
@@ -245,19 +237,16 @@
         ],
         "before": null,
         "after": {
-          "keepers": {},
-          "length": 2,
+          "keepers": null,
+          "length": 3,
           "prefix": null,
           "separator": "-"
         },
         "after_unknown": {
-          "id": true,
-          "keepers": {}
+          "id": true
         },
         "before_sensitive": false,
-        "after_sensitive": {
-          "keepers": {}
-        }
+        "after_sensitive": {}
       }
     },
     {
@@ -273,19 +262,16 @@
         ],
         "before": null,
         "after": {
-          "keepers": {},
-          "length": 2,
+          "keepers": null,
+          "length": 3,
           "prefix": null,
           "separator": "-"
         },
         "after_unknown": {
-          "id": true,
-          "keepers": {}
+          "id": true
         },
         "before_sensitive": false,
-        "after_sensitive": {
-          "keepers": {}
-        }
+        "after_sensitive": {}
       }
     },
     {
@@ -301,19 +287,16 @@
         ],
         "before": null,
         "after": {
-          "keepers": {},
-          "length": 2,
+          "keepers": null,
+          "length": 3,
           "prefix": null,
           "separator": "-"
         },
         "after_unknown": {
-          "id": true,
-          "keepers": {}
+          "id": true
         },
         "before_sensitive": false,
-        "after_sensitive": {
-          "keepers": {}
-        }
+        "after_sensitive": {}
       }
     },
     {
@@ -329,19 +312,16 @@
         ],
         "before": null,
         "after": {
-          "keepers": {},
-          "length": 2,
+          "keepers": null,
+          "length": 3,
           "prefix": null,
           "separator": "-"
         },
         "after_unknown": {
-          "id": true,
-          "keepers": {}
+          "id": true
         },
         "before_sensitive": false,
-        "after_sensitive": {
-          "keepers": {}
-        }
+        "after_sensitive": {}
       }
     },
     {
@@ -357,19 +337,16 @@
         ],
         "before": null,
         "after": {
-          "keepers": {},
-          "length": 2,
+          "keepers": null,
+          "length": 3,
           "prefix": null,
           "separator": "-"
         },
         "after_unknown": {
-          "id": true,
-          "keepers": {}
+          "id": true
         },
         "before_sensitive": false,
-        "after_sensitive": {
-          "keepers": {}
-        }
+        "after_sensitive": {}
       }
     },
     {
@@ -385,19 +362,16 @@
         ],
         "before": null,
         "after": {
-          "keepers": {},
-          "length": 2,
+          "keepers": null,
+          "length": 3,
           "prefix": null,
           "separator": "-"
         },
         "after_unknown": {
-          "id": true,
-          "keepers": {}
+          "id": true
         },
         "before_sensitive": false,
-        "after_sensitive": {
-          "keepers": {}
-        }
+        "after_sensitive": {}
       }
     },
     {
@@ -413,19 +387,16 @@
         ],
         "before": null,
         "after": {
-          "keepers": {},
-          "length": 2,
+          "keepers": null,
+          "length": 3,
           "prefix": null,
           "separator": "-"
         },
         "after_unknown": {
-          "id": true,
-          "keepers": {}
+          "id": true
         },
         "before_sensitive": false,
-        "after_sensitive": {
-          "keepers": {}
-        }
+        "after_sensitive": {}
       }
     },
     {
@@ -441,19 +412,16 @@
         ],
         "before": null,
         "after": {
-          "keepers": {},
-          "length": 2,
+          "keepers": null,
+          "length": 3,
           "prefix": null,
           "separator": "-"
         },
         "after_unknown": {
-          "id": true,
-          "keepers": {}
+          "id": true
         },
         "before_sensitive": false,
-        "after_sensitive": {
-          "keepers": {}
-        }
+        "after_sensitive": {}
       }
     },
     {
@@ -469,26 +437,50 @@
         ],
         "before": null,
         "after": {
-          "keepers": {},
-          "length": 2,
+          "keepers": null,
+          "length": 3,
           "prefix": null,
           "separator": "-"
         },
         "after_unknown": {
-          "id": true,
-          "keepers": {}
+          "id": true
         },
         "before_sensitive": false,
-        "after_sensitive": {
-          "keepers": {}
-        }
+        "after_sensitive": {}
       }
     }
   ],
+  "output_changes": {
+    "our_pet": {
+      "actions": [
+        "delete"
+      ],
+      "before": "terminally-eminently-proper-donkey",
+      "after": null,
+      "after_unknown": false,
+      "before_sensitive": false,
+      "after_sensitive": false
+    },
+    "our_pets": {
+      "actions": [
+        "create"
+      ],
+      "before": null,
+      "after_unknown": true,
+      "before_sensitive": false,
+      "after_sensitive": false
+    }
+  },
   "prior_state": {
     "format_version": "1.0",
-    "terraform_version": "1.5.3",
+    "terraform_version": "1.1.3",
     "values": {
+      "outputs": {
+        "our_pet": {
+          "sensitive": false,
+          "value": "terminally-eminently-proper-donkey"
+        }
+      },
       "root_module": {
         "resources": [
           {
@@ -500,28 +492,45 @@
             "provider_name": "registry.terraform.io/hashicorp/random",
             "schema_version": 0,
             "values": {
-              "id": "suddenly-cleanly-secure-parakeet",
-              "keepers": {},
+              "id": "terminally-eminently-proper-donkey",
+              "keepers": null,
               "length": 4,
               "prefix": null,
               "separator": "-"
             },
-            "sensitive_values": {
-              "keepers": {}
-            }
+            "sensitive_values": {}
           }
-        ]
+        ],
+        "child_modules": []
       }
     }
   },
   "configuration": {
     "provider_config": {
-      "random": {
-        "name": "random",
-        "full_name": "registry.terraform.io/hashicorp/random"
+      "aws": {
+        "name": "aws",
+        "expressions": {
+          "allowed_account_ids": {
+            "constant_value": [
+              12345678910
+            ]
+          },
+          "region": {
+            "constant_value": "us-east-1"
+          }
+        }
       }
     },
     "root_module": {
+      "outputs": {
+        "our_pets": {
+          "expression": {
+            "references": [
+              "random_pet.will_it_be_cats"
+            ]
+          }
+        }
+      },
       "resources": [
         {
           "address": "random_pet.will_it_be_cats",
@@ -530,11 +539,11 @@
           "name": "will_it_be_cats",
           "provider_config_key": "random",
           "expressions": {
-            "keepers": {
-              "constant_value": {}
-            },
             "length": {
-              "constant_value": 2
+              "constant_value": 3
+            },
+            "separator": {
+              "constant_value": "-"
             }
           },
           "schema_version": 0,
@@ -542,8 +551,19 @@
             "constant_value": 10
           }
         }
-      ]
+      ],
+      "module_calls": {},
+      "variables": {
+        "aws_account_id": {
+          "default": "12345678910"
+        },
+        "aws_region": {
+          "default": "us-east-1"
+        },
+        "environment_name": {
+          "default": "dev"
+        }
+      }
     }
-  },
-  "timestamp": "2023-07-20T15:04:40Z"
+  }
 }
