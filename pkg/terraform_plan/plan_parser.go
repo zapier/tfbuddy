@@ -59,10 +59,6 @@ func PresentPlanChangesAsMarkdown(b []byte, tfcUrl string) string {
 			tplData.Changes[chg.Address] = processChanges(chg)
 
 		case chg.Change.Actions.Delete():
-			if chg.Change.Importing != nil {
-				tplData.ImportCount += 1
-				tplData.Imports = append(tplData.Imports, chg.Address)
-			}
 			tplData.DestructionCount += 1
 			tplData.Destructions = append(tplData.Destructions, chg.Address)
 
