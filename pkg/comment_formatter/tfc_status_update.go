@@ -139,7 +139,7 @@ var failedPlanSummaryFormat = `
 `
 
 var successPlanSummaryFormat = `
-	* Imports: %d
+  * Imports: %d
   * Additions: %d
   * Changes: %d
   * Destructions: %d`
