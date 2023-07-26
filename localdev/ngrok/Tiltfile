@@ -1,48 +1,38 @@
-load('ext://secret', 'secret_from_dict')
-
 # /////////////////////////////////////////////////////////////////////////////
 # N G R O K
 # /////////////////////////////////////////////////////////////////////////////
 
-def get_ngrok_url():
-    if config.tilt_subcommand == 'down':
+check_cmd='/usr/bin/curl -v http://localhost:4040/api/tunnels | jq --raw-output ".tunnels[0].public_url"'
+
+def get_ngrok_url(cfg):
+    if cfg.get("ngrok_fqdn"):
+        return "https://"+cfg.get("ngrok_fqdn")
+
+    elif config.tilt_subcommand == 'down':
+        local('rm ngrok.url || true')
         return 'http://xyz.ngrok.io'
+
     else:
-        return str(local(
-            'curl -s http://localhost:4040/api/tunnels \
-              | jq --raw-output ".tunnels[0].public_url"'.format(
-                k8s_namespace,
-                k8s_context
-            ),
-        )).rstrip('\n')
+        url=str(read_file('ngrok.url', "")).rstrip('\n')
+        
+        return url
 
-# Read Auth token for ngrok (assumes ngrok has been installed and configured)
-ngrok_config_file = str(local('ngrok config check', quiet=True)).lstrip('Valid configuration file at ').rstrip('\n')
-ngrok_config = read_yaml(ngrok_config_file)
-k8s_yaml(
-    secret_from_dict("ngrok-config", inputs = {
-        'NGROK_AUTHTOKEN' : ngrok_config['authtoken'],
-    })
-)
-k8s_resource(
-    objects=['ngrok-config:secret'],
-    labels=["ngrok"],
-    new_name='ngrok-config',
-    resource_deps=['k8s:namespace']
-)
+def deploy_ngrok(cfg):
 
-# Deploy ngrok proxy
-k8s_yaml(
-    kustomize('./')
-)
-k8s_resource(
-    'ngrok',
-    resource_deps=['ngrok-config', 'k8s:namespace'],
-    labels=["ngrok"],
-    port_forwards=4040,
-)
-k8s_resource(
-    'wait-ngrok-url',
-    resource_deps=['k8s:namespace', 'ngrok'],
-    labels=["ngrok"]
-)
+    hostnameArg = ""
+    if cfg.get("ngrok_fqdn"):
+        hostnameArg = " --hostname {}".format(cfg.get("ngrok_fqdn"))
+
+    local_resource(
+        "ngrok",
+        serve_cmd="ngrok http localhost:8080 {}".format(hostnameArg),
+        readiness_probe=probe(
+            initial_delay_secs=5,
+            period_secs=10,
+            exec=exec_action(["bash", "-c", 'localdev/ngrok/update-url.sh'])
+        ),
+        labels=["ngrok"],
+        links=["http://localhost:4040"]
+    )
+
+    watch_file('./ngrok.url')

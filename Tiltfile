@@ -13,6 +13,7 @@ dotenv()
 config.define_bool("enable_gitlab")
 config.define_bool("enable_github")
 config.define_bool("live_debug")
+config.define_string("ngrok_fqdn")
 cfg = config.parse()
 
 allow_k8s_contexts([
@@ -30,8 +31,13 @@ k8s_resource(
 )
 k8s_context=k8s_context()
 
+# /////////////////////////////////////////////////////////////////////////////
+# N G R O K
+# /////////////////////////////////////////////////////////////////////////////
+
 # Load NGROK Tiltfile
-load('./localdev/ngrok/Tiltfile', 'get_ngrok_url')
+load('./localdev/ngrok/Tiltfile', 'deploy_ngrok', 'get_ngrok_url')
+deploy_ngrok(cfg)
 
 def checkEnvSet(key):
   if not os.getenv(key):
@@ -43,7 +49,7 @@ def checkEnvSet(key):
 checkEnvSet("TFC_ORGANIZATION")
 checkEnvSet("TFC_TOKEN")
 
-ngrok_url=get_ngrok_url()
+ngrok_url=get_ngrok_url(cfg)
 org=str(os.getenv('TFC_ORGANIZATION'))
 
 tfcOutputs=local_terraform_resource(
@@ -58,7 +64,7 @@ tfcOutputs=local_terraform_resource(
     'localdev/terraform/*.tf',
   ],
   labels=["tfc"],
-  resource_deps=['wait-ngrok-url']
+  resource_deps=[]
 )
 
 if tfcOutputs:
@@ -90,7 +96,6 @@ if cfg.get('enable_gitlab'):
     ],
     resource_deps=[
       'tf-tfc',
-      'wait-ngrok-url',
     ],
     labels=['gitlab']
   )
@@ -117,7 +122,6 @@ if cfg.get('enable_github'):
     ],
     resource_deps=[
       'tf-tfc',
-      'wait-ngrok-url',
     ],
     labels=['github']
   )
