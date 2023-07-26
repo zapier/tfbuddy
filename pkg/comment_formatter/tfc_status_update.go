@@ -29,7 +29,7 @@ func FormatRunStatusCommentBody(tfc tfc_api.ApiClient, run *tfe.Run, rmd runstre
 	case tfe.RunApplying:
 		// no extra info
 	case tfe.RunApplied:
-		extraInfo = fmt.Sprintf(successPlanSummaryFormat, run.Apply.ResourceAdditions, run.Apply.ResourceChanges, run.Apply.ResourceDestructions)
+		extraInfo = fmt.Sprintf(successPlanSummaryFormat, run.Apply.ResourceImports, run.Apply.ResourceAdditions, run.Apply.ResourceChanges, run.Apply.ResourceDestructions)
 		if len(run.TargetAddrs) > 0 {
 			extraInfo += needToApplyFullWorkSpace
 			extraInfo += fmt.Sprintf(howToApplyFormat, wsName)
@@ -49,7 +49,7 @@ func FormatRunStatusCommentBody(tfc tfc_api.ApiClient, run *tfe.Run, rmd runstre
 			extraInfo = "Auto Apply Enabled - plan will automatically Apply if it passes policy checks."
 		}
 	case tfe.RunPlanned:
-		extraInfo = fmt.Sprintf(successPlanSummaryFormat, run.Plan.ResourceAdditions, run.Plan.ResourceChanges, run.Plan.ResourceDestructions)
+		extraInfo = fmt.Sprintf(successPlanSummaryFormat, run.Apply.ResourceImports, run.Plan.ResourceAdditions, run.Plan.ResourceChanges, run.Plan.ResourceDestructions)
 		if !run.AutoApply {
 			if len(run.TargetAddrs) > 0 {
 				extraInfo += fmt.Sprintf(howToApplyFormatWithTarget, strings.Join(run.TargetAddrs, ","), wsName, strings.Join(run.TargetAddrs, ","))
@@ -139,6 +139,7 @@ var failedPlanSummaryFormat = `
 `
 
 var successPlanSummaryFormat = `
+  * Imports: %d
   * Additions: %d
   * Changes: %d
   * Destructions: %d`

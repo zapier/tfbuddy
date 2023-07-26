@@ -39,6 +39,12 @@ func Test_parseJSONPlan(t *testing.T) {
 			want:    nil,
 			wantErr: false,
 		},
+		{
+			name:    "import",
+			tfplan:  "testdata/TestPresentPlanChangesAsMarkdown/import.tfplan.json",
+			want:    nil,
+			wantErr: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -65,6 +71,9 @@ func TestPresentPlanChangesAsMarkdown(t *testing.T) {
 		},
 		{
 			name: "replace",
+		},
+		{
+			name: "import",
 		},
 	}
 	for _, tt := range tests {

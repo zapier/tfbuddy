@@ -1,5 +1,9 @@
 
 
+:airplane_arriving: <b>Imports:</b> 0
+<ul>
+</ul>
+
 :seedling: <b>Additions:</b> 9
 <ul>
     <li><code>random_pet.will_it_be_cats[1]</code></li>
@@ -31,7 +35,7 @@
 <ul>
 </ul>
 </br>
-<b>Plan: </b> 9 to add, 0 to change, 1 to replace and 0 to destroy.
+<b>Plan: </b> 0 to import, 9 to add, 0 to change, 1 to replace and 0 to destroy.
 </br>
 
 See [Terraform Cloud Output](http://app.terraform.io/x/y/z) for more info.

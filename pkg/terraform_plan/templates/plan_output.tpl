@@ -5,6 +5,13 @@
 {{- end}}
 {{ end }}
 
+:airplane_arriving: <b>Imports:</b> {{.ImportCount}}
+<ul>
+{{- range .Imports}}
+    <li><code>{{ . }}</code></li>
+{{- end}}
+</ul>
+
 :seedling: <b>Additions:</b> {{.AdditionCount}}
 <ul>
 {{- range .Additions}}
@@ -29,7 +36,7 @@
 {{- end}}
 </ul>
 </br>
-<b>Plan: </b> {{.AdditionCount}} to add, {{.ChangeCount}} to change, {{.ReplacementCount}} to replace and {{.DestructionCount}} to destroy.
+<b>Plan: </b> {{.ImportCount}} to import, {{.AdditionCount}} to add, {{.ChangeCount}} to change, {{.ReplacementCount}} to replace and {{.DestructionCount}} to destroy.
 </br>
 
 See [Terraform Cloud Output]({{.TfcUrl}}) for more info.
