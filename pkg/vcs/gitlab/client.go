@@ -129,9 +129,12 @@ func (c *GitlabClient) GetOldRunUrls(mrIID int, project string, rootNoteID int) 
 	for _, note := range notes {
 		if note.Author.Username == currentUser.Username {
 			runUrl := utils.CaptureSubstring(note.Body, utils.URL_RUN_PREFIX, utils.URL_RUN_SUFFIX)
+			// We need to get the Run ID which is the last portion of the run URL
+			runUrlSplit := strings.Split(runUrl, "/")
+			runID := runUrlSplit[len(runUrlSplit)-1]
 			runStatus := utils.CaptureSubstring(note.Body, utils.URL_RUN_STATUS_PREFIX, utils.URL_RUN_SUFFIX)
 			if runUrl != "" && runStatus != "" {
-				oldRunUrls = append(oldRunUrls, fmt.Sprintf("%s - %s", runUrl, utils.FormatStatus(runStatus)))
+				oldRunUrls = append(oldRunUrls, fmt.Sprintf("|[%s](%s)|%s|", runID, runUrl, utils.FormatStatus(runStatus)))
 			}
 
 			// Gitlab default sort is order by created by, so take the last match on this
