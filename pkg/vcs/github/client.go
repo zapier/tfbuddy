@@ -84,16 +84,25 @@ func (c *Client) GetOldRunUrls(prID int, fullName string, rootCommentID int) (st
 		// If this token user made the comment, and we're making a new comment, pick the TFC url out of the body and delete the comment
 		if comment.GetUser().GetLogin() == currentUser.GetLogin() {
 			runUrl := utils.CaptureSubstring(comment.GetBody(), utils.URL_RUN_PREFIX, utils.URL_RUN_SUFFIX)
+			// We scrape the run URLs from the previous MR comments.
+			// Since they are hyperlinked in markdown format, we need to extract the URL
+			// without the markdown artifacts.
+			runUrlRaw := utils.CaptureSubstring(runUrl, "[", "]")
+			runUrlSplit := strings.Split(runUrlRaw, "/")
+			// The run ID is the last part of the run URL, and it looks like run-abcd12345...
+			runID := runUrlSplit[len(runUrlSplit)-1]
 			runStatus := utils.CaptureSubstring(comment.GetBody(), utils.URL_RUN_STATUS_PREFIX, utils.URL_RUN_SUFFIX)
 			if runUrl != "" && runStatus != "" {
 				// Example: <tfc url> - ✅ Applied
-				oldRunUrls = append(oldRunUrls, fmt.Sprintf("%s - %s", runUrl, runStatus))
+				oldRunUrls = append(oldRunUrls, fmt.Sprintf("|[%s](%s)|%s|", runID, runUrlRaw, runStatus))
 			}
 
 			// Github orders comments from earliest -> latest via ID, so we check each comment and take the last match on an "old url" block
 			oldRunBlockTest := utils.CaptureSubstring(comment.GetBody(), utils.URL_RUN_GROUP_PREFIX, utils.URL_RUN_GROUP_SUFFIX)
 			if oldRunBlockTest != "" {
 				oldRunBlock = oldRunBlockTest
+			} else {
+				oldRunBlock = "\n"
 			}
 
 			if os.Getenv("TFBUDDY_DELETE_OLD_COMMENTS") != "" && comment.GetID() != int64(rootCommentID) {
@@ -109,7 +118,7 @@ func (c *Client) GetOldRunUrls(prID int, fullName string, rootCommentID int) (st
 	// If we found any old run urls, return them formatted
 	if len(oldRunUrls) > 0 {
 		// Try and find any exisitng groupings of old urls, else make a new one
-		return fmt.Sprintf("%s\n%s\n%s\n%s", utils.URL_RUN_GROUP_PREFIX, oldRunBlock, strings.Join(oldRunUrls, "\n"), utils.URL_RUN_GROUP_SUFFIX), nil
+		return fmt.Sprintf("%s%s%s\n%s", utils.URL_RUN_GROUP_PREFIX, oldRunBlock, strings.Join(oldRunUrls, "\n"), utils.URL_RUN_GROUP_SUFFIX), nil
 	}
 	return oldRunBlock, nil
 }
