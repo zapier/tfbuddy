@@ -102,6 +102,7 @@ func (c *Client) GetOldRunUrls(prID int, fullName string, rootCommentID int) (st
 			if oldRunBlockTest != "" {
 				oldRunBlock = oldRunBlockTest
 			} else {
+				// Add a new line for the first table entry so that markdown tabling can properly begin
 				oldRunBlock = "\n"
 			}
 

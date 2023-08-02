@@ -146,6 +146,7 @@ func (c *GitlabClient) GetOldRunUrls(mrIID int, project string, rootNoteID int) 
 			if oldRunBlockTest != "" {
 				oldRunBlock = oldRunBlockTest
 			} else {
+				// Add a new line for the first table entry so that markdown tabling can properly begin.
 				oldRunBlock = "\n"
 			}
 			if os.Getenv("TFBUDDY_DELETE_OLD_COMMENTS") != "" && note.ID != rootNoteID {
