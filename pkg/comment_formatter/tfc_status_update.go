@@ -176,5 +176,4 @@ const OLD_RUN_BLOCK = `
 
 | Run ID | Status |
 | ------ | ------ |
-
 %s`

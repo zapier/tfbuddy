@@ -129,13 +129,15 @@ func (c *GitlabClient) GetOldRunUrls(mrIID int, project string, rootNoteID int) 
 	for _, note := range notes {
 		if note.Author.Username == currentUser.Username {
 			runUrl := utils.CaptureSubstring(note.Body, utils.URL_RUN_PREFIX, utils.URL_RUN_SUFFIX)
+			// We scrape the run URLs from the previous MR comments.
+			// Since they are hyperlinked in markdown format, we need to extract the URL
+			// without the markdown artifacts.
 			runUrlRaw := utils.CaptureSubstring(runUrl, "[", "]")
-			runUrlSplit := strings.Split(runUrl, "/")
-			runID := strings.Replace(runUrlSplit[len(runUrlSplit)-1], ") ", "", 1)
+			runUrlSplit := strings.Split(runUrlRaw, "/")
+			// The run ID is the last part of the run URL, and it looks like run-abcd12345...
+			runID := runUrlSplit[len(runUrlSplit)-1]
 			runStatus := utils.CaptureSubstring(note.Body, utils.URL_RUN_STATUS_PREFIX, utils.URL_RUN_SUFFIX)
 			if runUrl != "" && runStatus != "" {
-				log.Debug().Msgf("Run ID: %s", runID)
-				log.Debug().Msgf("Run URL Raw: %s", runUrlRaw)
 				oldRunUrls = append(oldRunUrls, fmt.Sprintf("|[%s](%s)|%s|", runID, runUrlRaw, utils.FormatStatus(runStatus)))
 			}
 
@@ -143,6 +145,8 @@ func (c *GitlabClient) GetOldRunUrls(mrIID int, project string, rootNoteID int) 
 			oldRunBlockTest := utils.CaptureSubstring(note.Body, utils.URL_RUN_GROUP_PREFIX, utils.URL_RUN_GROUP_SUFFIX)
 			if oldRunBlockTest != "" {
 				oldRunBlock = oldRunBlockTest
+			} else {
+				oldRunBlock = "\n"
 			}
 			if os.Getenv("TFBUDDY_DELETE_OLD_COMMENTS") != "" && note.ID != rootNoteID {
 				log.Debug().Str("projectID", project).Int("mrIID", mrIID).Msgf("deleting note %d", note.ID)
@@ -156,7 +160,7 @@ func (c *GitlabClient) GetOldRunUrls(mrIID int, project string, rootNoteID int) 
 
 	// Add new urls into block
 	if len(oldRunUrls) > 0 {
-		return fmt.Sprintf("%s\n%s\n%s\n%s", utils.URL_RUN_GROUP_PREFIX, oldRunBlock, strings.Join(oldRunUrls, "\n"), utils.URL_RUN_GROUP_SUFFIX), nil
+		return fmt.Sprintf("%s%s%s\n%s", utils.URL_RUN_GROUP_PREFIX, oldRunBlock, strings.Join(oldRunUrls, "\n"), utils.URL_RUN_GROUP_SUFFIX), nil
 	}
 	return oldRunBlock, nil
 }
