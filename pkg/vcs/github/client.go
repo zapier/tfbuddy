@@ -93,8 +93,8 @@ func (c *Client) GetOldRunUrls(prID int, fullName string, rootCommentID int) (st
 			runID := runUrlSplit[len(runUrlSplit)-1]
 			runStatus := utils.CaptureSubstring(comment.GetBody(), utils.URL_RUN_STATUS_PREFIX, utils.URL_RUN_SUFFIX)
 			if runUrl != "" && runStatus != "" {
-				// Example: <tfc url> - ✅ Applied
-				oldRunUrls = append(oldRunUrls, fmt.Sprintf("|[%s](%s)|%s|", runID, runUrlRaw, runStatus))
+				// Example: |[<tfc runID>](<tfc url>)|✅ Applied|2023-08-02 15:41:48.82 +0000 UTC|
+				oldRunUrls = append(oldRunUrls, fmt.Sprintf("|[%s](%s)|%s|%s|", runID, runUrlRaw, runStatus, comment.CreatedAt))
 			}
 
 			// Github orders comments from earliest -> latest via ID, so we check each comment and take the last match on an "old url" block
