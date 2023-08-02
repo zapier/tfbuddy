@@ -1,6 +1,6 @@
 
 
-:airplane_arriving: <b>Imports:</b> 1
+:inbox_tray: <b>Imports:</b> 1
 <ul>
     <li><code>random_integer.import</code></li>
 </ul>
