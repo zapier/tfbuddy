@@ -135,7 +135,17 @@ func (c *GitlabClient) GetOldRunUrls(mrIID int, project string, rootNoteID int) 
 			runUrlRaw := utils.CaptureSubstring(runUrl, "[", "]")
 			runUrlSplit := strings.Split(runUrlRaw, "/")
 			// The run ID is the last part of the run URL, and it looks like run-abcd12345...
-			runID := runUrlSplit[len(runUrlSplit)-1]
+			runID := ""
+			if len(runUrlSplit) > 0 {
+				runID = runUrlSplit[len(runUrlSplit)-1]
+			} else {
+				// If the URL split slice doesn't contain anything for any reason
+				// We set the ID and URL to the run URL as a fallback (as it was originally scraped)
+				// It'll appear like this in markdown
+				// [https://app.terraform.io/...](https://app.terraform.io/...)
+				runID = runUrl
+				runUrlRaw = runUrl
+			}
 			runStatus := utils.CaptureSubstring(note.Body, utils.URL_RUN_STATUS_PREFIX, utils.URL_RUN_SUFFIX)
 			if runUrl != "" && runStatus != "" {
 				oldRunUrls = append(oldRunUrls, fmt.Sprintf("|[%s](%s)|%s|%s|", runID, runUrlRaw, utils.FormatStatus(runStatus), note.CreatedAt))
