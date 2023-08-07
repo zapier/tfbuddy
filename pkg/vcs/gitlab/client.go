@@ -143,6 +143,7 @@ func (c *GitlabClient) GetOldRunUrls(mrIID int, project string, rootNoteID int) 
 				// We set the ID and URL to the run URL as a fallback (as it was originally scraped)
 				// It'll appear like this in markdown
 				// [https://app.terraform.io/...](https://app.terraform.io/...)
+				log.Warn().Msg("Unable to obtain Terraform cloud run ID. The run URL(s) on the previous comments may be malformed.")
 				runID = runUrl
 				runUrlRaw = runUrl
 			}
