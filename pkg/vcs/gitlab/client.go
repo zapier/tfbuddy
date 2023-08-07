@@ -153,11 +153,10 @@ func (c *GitlabClient) GetOldRunUrls(mrIID int, project string, rootNoteID int) 
 
 			// Gitlab default sort is order by created by, so take the last match on this
 			oldRunBlockTest := utils.CaptureSubstring(note.Body, utils.URL_RUN_GROUP_PREFIX, utils.URL_RUN_GROUP_SUFFIX)
+			// Add a new line for the first table entry so that markdown tabling can properly begin
+			oldRunBlock = "\n"
 			if oldRunBlockTest != "" {
 				oldRunBlock = oldRunBlockTest
-			} else {
-				// Add a new line for the first table entry so that markdown tabling can properly begin
-				oldRunBlock = "\n"
 			}
 			if os.Getenv("TFBUDDY_DELETE_OLD_COMMENTS") != "" && note.ID != rootNoteID {
 				log.Debug().Str("projectID", project).Int("mrIID", mrIID).Msgf("deleting note %d", note.ID)

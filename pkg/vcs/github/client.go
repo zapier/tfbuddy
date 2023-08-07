@@ -109,11 +109,10 @@ func (c *Client) GetOldRunUrls(prID int, fullName string, rootCommentID int) (st
 
 			// Github orders comments from earliest -> latest via ID, so we check each comment and take the last match on an "old url" block
 			oldRunBlockTest := utils.CaptureSubstring(comment.GetBody(), utils.URL_RUN_GROUP_PREFIX, utils.URL_RUN_GROUP_SUFFIX)
+			// Add a new line for the first table entry so that markdown tabling can properly begin
+			oldRunBlock = "\n"
 			if oldRunBlockTest != "" {
 				oldRunBlock = oldRunBlockTest
-			} else {
-				// Add a new line for the first table entry so that markdown tabling can properly begin
-				oldRunBlock = "\n"
 			}
 
 			if os.Getenv("TFBUDDY_DELETE_OLD_COMMENTS") != "" && comment.GetID() != int64(rootCommentID) {
