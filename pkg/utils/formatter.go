@@ -14,7 +14,10 @@ const (
 
 ### Previous TFC Urls:
 
-</summary>`
+</summary>
+
+| Run ID | Status | Created at |
+| ------ | ------ | ---------- |`
 	URL_RUN_GROUP_SUFFIX  = "</details>"
 	URL_RUN_STATUS_PREFIX = "**Status**: "
 )

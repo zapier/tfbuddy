@@ -84,14 +84,34 @@ func (c *Client) GetOldRunUrls(prID int, fullName string, rootCommentID int) (st
 		// If this token user made the comment, and we're making a new comment, pick the TFC url out of the body and delete the comment
 		if comment.GetUser().GetLogin() == currentUser.GetLogin() {
 			runUrl := utils.CaptureSubstring(comment.GetBody(), utils.URL_RUN_PREFIX, utils.URL_RUN_SUFFIX)
+			// We scrape the run URLs from the previous MR comments.
+			// Since they are hyperlinked in markdown format, we need to extract the URL
+			// without the markdown artifacts.
+			runUrlRaw := utils.CaptureSubstring(runUrl, "[", "]")
+			runUrlSplit := strings.Split(runUrlRaw, "/")
+			// The run ID is the last part of the run URL, and it looks like run-abcd12345...
+			runID := ""
+			if len(runUrlSplit) > 0 {
+				runID = runUrlSplit[len(runUrlSplit)-1]
+			} else {
+				// If the URL split slice doesn't contain anything for any reason
+				// We set the ID and URL to the run URL as a fallback (as it was originally scraped)
+				// It'll appear like this in markdown
+				// [https://app.terraform.io/...](https://app.terraform.io/...)
+				log.Warn().Msg("Unable to obtain Terraform cloud run ID. The run URL(s) on the previous comments may be malformed.")
+				runID = runUrl
+				runUrlRaw = runUrl
+			}
 			runStatus := utils.CaptureSubstring(comment.GetBody(), utils.URL_RUN_STATUS_PREFIX, utils.URL_RUN_SUFFIX)
 			if runUrl != "" && runStatus != "" {
-				// Example: <tfc url> - ✅ Applied
-				oldRunUrls = append(oldRunUrls, fmt.Sprintf("%s - %s", runUrl, runStatus))
+				// Example: |[<tfc runID>](<tfc url>)|✅ Applied|2023-08-02 15:41:48.82 +0000 UTC|
+				oldRunUrls = append(oldRunUrls, fmt.Sprintf("|[%s](%s)|%s|%s|", runID, runUrlRaw, runStatus, comment.CreatedAt))
 			}
 
 			// Github orders comments from earliest -> latest via ID, so we check each comment and take the last match on an "old url" block
 			oldRunBlockTest := utils.CaptureSubstring(comment.GetBody(), utils.URL_RUN_GROUP_PREFIX, utils.URL_RUN_GROUP_SUFFIX)
+			// Add a new line for the first table entry so that markdown tabling can properly begin
+			oldRunBlock = "\n"
 			if oldRunBlockTest != "" {
 				oldRunBlock = oldRunBlockTest
 			}
@@ -109,7 +129,7 @@ func (c *Client) GetOldRunUrls(prID int, fullName string, rootCommentID int) (st
 	// If we found any old run urls, return them formatted
 	if len(oldRunUrls) > 0 {
 		// Try and find any exisitng groupings of old urls, else make a new one
-		return fmt.Sprintf("%s\n%s\n%s\n%s", utils.URL_RUN_GROUP_PREFIX, oldRunBlock, strings.Join(oldRunUrls, "\n"), utils.URL_RUN_GROUP_SUFFIX), nil
+		return fmt.Sprintf("%s%s%s\n%s", utils.URL_RUN_GROUP_PREFIX, oldRunBlock, strings.Join(oldRunUrls, "\n"), utils.URL_RUN_GROUP_SUFFIX), nil
 	}
 	return oldRunBlock, nil
 }

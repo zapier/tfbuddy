@@ -173,4 +173,7 @@ var needToApplyFullWorkSpace = `
 
 const OLD_RUN_BLOCK = `
 ### Previous TFC URLS
+
+| Run ID | Status | Created at |
+| ------ | ------ | ---------- |
 %s`

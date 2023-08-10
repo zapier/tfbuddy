@@ -5,7 +5,7 @@
 {{- end}}
 {{ end }}
 
-:airplane_arriving: <b>Imports:</b> {{.ImportCount}}
+:inbox_tray: <b>Imports:</b> {{.ImportCount}}
 <ul>
 {{- range .Imports}}
     <li><code>{{ . }}</code></li>

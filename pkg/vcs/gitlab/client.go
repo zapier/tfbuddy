@@ -129,13 +129,33 @@ func (c *GitlabClient) GetOldRunUrls(mrIID int, project string, rootNoteID int) 
 	for _, note := range notes {
 		if note.Author.Username == currentUser.Username {
 			runUrl := utils.CaptureSubstring(note.Body, utils.URL_RUN_PREFIX, utils.URL_RUN_SUFFIX)
+			// We scrape the run URLs from the previous MR comments.
+			// Since they are hyperlinked in markdown format, we need to extract the URL
+			// without the markdown artifacts.
+			runUrlRaw := utils.CaptureSubstring(runUrl, "[", "]")
+			runUrlSplit := strings.Split(runUrlRaw, "/")
+			// The run ID is the last part of the run URL, and it looks like run-abcd12345...
+			runID := ""
+			if len(runUrlSplit) > 0 {
+				runID = runUrlSplit[len(runUrlSplit)-1]
+			} else {
+				// If the URL split slice doesn't contain anything for any reason
+				// We set the ID and URL to the run URL as a fallback (as it was originally scraped)
+				// It'll appear like this in markdown
+				// [https://app.terraform.io/...](https://app.terraform.io/...)
+				log.Warn().Msg("Unable to obtain Terraform cloud run ID. The run URL(s) on the previous comments may be malformed.")
+				runID = runUrl
+				runUrlRaw = runUrl
+			}
 			runStatus := utils.CaptureSubstring(note.Body, utils.URL_RUN_STATUS_PREFIX, utils.URL_RUN_SUFFIX)
 			if runUrl != "" && runStatus != "" {
-				oldRunUrls = append(oldRunUrls, fmt.Sprintf("%s - %s", runUrl, utils.FormatStatus(runStatus)))
+				oldRunUrls = append(oldRunUrls, fmt.Sprintf("|[%s](%s)|%s|%s|", runID, runUrlRaw, utils.FormatStatus(runStatus), note.CreatedAt))
 			}
 
 			// Gitlab default sort is order by created by, so take the last match on this
 			oldRunBlockTest := utils.CaptureSubstring(note.Body, utils.URL_RUN_GROUP_PREFIX, utils.URL_RUN_GROUP_SUFFIX)
+			// Add a new line for the first table entry so that markdown tabling can properly begin
+			oldRunBlock = "\n"
 			if oldRunBlockTest != "" {
 				oldRunBlock = oldRunBlockTest
 			}
@@ -151,7 +171,7 @@ func (c *GitlabClient) GetOldRunUrls(mrIID int, project string, rootNoteID int) 
 
 	// Add new urls into block
 	if len(oldRunUrls) > 0 {
-		return fmt.Sprintf("%s\n%s\n%s\n%s", utils.URL_RUN_GROUP_PREFIX, oldRunBlock, strings.Join(oldRunUrls, "\n"), utils.URL_RUN_GROUP_SUFFIX), nil
+		return fmt.Sprintf("%s%s%s\n%s", utils.URL_RUN_GROUP_PREFIX, oldRunBlock, strings.Join(oldRunUrls, "\n"), utils.URL_RUN_GROUP_SUFFIX), nil
 	}
 	return oldRunBlock, nil
 }
