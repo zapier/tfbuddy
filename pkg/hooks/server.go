@@ -10,6 +10,7 @@ import (
 	"github.com/zapier/tfbuddy/pkg/hooks_stream"
 	"github.com/zapier/tfbuddy/pkg/vcs/github"
 	"github.com/ziflex/lecho/v3"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/labstack/echo/otelecho"
 
 	"github.com/zapier/tfbuddy/pkg/gitlab_hooks"
 	tfnats "github.com/zapier/tfbuddy/pkg/nats"
@@ -53,6 +54,10 @@ func StartServer() {
 	tfc := tfc_api.NewTFCClient()
 
 	hooksGroup := e.Group("/hooks")
+
+	// add otel middleware to hooks group
+	hooksGroup.Use(otelecho.Middleware("tfbuddy"))
+
 	hooksGroup.Use(middleware.BodyDump(func(c echo.Context, reqBody, resBody []byte) {
 		log.Trace().RawJSON("body", reqBody).Msg("Received hook request")
 	}))

@@ -1,4 +1,4 @@
-FROM golang:1.19 as localdev
+FROM golang:1.19.8 as localdev
 
 RUN apt update && apt install -y ca-certificates
 RUN go install github.com/go-delve/delve/cmd/dlv@latest
@@ -6,4 +6,4 @@ RUN go install github.com/go-delve/delve/cmd/dlv@latest
 WORKDIR /app
 COPY build/tfbuddy /app/tfbuddy
 
-CMD dlv --listen=:2345 --headless=true --api-version=2 --accept-multiclient exec /app/tfbuddy tfc handler
+CMD dlv --listen=:2345 --api-version=2 --headless=true exec /app/tfbuddy tfc handler

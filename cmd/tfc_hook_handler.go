@@ -1,13 +1,17 @@
 package cmd
 
 import (
+	"context"
+
 	"github.com/spf13/cobra"
 
-	"github.com/zapier/tfbuddy/internal/logging"
 	"github.com/zapier/tfbuddy/pkg/hooks"
 )
 
 var gitlabToken string
+var otelEnabled bool
+var otelCollectorHost string
+var otelCollectorPort string
 
 // tfcHookHandlerCmd represents the run command
 var tfcHookHandlerCmd = &cobra.Command{
@@ -15,8 +19,16 @@ var tfcHookHandlerCmd = &cobra.Command{
 	Short: "Start a hooks handler for Gitlab & Terraform cloud.",
 	Long:  ``,
 	Run: func(cmd *cobra.Command, args []string) {
-		logging.SetupLogOutput(resolveLogLevel())
+		ctx := context.Background()
+
+		t, err := initTelemetry(ctx)
+		if err != nil {
+			panic(err)
+		}
+		defer t.Shutdown()
+
 		hooks.StartServer()
+
 	},
 	PreRunE: func(cmd *cobra.Command, args []string) error {
 		return nil

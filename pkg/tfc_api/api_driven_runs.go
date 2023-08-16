@@ -8,6 +8,7 @@ import (
 
 	"github.com/hashicorp/go-tfe"
 	"github.com/rs/zerolog/log"
+	"go.opentelemetry.io/otel"
 )
 
 type ApiRunOptions struct {
@@ -28,8 +29,10 @@ type ApiRunOptions struct {
 }
 
 // CreateRunFromSource creates a new Terraform Cloud run from source files
-func (c *TFCClient) CreateRunFromSource(opts *ApiRunOptions) (*tfe.Run, error) {
-	ctx := context.Background()
+func (c *TFCClient) CreateRunFromSource(ctx context.Context, opts *ApiRunOptions) (*tfe.Run, error) {
+	ctx, span := otel.Tracer("TFC").Start(ctx, "CreateRunFromSource")
+	defer span.End()
+
 	log := log.With().Str("workspace", opts.Workspace).Logger()
 
 	ws, err := c.GetWorkspaceByName(ctx, opts.Organization, opts.Workspace)

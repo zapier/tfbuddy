@@ -6,6 +6,7 @@ import (
 	"github.com/zapier/tfbuddy/pkg/runstream"
 	"github.com/zapier/tfbuddy/pkg/tfc_api"
 	"github.com/zapier/tfbuddy/pkg/vcs"
+	"go.opentelemetry.io/otel"
 )
 
 type RunStatusUpdater struct {
@@ -38,16 +39,19 @@ func (p *RunStatusUpdater) Close() {
 
 // eventStreamCallback processes TFC run notifications via the NATS stream
 func (p *RunStatusUpdater) eventStreamCallback(re runstream.RunEvent) bool {
+	ctx, span := otel.Tracer("TFC").Start(re.GetContext(), "eventStreamCallback")
+	defer span.End()
+
 	log.Debug().Interface("TFRunEvent", re).Msg("Gitlab RunStatusUpdater.eventStreamCallback()")
 
-	run, err := p.tfc.GetRun(re.GetRunID())
+	run, err := p.tfc.GetRun(ctx, re.GetRunID())
 	if err != nil {
 		log.Error().Err(err).Str("runID", re.GetRunID()).Msg("could not get run")
 		return false
 	}
 	run.Status = tfe.RunStatus(re.GetNewStatus())
 
-	p.postRunStatusComment(run, re.GetMetadata())
-	p.updateCommitStatusForRun(run, re.GetMetadata())
+	p.postRunStatusComment(ctx, run, re.GetMetadata())
+	p.updateCommitStatusForRun(ctx, run, re.GetMetadata())
 	return true
 }

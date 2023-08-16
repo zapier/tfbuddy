@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -14,7 +15,8 @@ var tfcUnlockCmd = &cobra.Command{
 	Short: "Unlock a Terraform workspace.",
 	Long:  ``,
 	Run: func(cmd *cobra.Command, args []string) {
-		tfc_utils.LockUnlockWorkspace(tfcToken, tfcWorkspace, false, "")
+		ctx := context.Background()
+		tfc_utils.LockUnlockWorkspace(ctx, tfcToken, tfcWorkspace, false, "")
 	},
 	PreRunE: func(cmd *cobra.Command, args []string) error {
 		if tfcWorkspace == "" {
