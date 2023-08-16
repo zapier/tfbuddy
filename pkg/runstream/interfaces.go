@@ -1,12 +1,15 @@
 package runstream
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 //go:generate mockgen -source interfaces.go -destination=../mocks/mock_runstream.go -package=mocks github.com/zapier/tfbuddy/pkg/runstream
 
 type StreamClient interface {
 	HealthCheck() error
-	PublishTFRunEvent(re RunEvent) error
+	PublishTFRunEvent(ctx context.Context, re RunEvent) error
 	AddRunMeta(rmd RunMetadata) error
 	GetRunMeta(runID string) (RunMetadata, error)
 	NewTFRunPollingTask(meta RunMetadata, delay time.Duration) RunPollingTask
@@ -16,6 +19,9 @@ type StreamClient interface {
 
 type RunEvent interface {
 	GetRunID() string
+	GetContext() context.Context
+	SetContext(context.Context)
+	SetCarrier(map[string]string)
 	GetNewStatus() string
 	GetMetadata() RunMetadata
 	SetMetadata(RunMetadata)
@@ -35,10 +41,12 @@ type RunMetadata interface {
 }
 
 type RunPollingTask interface {
-	Schedule() error
-	Reschedule() error
+	Schedule(ctx context.Context) error
+	Reschedule(ctx context.Context) error
 	Completed() error
 	GetRunID() string
+	GetContext() context.Context
+	SetCarrier(map[string]string)
 	GetLastStatus() string
 	SetLastStatus(string)
 	GetRunMetaData() RunMetadata

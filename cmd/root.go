@@ -1,13 +1,19 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 
 	"github.com/zapier/tfbuddy/internal/logging"
+	"github.com/zapier/tfbuddy/internal/telemetry"
+	"github.com/zapier/tfbuddy/pkg"
 
 	"github.com/spf13/viper"
 )
@@ -33,7 +39,7 @@ func resolveLogLevel() zerolog.Level {
 
 	lvl, err := zerolog.ParseLevel(logLevel)
 	if err != nil {
-		fmt.Println("could not parse log level, defaulting to 'info'")
+		log.Println("could not parse log level, defaulting to 'info'")
 		lvl = zerolog.InfoLevel
 	}
 	return lvl
@@ -49,6 +55,25 @@ func init() {
 	cobra.OnInitialize(initConfig)
 
 	rootCmd.PersistentFlags().StringVarP(&logLevel, "log-level", "v", "info", "Set the log output level (info, debug, trace)")
+}
+
+func initTelemetry(ctx context.Context) (*telemetry.OperatorTelemetry, error) {
+	enableOtel, _ := strconv.ParseBool(os.Getenv("TFBUDDY_OTEL_ENABLED"))
+	otelHost := os.Getenv("TFBUDDY_OTEL_COLLECTOR_HOST")
+	otelPort := os.Getenv("TFBUDDY_OTEL_COLLECTOR_PORT")
+
+	opts := telemetry.Options{
+		Enabled:   enableOtel,
+		Host:      otelHost,
+		Port:      otelPort,
+		Version:   pkg.GitTag,
+		CommitSHA: pkg.GitCommit,
+	}
+	log.Printf("enabled: %v\thost: %s\tport: %s\n", enableOtel, otelHost, otelPort)
+
+	log.Printf("OpenTelemetry Opts: %+v\n", opts)
+
+	return telemetry.Init(ctx, "tfbuddy", opts)
 }
 
 // initConfig reads in config file and ENV variables if set.
@@ -67,6 +92,8 @@ func initConfig() {
 		viper.SetConfigName(".tfbuddy")
 	}
 
+	viper.SetEnvPrefix("TFBUDDY")
+	viper.EnvKeyReplacer(strings.NewReplacer("-", "_"))
 	viper.AutomaticEnv() // read in environment variables that match
 
 	// If a config file is found, read it in.

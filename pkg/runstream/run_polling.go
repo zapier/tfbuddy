@@ -1,12 +1,16 @@
 package runstream
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/nats-io/nats.go"
 	"github.com/rs/zerolog/log"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 const RunPollingStreamNameV0 = "RUN_POLLING"
@@ -32,6 +36,8 @@ type TFRunPollingTask struct {
 
 	// Revision is the NATS KV entry revision
 	Revision uint64
+	ctx      context.Context
+	Carrier  propagation.MapCarrier `json:"Carrier"`
 }
 
 func (s *Stream) NewTFRunPollingTask(meta RunMetadata, delay time.Duration) RunPollingTask {
@@ -51,14 +57,14 @@ func (s *Stream) NewTFRunPollingTask(meta RunMetadata, delay time.Duration) RunP
 	}
 }
 
-func (task *TFRunPollingTask) Schedule() error {
-	return task.stream.addTFRunPollingTask(task)
+func (task *TFRunPollingTask) Schedule(ctx context.Context) error {
+	return task.stream.addTFRunPollingTask(ctx, task)
 }
 
-func (task *TFRunPollingTask) Reschedule() error {
+func (task *TFRunPollingTask) Reschedule(ctx context.Context) error {
 	task.NextPoll = time.Now().Add(TaskPollingDelayDefault)
 	task.Processing = false
-	return task.update()
+	return task.update(ctx)
 }
 
 func (task *TFRunPollingTask) Completed() error {
@@ -66,6 +72,12 @@ func (task *TFRunPollingTask) Completed() error {
 }
 func (task *TFRunPollingTask) GetRunID() string {
 	return task.RunMetadata.GetRunID()
+}
+func (task *TFRunPollingTask) GetContext() context.Context {
+	return task.ctx
+}
+func (task *TFRunPollingTask) SetCarrier(carrier map[string]string) {
+	task.Carrier = carrier
 }
 func (task *TFRunPollingTask) GetLastStatus() string {
 	return task.LastStatus
@@ -76,9 +88,16 @@ func (task *TFRunPollingTask) GetRunMetaData() RunMetadata {
 func (task *TFRunPollingTask) SetLastStatus(status string) {
 	task.LastStatus = status
 }
-func (task *TFRunPollingTask) update() error {
+func (task *TFRunPollingTask) update(ctx context.Context) error {
+	ctx, span := otel.Tracer("terraform").Start(ctx, "update")
+	defer span.End()
+
 	task.LastUpdate = time.Now()
-	b, _ := encodeTFRunPollingTask(task)
+	span.SetAttributes(
+		attribute.String("runID", task.GetRunID()),
+	)
+
+	b, _ := encodeTFRunPollingTask(ctx, task)
 	rev, err := task.stream.pollingKV.Update(pollingKVKey(task), b, task.Revision)
 	if err != nil {
 		// TODO: are there are errors we need to handle?
@@ -89,8 +108,11 @@ func (task *TFRunPollingTask) update() error {
 	return nil
 }
 
-func (s *Stream) addTFRunPollingTask(task *TFRunPollingTask) error {
-	b, err := encodeTFRunPollingTask(task)
+func (s *Stream) addTFRunPollingTask(ctx context.Context, task *TFRunPollingTask) error {
+	ctx, span := otel.Tracer("terraform").Start(ctx, "addTFRunPollingTask")
+	defer span.End()
+
+	b, err := encodeTFRunPollingTask(ctx, task)
 	if err != nil {
 		return err
 	}
@@ -131,19 +153,21 @@ func (s *Stream) startPollingTaskDispatcher() {
 					continue
 				}
 				if !task.Processing && time.Now().After(task.NextPoll) {
+					ctx, span := otel.Tracer("terraform").Start(task.GetContext(), "polling")
 					// set & get processing status
 					task.Processing = true
-					err := task.update()
+					err := task.update(ctx)
 					if err == nil {
 						// dispatch task and wait for response
-						b, _ := encodeTFRunPollingTask(task)
+						b, _ := encodeTFRunPollingTask(ctx, task)
 						log.Debug().Str("runID", task.GetRunID()).Msg("enqueuing polling task")
 						if _, err := s.js.PublishAsync(pollingStreamKey(task), b); err != nil {
+							span.RecordError(err)
 							log.Error().Err(err).Msg("could not queue polling task")
 							continue
 						}
-
 					}
+					span.End()
 				}
 
 			}
@@ -204,6 +228,8 @@ func (s *Stream) decodeTFRunPollingTaskKVEntry(entry nats.KeyValueEntry) (*TFRun
 		log.Error().Err(err).Msg("unexpected error while decoding TF Run Polling Task KV entry")
 	}
 
+	run.ctx = otel.GetTextMapPropagator().Extract(context.Background(), run.Carrier)
+
 	// backwards compat
 	// TODO: remove once upgraded
 	if run.RunMetadata.GetRunID() == "" {
@@ -225,10 +251,15 @@ func (s *Stream) decodeTFRunPollingTask(b []byte) (*TFRunPollingTask, error) {
 	err := json.Unmarshal(b, &run)
 	run.stream = s
 
+	ctx := context.Background()
+	run.ctx = otel.GetTextMapPropagator().Extract(ctx, run.Carrier)
+
 	return run, err
 }
 
-func encodeTFRunPollingTask(run *TFRunPollingTask) ([]byte, error) {
+func encodeTFRunPollingTask(ctx context.Context, run *TFRunPollingTask) ([]byte, error) {
+	run.Carrier = make(map[string]string)
+	otel.GetTextMapPropagator().Inject(ctx, run.Carrier)
 	return json.Marshal(run)
 }
 

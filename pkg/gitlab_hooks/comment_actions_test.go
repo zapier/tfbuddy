@@ -1,6 +1,7 @@
 package gitlab_hooks
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"testing"
@@ -116,8 +117,9 @@ func TestProcessNoteEventPlanError(t *testing.T) {
 	defer os.Unsetenv(allow_list.GitlabProjectAllowListEnv)
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
+
 	mockGitClient := mocks.NewMockGitClient(mockCtrl)
-	mockGitClient.EXPECT().CreateMergeRequestComment(101, "zapier/service-tf-buddy", ":no_entry: could not be run because: something went wrong")
+	mockGitClient.EXPECT().CreateMergeRequestComment(gomock.Any(), 101, "zapier/service-tf-buddy", ":no_entry: could not be run because: something went wrong")
 	mockApiClient := mocks.NewMockApiClient(mockCtrl)
 	mockStreamClient := mocks.NewMockStreamClient(mockCtrl)
 	mockProject := mocks.NewMockProject(mockCtrl)
@@ -143,7 +145,7 @@ func TestProcessNoteEventPlanError(t *testing.T) {
 	mockMREvent.EXPECT().GetMR().Return(mockSimpleMR).Times(3)
 
 	mockTFCTrigger := mocks.NewMockTrigger(mockCtrl)
-	mockTFCTrigger.EXPECT().TriggerTFCEvents().Return(nil, fmt.Errorf("something went wrong"))
+	mockTFCTrigger.EXPECT().TriggerTFCEvents(gomock.Any()).Return(nil, fmt.Errorf("something went wrong"))
 
 	client := &GitlabEventWorker{
 		gl:        mockGitClient,
@@ -154,7 +156,7 @@ func TestProcessNoteEventPlanError(t *testing.T) {
 		},
 	}
 
-	proj, err := client.processNoteEvent(mockMREvent)
+	proj, err := client.processNoteEvent(context.Background(), mockMREvent)
 	if err == nil {
 		t.Error("expected error")
 		return
@@ -186,7 +188,9 @@ func TestProcessNoteEventPanicHandling(t *testing.T) {
 			return nil
 		},
 	}
-	err := client.processNoteEventStreamMsg(&NoteEventMsg{})
+	err := client.processNoteEventStreamMsg(&NoteEventMsg{
+		Context: context.Background(),
+	})
 	if err != nil {
 		t.Error("unexpected error", err)
 		return
@@ -224,7 +228,7 @@ func TestProcessNoteEventPlan(t *testing.T) {
 	mockMREvent.EXPECT().GetMR().Return(mockSimpleMR).Times(2)
 
 	mockTFCTrigger := mocks.NewMockTrigger(mockCtrl)
-	mockTFCTrigger.EXPECT().TriggerTFCEvents().Return(&tfc_trigger.TriggeredTFCWorkspaces{
+	mockTFCTrigger.EXPECT().TriggerTFCEvents(gomock.Any()).Return(&tfc_trigger.TriggeredTFCWorkspaces{
 		Executed: []string{"service-tf-buddy"},
 	}, nil)
 
@@ -237,7 +241,7 @@ func TestProcessNoteEventPlan(t *testing.T) {
 		},
 	}
 
-	proj, err := client.processNoteEvent(mockMREvent)
+	proj, err := client.processNoteEvent(context.Background(), mockMREvent)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -253,7 +257,7 @@ func TestProcessNoteEventPlanFailedWorkspace(t *testing.T) {
 	defer mockCtrl.Finish()
 	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
 
-	testSuite.MockGitClient.EXPECT().CreateMergeRequestComment(101, testSuite.MetaData.ProjectNameNS, ":no_entry: service-tf-buddy could not be run because: could not fetch upstream").Return(nil)
+	testSuite.MockGitClient.EXPECT().CreateMergeRequestComment(gomock.Any(), 101, testSuite.MetaData.ProjectNameNS, ":no_entry: service-tf-buddy could not be run because: could not fetch upstream").Return(nil)
 
 	mockLastCommit := mocks.NewMockCommit(mockCtrl)
 
@@ -274,7 +278,7 @@ func TestProcessNoteEventPlanFailedWorkspace(t *testing.T) {
 	mockTFCTrigger := mocks.NewMockTrigger(mockCtrl)
 
 	// mockTFCTrigger.EXPECT().GetConfig().Return(testSuite.MockTriggerConfig).Times(2)
-	mockTFCTrigger.EXPECT().TriggerTFCEvents().Return(&tfc_trigger.TriggeredTFCWorkspaces{
+	mockTFCTrigger.EXPECT().TriggerTFCEvents(gomock.Any()).Return(&tfc_trigger.TriggeredTFCWorkspaces{
 		Errored: []*tfc_trigger.ErroredWorkspace{{
 			Name:  "service-tf-buddy",
 			Error: "could not fetch upstream",
@@ -293,7 +297,7 @@ func TestProcessNoteEventPlanFailedWorkspace(t *testing.T) {
 		},
 	}
 
-	proj, err := worker.processNoteEvent(mockMREvent)
+	proj, err := worker.processNoteEvent(context.Background(), mockMREvent)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,8 +314,8 @@ func TestProcessNoteEventPlanFailedMultipleWorkspaces(t *testing.T) {
 	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
 
 	gomock.InOrder(
-		testSuite.MockGitClient.EXPECT().CreateMergeRequestComment(101, testSuite.MetaData.ProjectNameNS, ":no_entry: service-tf-buddy could not be run because: could not fetch upstream").Return(nil),
-		testSuite.MockGitClient.EXPECT().CreateMergeRequestComment(101, testSuite.MetaData.ProjectNameNS, ":no_entry: service-tf-buddy-staging could not be run because: workspace has been modified on target branch").Return(nil),
+		testSuite.MockGitClient.EXPECT().CreateMergeRequestComment(gomock.Any(), 101, testSuite.MetaData.ProjectNameNS, ":no_entry: service-tf-buddy could not be run because: could not fetch upstream").Return(nil),
+		testSuite.MockGitClient.EXPECT().CreateMergeRequestComment(gomock.Any(), 101, testSuite.MetaData.ProjectNameNS, ":no_entry: service-tf-buddy-staging could not be run because: workspace has been modified on target branch").Return(nil),
 	)
 	mockLastCommit := mocks.NewMockCommit(mockCtrl)
 	mockLastCommit.EXPECT().GetSHA().Return("abvc12345")
@@ -328,7 +332,7 @@ func TestProcessNoteEventPlanFailedMultipleWorkspaces(t *testing.T) {
 	mockMREvent.EXPECT().GetMR().Return(testSuite.MockGitMR).AnyTimes()
 
 	mockTFCTrigger := mocks.NewMockTrigger(mockCtrl)
-	mockTFCTrigger.EXPECT().TriggerTFCEvents().Return(&tfc_trigger.TriggeredTFCWorkspaces{
+	mockTFCTrigger.EXPECT().TriggerTFCEvents(gomock.Any()).Return(&tfc_trigger.TriggeredTFCWorkspaces{
 		Errored: []*tfc_trigger.ErroredWorkspace{{
 			Name:  "service-tf-buddy",
 			Error: "could not fetch upstream",
@@ -351,7 +355,7 @@ func TestProcessNoteEventPlanFailedMultipleWorkspaces(t *testing.T) {
 		},
 	}
 
-	proj, err := client.processNoteEvent(mockMREvent)
+	proj, err := client.processNoteEvent(context.Background(), mockMREvent)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -392,7 +396,7 @@ func TestProcessNoteEventNoErrorNoRuns(t *testing.T) {
 	mockMREvent.EXPECT().GetMR().Return(mockSimpleMR).Times(2)
 
 	mockTFCTrigger := mocks.NewMockTrigger(mockCtrl)
-	mockTFCTrigger.EXPECT().TriggerTFCEvents().Return(nil, nil)
+	mockTFCTrigger.EXPECT().TriggerTFCEvents(gomock.Any()).Return(nil, nil)
 
 	client := &GitlabEventWorker{
 		gl:        mockGitClient,
@@ -403,7 +407,7 @@ func TestProcessNoteEventNoErrorNoRuns(t *testing.T) {
 		},
 	}
 
-	proj, err := client.processNoteEvent(mockMREvent)
+	proj, err := client.processNoteEvent(context.Background(), mockMREvent)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,6 +1,7 @@
 package github
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/hashicorp/go-tfe"
@@ -9,6 +10,7 @@ import (
 	"github.com/zapier/tfbuddy/pkg/runstream"
 	"github.com/zapier/tfbuddy/pkg/tfc_api"
 	"github.com/zapier/tfbuddy/pkg/vcs"
+	"go.opentelemetry.io/otel"
 )
 
 const runEventsConsumerDurableName = "github"
@@ -43,26 +45,33 @@ func (w *RunEventsWorker) Close() {
 
 // eventStreamCallback processes TFC run notifications via the NATS stream
 func (w *RunEventsWorker) eventStreamCallback(re runstream.RunEvent) bool {
+	ctx, span := otel.Tracer("TFC").Start(re.GetContext(), "eventStreamCallback")
+	defer span.End()
+
 	log.Debug().Interface("TFRunEvent", re).Msg("Gitlab RunEventsWorker.eventStreamCallback()")
 
-	run, err := w.tfc.GetRun(re.GetRunID())
+	run, err := w.tfc.GetRun(ctx, re.GetRunID())
 	if err != nil {
+		span.RecordError(err)
 		log.Error().Err(err).Str("runID", re.GetRunID()).Msg("could not get run")
 		return false
 	}
 	run.Status = tfe.RunStatus(re.GetNewStatus())
 
-	w.postRunStatusComment(run, re.GetMetadata())
+	w.postRunStatusComment(ctx, run, re.GetMetadata())
 	//w.updateCommitStatusForRun(run, re.GetMetadata())
 	return true
 }
 
-func (w *RunEventsWorker) postRunStatusComment(run *tfe.Run, rmd runstream.RunMetadata) {
+func (w *RunEventsWorker) postRunStatusComment(ctx context.Context, run *tfe.Run, rmd runstream.RunMetadata) {
+	ctx, span := otel.Tracer("TFC").Start(ctx, "postRunStatusComment")
+	defer span.End()
 
 	commentBody, _, _ := comment_formatter.FormatRunStatusCommentBody(w.tfc, run, rmd)
 
 	if commentBody != "" {
 		w.client.CreateMergeRequestComment(
+			ctx,
 			rmd.GetMRInternalID(),
 			rmd.GetMRProjectNameWithNamespace(),
 			fmt.Sprintf(

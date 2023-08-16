@@ -2,8 +2,9 @@ package runstream
 
 import (
 	"encoding/json"
-	"github.com/nats-io/nats.go"
 	"time"
+
+	"github.com/nats-io/nats.go"
 )
 
 // ensure type complies with interface

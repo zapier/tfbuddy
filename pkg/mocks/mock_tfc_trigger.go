@@ -5,6 +5,7 @@
 package mocks
 
 import (
+	context "context"
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
@@ -199,30 +200,30 @@ func (mr *MockTriggerMockRecorder) SetMergeRequestRootNoteID(id interface{}) *go
 }
 
 // TriggerCleanupEvent mocks base method.
-func (m *MockTrigger) TriggerCleanupEvent() error {
+func (m *MockTrigger) TriggerCleanupEvent(arg0 context.Context) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "TriggerCleanupEvent")
+	ret := m.ctrl.Call(m, "TriggerCleanupEvent", arg0)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // TriggerCleanupEvent indicates an expected call of TriggerCleanupEvent.
-func (mr *MockTriggerMockRecorder) TriggerCleanupEvent() *gomock.Call {
+func (mr *MockTriggerMockRecorder) TriggerCleanupEvent(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TriggerCleanupEvent", reflect.TypeOf((*MockTrigger)(nil).TriggerCleanupEvent))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TriggerCleanupEvent", reflect.TypeOf((*MockTrigger)(nil).TriggerCleanupEvent), arg0)
 }
 
 // TriggerTFCEvents mocks base method.
-func (m *MockTrigger) TriggerTFCEvents() (*tfc_trigger.TriggeredTFCWorkspaces, error) {
+func (m *MockTrigger) TriggerTFCEvents(arg0 context.Context) (*tfc_trigger.TriggeredTFCWorkspaces, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "TriggerTFCEvents")
+	ret := m.ctrl.Call(m, "TriggerTFCEvents", arg0)
 	ret0, _ := ret[0].(*tfc_trigger.TriggeredTFCWorkspaces)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // TriggerTFCEvents indicates an expected call of TriggerTFCEvents.
-func (mr *MockTriggerMockRecorder) TriggerTFCEvents() *gomock.Call {
+func (mr *MockTriggerMockRecorder) TriggerTFCEvents(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TriggerTFCEvents", reflect.TypeOf((*MockTrigger)(nil).TriggerTFCEvents))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TriggerTFCEvents", reflect.TypeOf((*MockTrigger)(nil).TriggerTFCEvents), arg0)
 }

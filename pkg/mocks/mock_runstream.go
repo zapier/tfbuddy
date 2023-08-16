@@ -5,6 +5,7 @@
 package mocks
 
 import (
+	context "context"
 	reflect "reflect"
 	time "time"
 
@@ -93,17 +94,17 @@ func (mr *MockStreamClientMockRecorder) NewTFRunPollingTask(meta, delay interfac
 }
 
 // PublishTFRunEvent mocks base method.
-func (m *MockStreamClient) PublishTFRunEvent(re runstream.RunEvent) error {
+func (m *MockStreamClient) PublishTFRunEvent(ctx context.Context, re runstream.RunEvent) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "PublishTFRunEvent", re)
+	ret := m.ctrl.Call(m, "PublishTFRunEvent", ctx, re)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // PublishTFRunEvent indicates an expected call of PublishTFRunEvent.
-func (mr *MockStreamClientMockRecorder) PublishTFRunEvent(re interface{}) *gomock.Call {
+func (mr *MockStreamClientMockRecorder) PublishTFRunEvent(ctx, re interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PublishTFRunEvent", reflect.TypeOf((*MockStreamClient)(nil).PublishTFRunEvent), re)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PublishTFRunEvent", reflect.TypeOf((*MockStreamClient)(nil).PublishTFRunEvent), ctx, re)
 }
 
 // SubscribeTFRunEvents mocks base method.
@@ -159,6 +160,20 @@ func (m *MockRunEvent) EXPECT() *MockRunEventMockRecorder {
 	return m.recorder
 }
 
+// GetContext mocks base method.
+func (m *MockRunEvent) GetContext() context.Context {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetContext")
+	ret0, _ := ret[0].(context.Context)
+	return ret0
+}
+
+// GetContext indicates an expected call of GetContext.
+func (mr *MockRunEventMockRecorder) GetContext() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetContext", reflect.TypeOf((*MockRunEvent)(nil).GetContext))
+}
+
 // GetMetadata mocks base method.
 func (m *MockRunEvent) GetMetadata() runstream.RunMetadata {
 	m.ctrl.T.Helper()
@@ -199,6 +214,30 @@ func (m *MockRunEvent) GetRunID() string {
 func (mr *MockRunEventMockRecorder) GetRunID() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRunID", reflect.TypeOf((*MockRunEvent)(nil).GetRunID))
+}
+
+// SetCarrier mocks base method.
+func (m *MockRunEvent) SetCarrier(arg0 map[string]string) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "SetCarrier", arg0)
+}
+
+// SetCarrier indicates an expected call of SetCarrier.
+func (mr *MockRunEventMockRecorder) SetCarrier(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetCarrier", reflect.TypeOf((*MockRunEvent)(nil).SetCarrier), arg0)
+}
+
+// SetContext mocks base method.
+func (m *MockRunEvent) SetContext(arg0 context.Context) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "SetContext", arg0)
+}
+
+// SetContext indicates an expected call of SetContext.
+func (mr *MockRunEventMockRecorder) SetContext(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetContext", reflect.TypeOf((*MockRunEvent)(nil).SetContext), arg0)
 }
 
 // SetMetadata mocks base method.
@@ -413,6 +452,20 @@ func (mr *MockRunPollingTaskMockRecorder) Completed() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Completed", reflect.TypeOf((*MockRunPollingTask)(nil).Completed))
 }
 
+// GetContext mocks base method.
+func (m *MockRunPollingTask) GetContext() context.Context {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetContext")
+	ret0, _ := ret[0].(context.Context)
+	return ret0
+}
+
+// GetContext indicates an expected call of GetContext.
+func (mr *MockRunPollingTaskMockRecorder) GetContext() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetContext", reflect.TypeOf((*MockRunPollingTask)(nil).GetContext))
+}
+
 // GetLastStatus mocks base method.
 func (m *MockRunPollingTask) GetLastStatus() string {
 	m.ctrl.T.Helper()
@@ -456,31 +509,43 @@ func (mr *MockRunPollingTaskMockRecorder) GetRunMetaData() *gomock.Call {
 }
 
 // Reschedule mocks base method.
-func (m *MockRunPollingTask) Reschedule() error {
+func (m *MockRunPollingTask) Reschedule(ctx context.Context) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Reschedule")
+	ret := m.ctrl.Call(m, "Reschedule", ctx)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Reschedule indicates an expected call of Reschedule.
-func (mr *MockRunPollingTaskMockRecorder) Reschedule() *gomock.Call {
+func (mr *MockRunPollingTaskMockRecorder) Reschedule(ctx interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Reschedule", reflect.TypeOf((*MockRunPollingTask)(nil).Reschedule))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Reschedule", reflect.TypeOf((*MockRunPollingTask)(nil).Reschedule), ctx)
 }
 
 // Schedule mocks base method.
-func (m *MockRunPollingTask) Schedule() error {
+func (m *MockRunPollingTask) Schedule(ctx context.Context) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Schedule")
+	ret := m.ctrl.Call(m, "Schedule", ctx)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Schedule indicates an expected call of Schedule.
-func (mr *MockRunPollingTaskMockRecorder) Schedule() *gomock.Call {
+func (mr *MockRunPollingTaskMockRecorder) Schedule(ctx interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Schedule", reflect.TypeOf((*MockRunPollingTask)(nil).Schedule))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Schedule", reflect.TypeOf((*MockRunPollingTask)(nil).Schedule), ctx)
+}
+
+// SetCarrier mocks base method.
+func (m *MockRunPollingTask) SetCarrier(arg0 map[string]string) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "SetCarrier", arg0)
+}
+
+// SetCarrier indicates an expected call of SetCarrier.
+func (mr *MockRunPollingTaskMockRecorder) SetCarrier(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetCarrier", reflect.TypeOf((*MockRunPollingTask)(nil).SetCarrier), arg0)
 }
 
 // SetLastStatus mocks base method.

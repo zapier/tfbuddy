@@ -38,6 +38,14 @@ spec:
             value: "debug"
           - name: TFBUDDY_NATS_SERVICE_URL
             value: nats://tfbuddy-nats:4222
+          - name: TFBUDDY_OTEL_ENABLED
+            value: "false"
+          - name: TFBUDDY_OTEL_COLLECTOR_PORT
+            value: "4317"
+          - name: TFBUDDY_OTEL_COLLECTOR_HOST
+            valueFrom:
+              fieldRef:
+                fieldPath: status.hostIP
           image: ghcr.io/zapier/tfbuddy:latest
           imagePullPolicy: Always
           livenessProbe:

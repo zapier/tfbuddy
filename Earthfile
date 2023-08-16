@@ -48,7 +48,7 @@ build-binary:
     
     WORKDIR /src
     COPY . /src
-    RUN GOARM=${VARIANT#v} go build -ldflags "-X main.GitCommit=$GIT_COMMIT -X main.GitTag=$GIT_TAG" -o tfbuddy  
+    RUN GOARM=${VARIANT#v} go build -ldflags "-X github.com/zapier/tfbuddy/pkg.GitCommit=$GIT_COMMIT -X github.com/zapier/tfbuddy/pkg.GitTag=$GIT_TAG" -o tfbuddy  
     SAVE ARTIFACT tfbuddy
 
 build-docker:
