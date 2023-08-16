@@ -5,6 +5,7 @@
 package mocks
 
 import (
+	context "context"
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
@@ -35,184 +36,184 @@ func (m *MockGitClient) EXPECT() *MockGitClientMockRecorder {
 }
 
 // AddMergeRequestDiscussionReply mocks base method.
-func (m *MockGitClient) AddMergeRequestDiscussionReply(mrIID int, project, discussionID, comment string) (vcs.MRNote, error) {
+func (m *MockGitClient) AddMergeRequestDiscussionReply(ctx context.Context, mrIID int, project, discussionID, comment string) (vcs.MRNote, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "AddMergeRequestDiscussionReply", mrIID, project, discussionID, comment)
+	ret := m.ctrl.Call(m, "AddMergeRequestDiscussionReply", ctx, mrIID, project, discussionID, comment)
 	ret0, _ := ret[0].(vcs.MRNote)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // AddMergeRequestDiscussionReply indicates an expected call of AddMergeRequestDiscussionReply.
-func (mr *MockGitClientMockRecorder) AddMergeRequestDiscussionReply(mrIID, project, discussionID, comment interface{}) *gomock.Call {
+func (mr *MockGitClientMockRecorder) AddMergeRequestDiscussionReply(ctx, mrIID, project, discussionID, comment interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddMergeRequestDiscussionReply", reflect.TypeOf((*MockGitClient)(nil).AddMergeRequestDiscussionReply), mrIID, project, discussionID, comment)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddMergeRequestDiscussionReply", reflect.TypeOf((*MockGitClient)(nil).AddMergeRequestDiscussionReply), ctx, mrIID, project, discussionID, comment)
 }
 
 // CloneMergeRequest mocks base method.
-func (m *MockGitClient) CloneMergeRequest(arg0 string, arg1 vcs.MR, arg2 string) (vcs.GitRepo, error) {
+func (m *MockGitClient) CloneMergeRequest(arg0 context.Context, arg1 string, arg2 vcs.MR, arg3 string) (vcs.GitRepo, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CloneMergeRequest", arg0, arg1, arg2)
+	ret := m.ctrl.Call(m, "CloneMergeRequest", arg0, arg1, arg2, arg3)
 	ret0, _ := ret[0].(vcs.GitRepo)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-func (m *MockGitClient) GetOldRunUrls(mrIID int, project string, rootNoteID int) (string, error) {
+func (m *MockGitClient) GetOldRunUrls(ctx context.Context, mrIID int, project string, rootNoteID int) (string, error) {
 	return "", nil
 }
 // CloneMergeRequest indicates an expected call of CloneMergeRequest.
-func (mr *MockGitClientMockRecorder) CloneMergeRequest(arg0, arg1, arg2 interface{}) *gomock.Call {
+func (mr *MockGitClientMockRecorder) CloneMergeRequest(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CloneMergeRequest", reflect.TypeOf((*MockGitClient)(nil).CloneMergeRequest), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CloneMergeRequest", reflect.TypeOf((*MockGitClient)(nil).CloneMergeRequest), arg0, arg1, arg2, arg3)
 }
 
 // CreateMergeRequestComment mocks base method.
-func (m *MockGitClient) CreateMergeRequestComment(id int, fullPath, comment string) error {
+func (m *MockGitClient) CreateMergeRequestComment(ctx context.Context, id int, fullPath, comment string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateMergeRequestComment", id, fullPath, comment)
+	ret := m.ctrl.Call(m, "CreateMergeRequestComment", ctx, id, fullPath, comment)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // CreateMergeRequestComment indicates an expected call of CreateMergeRequestComment.
-func (mr *MockGitClientMockRecorder) CreateMergeRequestComment(id, fullPath, comment interface{}) *gomock.Call {
+func (mr *MockGitClientMockRecorder) CreateMergeRequestComment(ctx, id, fullPath, comment interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateMergeRequestComment", reflect.TypeOf((*MockGitClient)(nil).CreateMergeRequestComment), id, fullPath, comment)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateMergeRequestComment", reflect.TypeOf((*MockGitClient)(nil).CreateMergeRequestComment), ctx, id, fullPath, comment)
 }
 
 // CreateMergeRequestDiscussion mocks base method.
-func (m *MockGitClient) CreateMergeRequestDiscussion(mrID int, fullPath, comment string) (vcs.MRDiscussionNotes, error) {
+func (m *MockGitClient) CreateMergeRequestDiscussion(ctx context.Context, mrID int, fullPath, comment string) (vcs.MRDiscussionNotes, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateMergeRequestDiscussion", mrID, fullPath, comment)
+	ret := m.ctrl.Call(m, "CreateMergeRequestDiscussion", ctx, mrID, fullPath, comment)
 	ret0, _ := ret[0].(vcs.MRDiscussionNotes)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CreateMergeRequestDiscussion indicates an expected call of CreateMergeRequestDiscussion.
-func (mr *MockGitClientMockRecorder) CreateMergeRequestDiscussion(mrID, fullPath, comment interface{}) *gomock.Call {
+func (mr *MockGitClientMockRecorder) CreateMergeRequestDiscussion(ctx, mrID, fullPath, comment interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateMergeRequestDiscussion", reflect.TypeOf((*MockGitClient)(nil).CreateMergeRequestDiscussion), mrID, fullPath, comment)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateMergeRequestDiscussion", reflect.TypeOf((*MockGitClient)(nil).CreateMergeRequestDiscussion), ctx, mrID, fullPath, comment)
 }
 
 // GetMergeRequest mocks base method.
-func (m *MockGitClient) GetMergeRequest(arg0 int, arg1 string) (vcs.DetailedMR, error) {
+func (m *MockGitClient) GetMergeRequest(arg0 context.Context, arg1 int, arg2 string) (vcs.DetailedMR, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetMergeRequest", arg0, arg1)
+	ret := m.ctrl.Call(m, "GetMergeRequest", arg0, arg1, arg2)
 	ret0, _ := ret[0].(vcs.DetailedMR)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetMergeRequest indicates an expected call of GetMergeRequest.
-func (mr *MockGitClientMockRecorder) GetMergeRequest(arg0, arg1 interface{}) *gomock.Call {
+func (mr *MockGitClientMockRecorder) GetMergeRequest(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMergeRequest", reflect.TypeOf((*MockGitClient)(nil).GetMergeRequest), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMergeRequest", reflect.TypeOf((*MockGitClient)(nil).GetMergeRequest), arg0, arg1, arg2)
 }
 
 // GetMergeRequestApprovals mocks base method.
-func (m *MockGitClient) GetMergeRequestApprovals(arg0 int, arg1 string) (vcs.MRApproved, error) {
+func (m *MockGitClient) GetMergeRequestApprovals(ctx context.Context, id int, project string) (vcs.MRApproved, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetMergeRequestApprovals", arg0, arg1)
+	ret := m.ctrl.Call(m, "GetMergeRequestApprovals", ctx, id, project)
 	ret0, _ := ret[0].(vcs.MRApproved)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetMergeRequestApprovals indicates an expected call of GetMergeRequestApprovals.
-func (mr *MockGitClientMockRecorder) GetMergeRequestApprovals(arg0, arg1 interface{}) *gomock.Call {
+func (mr *MockGitClientMockRecorder) GetMergeRequestApprovals(ctx, id, project interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMergeRequestApprovals", reflect.TypeOf((*MockGitClient)(nil).GetMergeRequestApprovals), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMergeRequestApprovals", reflect.TypeOf((*MockGitClient)(nil).GetMergeRequestApprovals), ctx, id, project)
 }
 
 // GetMergeRequestModifiedFiles mocks base method.
-func (m *MockGitClient) GetMergeRequestModifiedFiles(mrIID int, projectID string) ([]string, error) {
+func (m *MockGitClient) GetMergeRequestModifiedFiles(ctx context.Context, mrIID int, projectID string) ([]string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetMergeRequestModifiedFiles", mrIID, projectID)
+	ret := m.ctrl.Call(m, "GetMergeRequestModifiedFiles", ctx, mrIID, projectID)
 	ret0, _ := ret[0].([]string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetMergeRequestModifiedFiles indicates an expected call of GetMergeRequestModifiedFiles.
-func (mr *MockGitClientMockRecorder) GetMergeRequestModifiedFiles(mrIID, projectID interface{}) *gomock.Call {
+func (mr *MockGitClientMockRecorder) GetMergeRequestModifiedFiles(ctx, mrIID, projectID interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMergeRequestModifiedFiles", reflect.TypeOf((*MockGitClient)(nil).GetMergeRequestModifiedFiles), mrIID, projectID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMergeRequestModifiedFiles", reflect.TypeOf((*MockGitClient)(nil).GetMergeRequestModifiedFiles), ctx, mrIID, projectID)
 }
 
 // GetPipelinesForCommit mocks base method.
-func (m *MockGitClient) GetPipelinesForCommit(projectWithNS, commitSHA string) ([]vcs.ProjectPipeline, error) {
+func (m *MockGitClient) GetPipelinesForCommit(ctx context.Context, projectWithNS, commitSHA string) ([]vcs.ProjectPipeline, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetPipelinesForCommit", projectWithNS, commitSHA)
+	ret := m.ctrl.Call(m, "GetPipelinesForCommit", ctx, projectWithNS, commitSHA)
 	ret0, _ := ret[0].([]vcs.ProjectPipeline)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetPipelinesForCommit indicates an expected call of GetPipelinesForCommit.
-func (mr *MockGitClientMockRecorder) GetPipelinesForCommit(projectWithNS, commitSHA interface{}) *gomock.Call {
+func (mr *MockGitClientMockRecorder) GetPipelinesForCommit(ctx, projectWithNS, commitSHA interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPipelinesForCommit", reflect.TypeOf((*MockGitClient)(nil).GetPipelinesForCommit), projectWithNS, commitSHA)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPipelinesForCommit", reflect.TypeOf((*MockGitClient)(nil).GetPipelinesForCommit), ctx, projectWithNS, commitSHA)
 }
 
 // GetRepoFile mocks base method.
-func (m *MockGitClient) GetRepoFile(arg0, arg1, arg2 string) ([]byte, error) {
+func (m *MockGitClient) GetRepoFile(arg0 context.Context, arg1, arg2, arg3 string) ([]byte, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetRepoFile", arg0, arg1, arg2)
+	ret := m.ctrl.Call(m, "GetRepoFile", arg0, arg1, arg2, arg3)
 	ret0, _ := ret[0].([]byte)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetRepoFile indicates an expected call of GetRepoFile.
-func (mr *MockGitClientMockRecorder) GetRepoFile(arg0, arg1, arg2 interface{}) *gomock.Call {
+func (mr *MockGitClientMockRecorder) GetRepoFile(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRepoFile", reflect.TypeOf((*MockGitClient)(nil).GetRepoFile), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRepoFile", reflect.TypeOf((*MockGitClient)(nil).GetRepoFile), arg0, arg1, arg2, arg3)
 }
 
 // ResolveMergeRequestDiscussion mocks base method.
-func (m *MockGitClient) ResolveMergeRequestDiscussion(arg0 string, arg1 int, arg2 string) error {
+func (m *MockGitClient) ResolveMergeRequestDiscussion(arg0 context.Context, arg1 string, arg2 int, arg3 string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ResolveMergeRequestDiscussion", arg0, arg1, arg2)
+	ret := m.ctrl.Call(m, "ResolveMergeRequestDiscussion", arg0, arg1, arg2, arg3)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // ResolveMergeRequestDiscussion indicates an expected call of ResolveMergeRequestDiscussion.
-func (mr *MockGitClientMockRecorder) ResolveMergeRequestDiscussion(arg0, arg1, arg2 interface{}) *gomock.Call {
+func (mr *MockGitClientMockRecorder) ResolveMergeRequestDiscussion(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResolveMergeRequestDiscussion", reflect.TypeOf((*MockGitClient)(nil).ResolveMergeRequestDiscussion), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResolveMergeRequestDiscussion", reflect.TypeOf((*MockGitClient)(nil).ResolveMergeRequestDiscussion), arg0, arg1, arg2, arg3)
 }
 
 // SetCommitStatus mocks base method.
-func (m *MockGitClient) SetCommitStatus(projectWithNS, commitSHA string, status vcs.CommitStatusOptions) (vcs.CommitStatus, error) {
+func (m *MockGitClient) SetCommitStatus(ctx context.Context, projectWithNS, commitSHA string, status vcs.CommitStatusOptions) (vcs.CommitStatus, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SetCommitStatus", projectWithNS, commitSHA, status)
+	ret := m.ctrl.Call(m, "SetCommitStatus", ctx, projectWithNS, commitSHA, status)
 	ret0, _ := ret[0].(vcs.CommitStatus)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // SetCommitStatus indicates an expected call of SetCommitStatus.
-func (mr *MockGitClientMockRecorder) SetCommitStatus(projectWithNS, commitSHA, status interface{}) *gomock.Call {
+func (mr *MockGitClientMockRecorder) SetCommitStatus(ctx, projectWithNS, commitSHA, status interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetCommitStatus", reflect.TypeOf((*MockGitClient)(nil).SetCommitStatus), projectWithNS, commitSHA, status)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetCommitStatus", reflect.TypeOf((*MockGitClient)(nil).SetCommitStatus), ctx, projectWithNS, commitSHA, status)
 }
 
 // UpdateMergeRequestDiscussionNote mocks base method.
-func (m *MockGitClient) UpdateMergeRequestDiscussionNote(mrIID, noteID int, project, discussionID, comment string) (vcs.MRNote, error) {
+func (m *MockGitClient) UpdateMergeRequestDiscussionNote(ctx context.Context, mrIID, noteID int, project, discussionID, comment string) (vcs.MRNote, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateMergeRequestDiscussionNote", mrIID, noteID, project, discussionID, comment)
+	ret := m.ctrl.Call(m, "UpdateMergeRequestDiscussionNote", ctx, mrIID, noteID, project, discussionID, comment)
 	ret0, _ := ret[0].(vcs.MRNote)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // UpdateMergeRequestDiscussionNote indicates an expected call of UpdateMergeRequestDiscussionNote.
-func (mr *MockGitClientMockRecorder) UpdateMergeRequestDiscussionNote(mrIID, noteID, project, discussionID, comment interface{}) *gomock.Call {
+func (mr *MockGitClientMockRecorder) UpdateMergeRequestDiscussionNote(ctx, mrIID, noteID, project, discussionID, comment interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateMergeRequestDiscussionNote", reflect.TypeOf((*MockGitClient)(nil).UpdateMergeRequestDiscussionNote), mrIID, noteID, project, discussionID, comment)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateMergeRequestDiscussionNote", reflect.TypeOf((*MockGitClient)(nil).UpdateMergeRequestDiscussionNote), ctx, mrIID, noteID, project, discussionID, comment)
 }
 
 // MockGitRepo is a mock of GitRepo interface.

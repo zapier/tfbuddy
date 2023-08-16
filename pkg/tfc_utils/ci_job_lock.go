@@ -5,10 +5,12 @@ import (
 
 	tfe "github.com/hashicorp/go-tfe"
 	"github.com/rs/zerolog/log"
+	"go.opentelemetry.io/otel"
 )
 
-func LockUnlockWorkspace(token, workspace string, lock bool, lockReason string) {
-	ctx := context.Background()
+func LockUnlockWorkspace(ctx context.Context, token, workspace string, lock bool, lockReason string) {
+	ctx, span := otel.Tracer("TFC").Start(ctx, "LockUnlockWorkspace")
+	defer span.End()
 
 	log.Info().Str("workspace", workspace).Msgf("LockUnlockWorkspace for workspace.")
 

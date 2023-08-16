@@ -1,6 +1,7 @@
 package gitlab
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 
@@ -12,20 +13,26 @@ import (
 	"github.com/xanzy/go-gitlab"
 	zgit "github.com/zapier/tfbuddy/pkg/git"
 	"github.com/zapier/tfbuddy/pkg/vcs"
+	"go.opentelemetry.io/otel"
 	"gopkg.in/errgo.v2/fmt/errors"
 )
 
 const GITLAB_CLONE_DEPTH_ENV = "TFBUDDY_GITLAB_CLONE_DEPTH"
 
 // CloneMergeRequest performs a git clone of the target Gitlab project & merge request branch to the `dest` path.
-func (c *GitlabClient) CloneMergeRequest(project string, mr vcs.MR, dest string) (vcs.GitRepo, error) {
+func (c *GitlabClient) CloneMergeRequest(ctx context.Context, project string, mr vcs.MR, dest string) (vcs.GitRepo, error) {
+	_, span := otel.Tracer("TFC").Start(ctx, "CloneMergeRequest")
+	defer span.End()
+
 	proj, _, err := c.client.Projects.GetProject(project, &gitlab.GetProjectOptions{
 		License:              gitlab.Bool(false),
 		Statistics:           gitlab.Bool(false),
 		WithCustomAttributes: gitlab.Bool(false),
 	})
 	if err != nil {
-		return nil, errors.Newf("could not clone MR - unable to read project details from Gitlab API: %v", err)
+		err = errors.Newf("could not clone MR - unable to read project details from Gitlab API: %v", err)
+		span.RecordError(err)
+		return nil, err
 	}
 
 	ref := plumbing.NewBranchReferenceName(mr.GetSourceBranch())
@@ -50,7 +57,9 @@ func (c *GitlabClient) CloneMergeRequest(project string, mr vcs.MR, dest string)
 	})
 
 	if err != nil && err != git.ErrRepositoryAlreadyExists {
-		return nil, errors.Newf("could not clone MR: %v", err)
+		err = errors.Newf("could not clone MR: %v", err)
+		span.RecordError(err)
+		return nil, err
 	}
 
 	wt, _ := repo.Worktree()
@@ -65,7 +74,9 @@ func (c *GitlabClient) CloneMergeRequest(project string, mr vcs.MR, dest string)
 		Force:    false,
 	})
 	if err != nil && err != git.NoErrAlreadyUpToDate {
-		return nil, errors.Newf("could not pull MR: %v", err)
+		err = errors.Newf("could not pull MR: %v", err)
+		span.RecordError(err)
+		return nil, err
 	}
 
 	if log.Trace().Enabled() {

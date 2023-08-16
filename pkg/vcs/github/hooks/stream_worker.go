@@ -1,6 +1,7 @@
 package hooks
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -11,9 +12,13 @@ import (
 	"github.com/zapier/tfbuddy/pkg/tfc_trigger"
 	"github.com/zapier/tfbuddy/pkg/utils"
 	"github.com/zapier/tfbuddy/pkg/vcs/github"
+	"go.opentelemetry.io/otel"
 )
 
 func (h *GithubHooksHandler) processIssueCommentEvent(msg *GithubIssueCommentEventMsg) error {
+	ctx, span := otel.Tracer("hooks").Start(msg.Context, "processIssueCommentEvent")
+	defer span.End()
+
 	var commentErr error
 	defer func() {
 		if r := recover(); r != nil {
@@ -21,17 +26,20 @@ func (h *GithubHooksHandler) processIssueCommentEvent(msg *GithubIssueCommentEve
 			commentErr = nil
 		}
 	}()
-	commentErr = h.processIssueComment(msg)
+	commentErr = h.processIssueComment(ctx, msg)
 	return utils.EmitPermanentError(commentErr, func(err error) {
 		log.Error().Msgf("got a permanent error attempting to process comment event: %s", err.Error())
 	})
 }
 
-func (h *GithubHooksHandler) processIssueComment(msg *GithubIssueCommentEventMsg) error {
-	if msg == nil || msg.payload == nil {
+func (h *GithubHooksHandler) processIssueComment(ctx context.Context, msg *GithubIssueCommentEventMsg) error {
+	ctx, span := otel.Tracer("hooks").Start(ctx, "processIssueComment")
+	defer span.End()
+
+	if msg == nil || msg.Payload == nil {
 		return errors.New("msg is nil")
 	}
-	event := msg.payload
+	event := msg.Payload
 
 	// Check if fullName is allowed
 	log.Debug().Str("repo", *event.Repo.FullName).Msg("processIssueCommentEvent")
@@ -44,7 +52,7 @@ func (h *GithubHooksHandler) processIssueComment(msg *GithubIssueCommentEventMsg
 	opts, err := comment_actions.ParseCommentCommand(*event.Comment.Body)
 	if err != nil {
 		if err == comment_actions.ErrOtherTFTool {
-			h.postPullRequestComment(event, "Use 'tfc' to interact with TFBuddy")
+			h.postPullRequestComment(ctx, event, "Use 'tfc' to interact with TFBuddy")
 		}
 		if err == comment_actions.ErrNotTFCCommand || err == comment_actions.ErrOtherTFTool {
 			githubWebHookIgnored.WithLabelValues(
@@ -57,7 +65,7 @@ func (h *GithubHooksHandler) processIssueComment(msg *GithubIssueCommentEventMsg
 		return err
 	}
 
-	pr, err := h.vcs.GetMergeRequest(*event.Issue.Number, event.GetRepo().GetFullName())
+	pr, err := h.vcs.GetMergeRequest(ctx, *event.Issue.Number, event.GetRepo().GetFullName())
 	if err != nil {
 		log.Error().Err(err).Msg("could not process GitHub IssueCommentEvent")
 		return err
@@ -85,12 +93,12 @@ func (h *GithubHooksHandler) processIssueComment(msg *GithubIssueCommentEventMsg
 	case "apply":
 		log.Info().Msg("Got TFC apply command")
 		if !pullReq.IsApproved() {
-			h.postPullRequestComment(event, ":no_entry: Apply failed. Pull Request requires approval.")
+			h.postPullRequestComment(ctx, event, ":no_entry: Apply failed. Pull Request requires approval.")
 			return nil
 		}
 
 		if pullReq.HasConflicts() {
-			h.postPullRequestComment(event, ":no_entry: Apply failed. Pull Request has conflicts that need to be resolved.")
+			h.postPullRequestComment(ctx, event, ":no_entry: Apply failed. Pull Request has conflicts that need to be resolved.")
 			return nil
 		}
 	case "lock":
@@ -102,20 +110,23 @@ func (h *GithubHooksHandler) processIssueComment(msg *GithubIssueCommentEventMsg
 	default:
 		return fmt.Errorf("could not parse command")
 	}
-	executedWorkspaces, tfError := trigger.TriggerTFCEvents()
+	executedWorkspaces, tfError := trigger.TriggerTFCEvents(ctx)
 	if tfError == nil && len(executedWorkspaces.Errored) > 0 {
 		for _, failedWS := range executedWorkspaces.Errored {
-			h.postPullRequestComment(event, fmt.Sprintf(":no_entry: %s could not be run because: %s", failedWS.Name, failedWS.Error))
+			h.postPullRequestComment(ctx, event, fmt.Sprintf(":no_entry: %s could not be run because: %s", failedWS.Name, failedWS.Error))
 		}
 		return nil
 	}
 	return tfError
 }
 
-func (h *GithubHooksHandler) postPullRequestComment(event *gogithub.IssueCommentEvent, body string) error {
+func (h *GithubHooksHandler) postPullRequestComment(ctx context.Context, event *gogithub.IssueCommentEvent, body string) error {
+	ctx, span := otel.Tracer("hooks").Start(ctx, "postPullRequestComment")
+	defer span.End()
+
 	log.Debug().Msg("postPullRequestComment")
 
 	prID := event.GetIssue().GetNumber()
 	log.Debug().Str("repo", event.GetRepo().GetFullName()).Int("PR", prID).Msg("postPullRequestComment")
-	return h.vcs.CreateMergeRequestComment(prID, event.GetRepo().GetFullName(), body)
+	return h.vcs.CreateMergeRequestComment(ctx, prID, event.GetRepo().GetFullName(), body)
 }

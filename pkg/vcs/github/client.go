@@ -18,6 +18,7 @@ import (
 	zgit "github.com/zapier/tfbuddy/pkg/git"
 	"github.com/zapier/tfbuddy/pkg/utils"
 	"github.com/zapier/tfbuddy/pkg/vcs"
+	"go.opentelemetry.io/otel"
 	"golang.org/x/oauth2"
 )
 
@@ -53,8 +54,11 @@ func NewGithubClient() *Client {
 	}
 }
 
-func (c *Client) GetMergeRequestApprovals(id int, project string) (vcs.MRApproved, error) {
-	pr, err := c.GetPullRequest(project, id)
+func (c *Client) GetMergeRequestApprovals(ctx context.Context, id int, project string) (vcs.MRApproved, error) {
+	ctx, span := otel.Tracer("TFC").Start(ctx, "GetMergeRequestApprovals")
+	defer span.End()
+
+	pr, err := c.GetPullRequest(ctx, project, id)
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +66,10 @@ func (c *Client) GetMergeRequestApprovals(id int, project string) (vcs.MRApprove
 }
 
 // Go over all comments on a PR, trying to grab any old TFC run urls and deleting the bodies
-func (c *Client) GetOldRunUrls(prID int, fullName string, rootCommentID int) (string, error) {
+func (c *Client) GetOldRunUrls(ctx context.Context, prID int, fullName string, rootCommentID int) (string, error) {
+	_, span := otel.Tracer("TFC").Start(ctx, "GetOldRunURLs")
+	defer span.End()
+
 	log.Debug().Msg("pruneComments")
 	projectParts, err := splitFullName(fullName)
 	if err != nil {
@@ -134,26 +141,38 @@ func (c *Client) GetOldRunUrls(prID int, fullName string, rootCommentID int) (st
 	return oldRunBlock, nil
 }
 
-func (c *Client) CreateMergeRequestComment(prID int, fullName string, comment string) error {
-	_, err := c.PostIssueComment(prID, fullName, comment)
+func (c *Client) CreateMergeRequestComment(ctx context.Context, prID int, fullName string, comment string) error {
+	ctx, span := otel.Tracer("TFC").Start(ctx, "CreateMergeRequestComment")
+	defer span.End()
+
+	_, err := c.PostIssueComment(ctx, prID, fullName, comment)
 	return err
 }
 
-func (c *Client) CreateMergeRequestDiscussion(prID int, fullName string, comment string) (vcs.MRDiscussionNotes, error) {
+func (c *Client) CreateMergeRequestDiscussion(ctx context.Context, prID int, fullName string, comment string) (vcs.MRDiscussionNotes, error) {
+	ctx, span := otel.Tracer("TFC").Start(ctx, "CreateMergeRequestDiscussion")
+	defer span.End()
+
 	// GitHub doesn't support discussion threads AFAICT.
-	iss, err := c.PostIssueComment(prID, fullName, comment)
+	iss, err := c.PostIssueComment(ctx, prID, fullName, comment)
 	return &GithubPRIssueComment{iss}, err
 }
 
-func (c *Client) GetMergeRequest(prID int, fullName string) (vcs.DetailedMR, error) {
-	pr, err := c.GetPullRequest(fullName, prID)
+func (c *Client) GetMergeRequest(ctx context.Context, prID int, fullName string) (vcs.DetailedMR, error) {
+	ctx, span := otel.Tracer("hooks").Start(ctx, "GetMergeRequest")
+	defer span.End()
+
+	pr, err := c.GetPullRequest(ctx, fullName, prID)
 	if err != nil {
 		return nil, err
 	}
 	return pr, nil
 }
 
-func (c *Client) GetRepoFile(fullName string, file string, ref string) ([]byte, error) {
+func (c *Client) GetRepoFile(ctx context.Context, fullName string, file string, ref string) ([]byte, error) {
+	ctx, span := otel.Tracer("TFC").Start(ctx, "GetRepoFile")
+	defer span.End()
+
 	if ref == "" {
 		ref = "HEAD"
 	}
@@ -176,8 +195,11 @@ func (c *Client) GetRepoFile(fullName string, file string, ref string) ([]byte, 
 	}, createBackOffWithRetries())
 }
 
-func (c *Client) GetMergeRequestModifiedFiles(prID int, fullName string) ([]string, error) {
-	pr, err := c.GetPullRequest(fullName, prID)
+func (c *Client) GetMergeRequestModifiedFiles(ctx context.Context, prID int, fullName string) ([]string, error) {
+	ctx, span := otel.Tracer("TFC").Start(ctx, "GetMergeRequestModifiedFiles")
+	defer span.End()
+
+	pr, err := c.GetPullRequest(ctx, fullName, prID)
 	if err != nil {
 		return nil, err
 	}
@@ -208,13 +230,16 @@ func (c *Client) GetMergeRequestModifiedFiles(prID int, fullName string) ([]stri
 
 const GITHUB_CLONE_DEPTH_ENV = "TFBUDDY_GITHUB_CLONE_DEPTH"
 
-func (c *Client) CloneMergeRequest(project string, mr vcs.MR, dest string) (vcs.GitRepo, error) {
+func (c *Client) CloneMergeRequest(ctx context.Context, project string, mr vcs.MR, dest string) (vcs.GitRepo, error) {
+	ctx, span := otel.Tracer("TFC").Start(ctx, "CloneMergeRequest")
+	defer span.End()
+
 	parts, err := splitFullName(project)
 	if err != nil {
 		return nil, err
 	}
 
-	repo, _, err := c.client.Repositories.Get(context.Background(), parts[0], parts[1])
+	repo, _, err := c.client.Repositories.Get(ctx, parts[0], parts[1])
 	if err != nil {
 		return nil, utils.CreatePermanentError(err)
 	}
@@ -265,57 +290,69 @@ func (c *Client) CloneMergeRequest(project string, mr vcs.MR, dest string) (vcs.
 	return zgit.NewRepository(gitRepo, auth, dest), nil
 }
 
-func (c *Client) UpdateMergeRequestDiscussionNote(mrIID, noteID int, project, discussionID, comment string) (vcs.MRNote, error) {
+func (c *Client) UpdateMergeRequestDiscussionNote(ctx context.Context, mrIID, noteID int, project, discussionID, comment string) (vcs.MRNote, error) {
 	//TODO implement me
 	//panic("implement me")
 	return nil, nil
 }
 
-func (c *Client) ResolveMergeRequestDiscussion(s string, i int, s2 string) error {
+func (c *Client) ResolveMergeRequestDiscussion(ctx context.Context, s string, i int, s2 string) error {
 	// This is a NoOp on GitHub
 	return nil
 }
 
-func (c *Client) AddMergeRequestDiscussionReply(prID int, fullName, discussionID, comment string) (vcs.MRNote, error) {
+func (c *Client) AddMergeRequestDiscussionReply(ctx context.Context, prID int, fullName, discussionID, comment string) (vcs.MRNote, error) {
+	ctx, span := otel.Tracer("TFC").Start(ctx, "AddMergeRequestDiscussionReply")
+	defer span.End()
+
 	// GitHub doesn't support discussion threads AFAICT.
-	iss, err := c.PostIssueComment(prID, fullName, comment)
+	iss, err := c.PostIssueComment(ctx, prID, fullName, comment)
 	return &IssueComment{iss}, err
 }
 
-func (c *Client) SetCommitStatus(projectWithNS string, commitSHA string, status vcs.CommitStatusOptions) (vcs.CommitStatus, error) {
+func (c *Client) SetCommitStatus(ctx context.Context, projectWithNS string, commitSHA string, status vcs.CommitStatusOptions) (vcs.CommitStatus, error) {
 	//TODO implement me
 	return nil, nil
 }
 
-func (c *Client) GetPipelinesForCommit(projectWithNS string, commitSHA string) ([]vcs.ProjectPipeline, error) {
+func (c *Client) GetPipelinesForCommit(ctx context.Context, projectWithNS string, commitSHA string) ([]vcs.ProjectPipeline, error) {
 	//TODO implement me
 	return nil, nil
 }
 
-func (c *Client) GetIssue(owner *gogithub.User, repo string, issueId int) (*gogithub.Issue, error) {
+func (c *Client) GetIssue(ctx context.Context, owner *gogithub.User, repo string, issueId int) (*gogithub.Issue, error) {
+	ctx, span := otel.Tracer("TFC").Start(ctx, "GetIssue")
+	defer span.End()
+
 	owName, err := ResolveOwnerName(owner)
 	if err != nil {
 		return nil, utils.CreatePermanentError(err)
 	}
 	return backoff.RetryWithData(func() (*gogithub.Issue, error) {
-		iss, _, err := c.client.Issues.Get(context.Background(), owName, repo, issueId)
+		iss, _, err := c.client.Issues.Get(ctx, owName, repo, issueId)
 		return iss, utils.CreatePermanentError(err)
 	}, createBackOffWithRetries())
 }
 
-func (c *Client) GetPullRequest(fullName string, prID int) (*GithubPR, error) {
+func (c *Client) GetPullRequest(ctx context.Context, fullName string, prID int) (*GithubPR, error) {
+	ctx, span := otel.Tracer("TFC").Start(ctx, "GetPullRequest")
+	defer span.End()
+
 	parts, err := splitFullName(fullName)
 	if err != nil {
 		return nil, err
 	}
 	return backoff.RetryWithData(func() (*GithubPR, error) {
-		pr, _, err := c.client.PullRequests.Get(c.ctx, parts[0], parts[1], prID)
+		pr, _, err := c.client.PullRequests.Get(ctx, parts[0], parts[1], prID)
 		return &GithubPR{pr}, utils.CreatePermanentError(err)
 	}, createBackOffWithRetries())
 }
 
 // PostIssueComment adds a comment to an existing Pull Request
-func (c *Client) PostIssueComment(prId int, fullName string, body string) (*gogithub.IssueComment, error) {
+func (c *Client) PostIssueComment(ctx context.Context, prId int, fullName string, body string) (*gogithub.IssueComment, error) {
+	ctx, span := otel.Tracer("TFC").Start(ctx, "PostIssueComment")
+	defer span.End()
+
 	projectParts, err := splitFullName(fullName)
 	if err != nil {
 		return nil, utils.CreatePermanentError(err)
@@ -324,7 +361,7 @@ func (c *Client) PostIssueComment(prId int, fullName string, body string) (*gogi
 		comment := &gogithub.IssueComment{
 			Body: String(body),
 		}
-		iss, _, err := c.client.Issues.CreateComment(context.Background(), projectParts[0], projectParts[1], prId, comment)
+		iss, _, err := c.client.Issues.CreateComment(ctx, projectParts[0], projectParts[1], prId, comment)
 		if err != nil {
 			log.Error().Err(err).Msg("github client: could not post issue comment")
 		}
@@ -334,7 +371,10 @@ func (c *Client) PostIssueComment(prId int, fullName string, body string) (*gogi
 }
 
 // PostPullRequestComment adds a review comment to an existing PullRequest
-func (c *Client) PostPullRequestComment(owner, repo string, prId int, body string) error {
+func (c *Client) PostPullRequestComment(ctx context.Context, owner, repo string, prId int, body string) error {
+	ctx, span := otel.Tracer("TFC").Start(ctx, "PostPullRequestComment")
+	defer span.End()
+
 	// TODO: this is broken
 	return backoff.Retry(func() error {
 		comment := &gogithub.PullRequestComment{

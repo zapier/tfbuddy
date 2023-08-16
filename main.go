@@ -4,14 +4,10 @@ import (
 	"fmt"
 
 	"github.com/zapier/tfbuddy/cmd"
-)
-
-var (
-	GitTag    = ""
-	GitCommit = ""
+	"github.com/zapier/tfbuddy/pkg"
 )
 
 func main() {
-	fmt.Println("Starting TFBuddy:", GitTag, GitCommit)
+	fmt.Println("Starting TFBuddy:", pkg.GitTag, pkg.GitCommit)
 	cmd.Execute()
 }

@@ -2,7 +2,6 @@ package tfc_utils
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	tfe "github.com/hashicorp/go-tfe"
@@ -149,5 +148,5 @@ func canCancelRun(run *tfe.Run) bool {
 }
 
 func printRunInfo(run *tfe.Run, title, wsName string) {
-	fmt.Printf(RunInfo, title, run.ID, run.Status, run.Source, run.Message, wsName, run.ID)
+	log.Printf(RunInfo, title, run.ID, run.Status, run.Source, run.Message, wsName, run.ID)
 }

@@ -1,21 +1,23 @@
 package vcs
 
+import "context"
+
 //go:generate mockgen -source interfaces.go -destination=../mocks/mock_vcs.go -package=mocks github.com/zapier/tfbuddy/pkg/vcs
 
 type GitClient interface {
-	GetMergeRequestApprovals(id int, project string) (MRApproved, error)
-	CreateMergeRequestComment(id int, fullPath string, comment string) error
-	CreateMergeRequestDiscussion(mrID int, fullPath string, comment string) (MRDiscussionNotes, error)
-	GetMergeRequest(int, string) (DetailedMR, error)
-	GetRepoFile(string, string, string) ([]byte, error)
-	GetMergeRequestModifiedFiles(mrIID int, projectID string) ([]string, error)
-	CloneMergeRequest(string, MR, string) (GitRepo, error)
-	UpdateMergeRequestDiscussionNote(mrIID, noteID int, project, discussionID, comment string) (MRNote, error)
-	ResolveMergeRequestDiscussion(string, int, string) error
-	AddMergeRequestDiscussionReply(mrIID int, project, discussionID, comment string) (MRNote, error)
-	SetCommitStatus(projectWithNS string, commitSHA string, status CommitStatusOptions) (CommitStatus, error)
-	GetPipelinesForCommit(projectWithNS string, commitSHA string) ([]ProjectPipeline, error)
-	GetOldRunUrls(mrIID int, project string, rootCommentID int) (string, error)
+	GetMergeRequestApprovals(ctx context.Context, id int, project string) (MRApproved, error)
+	CreateMergeRequestComment(ctx context.Context, id int, fullPath string, comment string) error
+	CreateMergeRequestDiscussion(ctx context.Context, mrID int, fullPath string, comment string) (MRDiscussionNotes, error)
+	GetMergeRequest(context.Context, int, string) (DetailedMR, error)
+	GetRepoFile(context.Context, string, string, string) ([]byte, error)
+	GetMergeRequestModifiedFiles(ctx context.Context, mrIID int, projectID string) ([]string, error)
+	CloneMergeRequest(context.Context, string, MR, string) (GitRepo, error)
+	UpdateMergeRequestDiscussionNote(ctx context.Context, mrIID, noteID int, project, discussionID, comment string) (MRNote, error)
+	ResolveMergeRequestDiscussion(context.Context, string, int, string) error
+	AddMergeRequestDiscussionReply(ctx context.Context, mrIID int, project, discussionID, comment string) (MRNote, error)
+	SetCommitStatus(ctx context.Context, projectWithNS string, commitSHA string, status CommitStatusOptions) (CommitStatus, error)
+	GetPipelinesForCommit(ctx context.Context, projectWithNS string, commitSHA string) ([]ProjectPipeline, error)
+	GetOldRunUrls(ctx context.Context, mrIID int, project string, rootCommentID int) (string, error)
 }
 type GitRepo interface {
 	FetchUpstreamBranch(string) error

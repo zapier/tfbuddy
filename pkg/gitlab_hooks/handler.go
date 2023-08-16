@@ -1,12 +1,16 @@
 package gitlab_hooks
 
 import (
+	"context"
 	"net/http"
 	"os"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sl1pm4t/gongs"
 	"github.com/zapier/tfbuddy/pkg/hooks_stream"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/labstack/echo/v4"
 	nats "github.com/nats-io/nats.go"
@@ -91,32 +95,45 @@ func (h *GitlabHooksHandler) handler(c echo.Context) error {
 	labels["eventType"] = string(eventType)
 	switch eventType {
 	case gogitlab.EventTypeMergeRequest:
+		ctx, span := otel.Tracer("GitlabHandler").Start(c.Request().Context(), "Gitlab - MergeRequestHook")
+		defer span.End()
+
 		log.Info().Msg("processing GitLab Merge Request event")
 
 		event, err := getGitlabEventBody[gogitlab.MergeEvent](c)
-		if checkError(err, "could not decode merge request event") {
+		if checkError(ctx, err, "could not decode merge request event") {
 			break
 		}
+
+		span.SetAttributes(
+			attribute.String("project", event.Project.PathWithNamespace),
+			attribute.String("action", event.ObjectAttributes.Action),
+			attribute.Int("mergeRequestID", event.ObjectAttributes.IID),
+		)
+
 		msg := &MergeRequestEventMsg{
 			GitlabHookEvent: GitlabHookEvent{},
-			payload:         event,
+			Payload:         event,
 		}
 
 		proj = event.Project.PathWithNamespace
-		_, err = h.mrStream.Publish(msg)
-		checkError(err, "could not publish merge request event to stream")
+		_, err = h.mrStream.Publish(ctx, msg)
+		checkError(ctx, err, "could not publish merge request event to stream")
 
 	case gogitlab.EventTypeNote:
+		ctx, span := otel.Tracer("GitlabHandler").Start(c.Request().Context(), "Gitlab - EventTypeNote")
+		defer span.End()
+
 		log.Info().Msg("processing GitLab Note/Comment event")
 
 		event, err := getNoteEventBody(c)
-		if checkError(err, "could not decode Note/Comment event") {
+		if checkError(ctx, err, "could not decode Note/Comment event") {
 			break
 		}
 
-		proj = event.payload.GetProject().GetPathWithNamespace()
-		_, err = h.notesStream.Publish(event)
-		checkError(err, "could not publish note event to stream")
+		proj = event.Payload.GetProject().GetPathWithNamespace()
+		_, err = h.notesStream.Publish(ctx, event)
+		checkError(ctx, err, "could not publish note event to stream")
 
 	default:
 		log.Info().Msgf("Ignoring Gitlab Event type: %s", eventType)
@@ -159,14 +176,15 @@ func getNoteEventBody(c echo.Context) (*NoteEventMsg, error) {
 
 	ne := &NoteEventMsg{
 		GitlabHookEvent: GitlabHookEvent{},
-		payload:         mrCommentEvt,
+		Payload:         mrCommentEvt,
 	}
 	return ne, nil
 }
 
-func checkError(err error, detail string) bool {
+func checkError(ctx context.Context, err error, detail string) bool {
 	if err != nil {
 		log.Error().Err(err).Msg(detail)
+		trace.SpanFromContext(ctx).RecordError(err, trace.WithAttributes(attribute.String("detail", detail)))
 		return true
 	}
 	return false

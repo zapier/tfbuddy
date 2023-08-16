@@ -1,6 +1,7 @@
 package tfc_utils
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/zapier/tfbuddy/pkg/tfc_api"
 	"github.com/zapier/tfbuddy/pkg/vcs/gitlab"
+	"go.opentelemetry.io/otel"
 
 	tfe "github.com/hashicorp/go-tfe"
 	gogitlab "github.com/xanzy/go-gitlab"
@@ -43,10 +45,11 @@ const MR_RUN_DETAILS_FORMAT = `
 func MonitorRunStatus() {
 	glClient = gitlab.NewGitlabClient()
 	tfcClient = tfc_api.NewTFCClient()
+	ctx := context.Background()
 
 	projectID := os.Getenv("CI_PROJECT_ID")
 	sha := os.Getenv("CI_COMMIT_SHA")
-	statuses := glClient.GetCommitStatuses(projectID, sha)
+	statuses := glClient.GetCommitStatuses(ctx, projectID, sha)
 	commentBody := ""
 	wg := sync.WaitGroup{}
 	for _, s := range statuses {
@@ -64,29 +67,29 @@ func MonitorRunStatus() {
 					commentBody += fmt.Sprintf(MR_RUN_DETAILS_FORMAT, workspace, s.Status, s.TargetURL, s.TargetURL, description)
 					st := s
 					wg.Add(1)
-					go waitForRunCompletionOrFailure(&wg, st, workspace, runID)
+					go waitForRunCompletionOrFailure(ctx, &wg, st, workspace, runID)
 				case "success":
 					fallthrough
 				case "failed":
 					// get run summary
-					postRunSummary(s, workspace, runID)
+					postRunSummary(ctx, s, workspace, runID)
 				}
 			}
 		}
 	}
-	postCommentBody(commentBody)
+	postCommentBody(ctx, commentBody)
 
 	wg.Wait()
 }
 
-func postCommentBody(commentBody string) {
+func postCommentBody(ctx context.Context, commentBody string) {
 	if commentBody != "" {
 		projectID := os.Getenv("CI_PROJECT_ID")
 		mrIID, err := strconv.Atoi(os.Getenv("CI_MERGE_REQUEST_IID"))
 		if err != nil {
 			log.Printf("erroring posting comment: %v", err)
 		}
-		glClient.CreateMergeRequestComment(mrIID, projectID, fmt.Sprintf(MR_COMMENT_FORMAT, commentBody))
+		glClient.CreateMergeRequestComment(ctx, mrIID, projectID, fmt.Sprintf(MR_COMMENT_FORMAT, commentBody))
 	}
 }
 
@@ -104,9 +107,9 @@ var failedPlanSummaryFormat = `
 *Click Terraform Cloud URL to see detailed plan output*
 `
 
-func postRunSummary(commitStatus *gogitlab.CommitStatus, wsName, runID string) {
+func postRunSummary(ctx context.Context, commitStatus *gogitlab.CommitStatus, wsName, runID string) {
 	//run, _ := tfcClient.Client.Runs.ReadWithOptions(context.Background(), runID, &tfe.RunReadOptions{Include: "plan"})
-	run, err := tfcClient.GetRun(runID)
+	run, err := tfcClient.GetRun(ctx, runID)
 	if err != nil {
 		log.Printf("err: %v\n", err)
 		return
@@ -122,10 +125,12 @@ func postRunSummary(commitStatus *gogitlab.CommitStatus, wsName, runID string) {
 	}
 
 	commentBody := fmt.Sprintf(MR_RUN_DETAILS_FORMAT, wsName, run.Status, commitStatus.TargetURL, commitStatus.TargetURL, description)
-	postCommentBody(commentBody)
+	postCommentBody(ctx, commentBody)
 }
 
-func waitForRunCompletionOrFailure(wg *sync.WaitGroup, commitStatus *gogitlab.CommitStatus, wsName, runID string) {
+func waitForRunCompletionOrFailure(ctx context.Context, wg *sync.WaitGroup, commitStatus *gogitlab.CommitStatus, wsName, runID string) {
+	ctx, span := otel.Tracer("TFC").Start(ctx, "waitForRunCompletionOrFailure")
+	defer span.End()
 	defer wg.Done()
 
 	attempts := 360
@@ -135,7 +140,7 @@ func waitForRunCompletionOrFailure(wg *sync.WaitGroup, commitStatus *gogitlab.Co
 		time.Sleep(retryInterval)
 
 		log.Println("Reading Run details.", runID)
-		run, err := tfcClient.GetRun(runID)
+		run, err := tfcClient.GetRun(ctx, runID)
 		if err != nil {
 			log.Printf("err: %v\n", err)
 		}
@@ -145,7 +150,7 @@ func waitForRunCompletionOrFailure(wg *sync.WaitGroup, commitStatus *gogitlab.Co
 			continue
 		}
 
-		postRunSummary(commitStatus, wsName, runID)
+		postRunSummary(ctx, commitStatus, wsName, runID)
 		break
 	}
 }
