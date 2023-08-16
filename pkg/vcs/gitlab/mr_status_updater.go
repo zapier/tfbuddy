@@ -177,11 +177,20 @@ func (p *RunStatusUpdater) getLatestPipelineID(ctx context.Context, rmd runstrea
 		return nil
 	}
 	log.Trace().Interface("pipelines", pipelines).Msg("retrieved pipelines for commit")
+	var pipelineID *int
 	if len(pipelines) > 0 {
 		for _, p := range pipelines {
 			if p.GetSource() == "merge_request_event" {
-				return gogitlab.Int(p.GetID())
+				pipelineID = gogitlab.Int(p.GetID())
+				return pipelineID
 			}
+		}
+		// Fallback behavior if Gitlab doesn't find any merge request pipelines
+		// Returns last pipeline ID in the pipelines list
+		if pipelineID == nil {
+			log.Debug().Msg("No merge request pipeline ID found for the commit. Using latest pipeline ID as fallback...")
+			pipelineID = gogitlab.Int(pipelines[len(pipelines)-1].GetID())
+			return pipelineID
 		}
 	}
 	return nil
