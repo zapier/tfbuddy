@@ -302,7 +302,7 @@ func (c *Client) ResolveMergeRequestDiscussion(ctx context.Context, s string, i 
 }
 
 func (c *Client) AddMergeRequestDiscussionReply(ctx context.Context, prID int, fullName, discussionID, comment string) (vcs.MRNote, error) {
-	ctx, span := otel.Tracer("TFC").Start(ctx, "ApplyMergeRequestDiscussionReply")
+	ctx, span := otel.Tracer("TFC").Start(ctx, "AddMergeRequestDiscussionReply")
 	defer span.End()
 
 	// GitHub doesn't support discussion threads AFAICT.

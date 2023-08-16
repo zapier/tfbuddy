@@ -40,7 +40,7 @@ func NewGitlabEventWorker(h *GitlabHooksHandler, js nats.JetStreamContext) *Gitl
 }
 
 func (w *GitlabEventWorker) processNoteEventStreamMsg(msg *NoteEventMsg) error {
-	ctx, span := otel.Tracer("hooks").Start(msg.Context, "CheckForMergeConflicts")
+	ctx, span := otel.Tracer("hooks").Start(msg.Context, "ProcessNoteEventStreamMsg")
 	defer span.End()
 
 	var noteErr error

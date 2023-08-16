@@ -106,7 +106,7 @@ func (w *GitlabEventWorker) processNoteEvent(ctx context.Context, event vcs.MRCo
 }
 
 func (w *GitlabEventWorker) checkApproval(ctx context.Context, event vcs.MRCommentEvent) bool {
-	ctx, span := otel.Tracer("hooks").Start(ctx, "CheckForMergeConflicts")
+	ctx, span := otel.Tracer("hooks").Start(ctx, "checkApproval")
 	defer span.End()
 
 	mrIID := event.GetMR().GetInternalID()
