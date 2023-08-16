@@ -168,11 +168,22 @@ func (p *RunStatusUpdater) getLatestPipelineID(rmd runstream.RunMetadata) *int {
 		return nil
 	}
 	log.Trace().Interface("pipelines", pipelines).Msg("retrieved pipelines for commit")
+	var pipelineID *int
 	if len(pipelines) > 0 {
 		for _, p := range pipelines {
 			if p.GetSource() == "merge_request_event" {
-				return gogitlab.Int(p.GetID())
+				pipelineID = gogitlab.Int(p.GetID())
+				return pipelineID
 			}
+		}
+		// If we can't find a merge request CI/CD pipeline for the commit
+		// Return the last pipeline ID in the pipelines array as the ID as a fallback.
+		// If there are no pipelines, TFC will send the external status update to nil which will create
+		// a pipeline that subsequent function calls will use.
+		if pipelineID == nil {
+			log.Debug().Msg("No merge request pipeline ID found for the commit. Using latest pipeline ID as fallback...")
+			pipelineID = gogitlab.Int(pipelines[len(pipelines)-1].GetID())
+			return pipelineID
 		}
 	}
 	return nil
