@@ -1,9 +1,11 @@
 package tfc_trigger
 
+import "context"
+
 //go:generate mockgen -source interfaces.go -destination=../mocks/mock_tfc_trigger.go -package=mocks github.com/zapier/tfbuddy/pkg/tfc_trigger
 type Trigger interface {
-	TriggerTFCEvents() (*TriggeredTFCWorkspaces, error)
-	TriggerCleanupEvent() error
+	TriggerTFCEvents(context.Context) (*TriggeredTFCWorkspaces, error)
+	TriggerCleanupEvent(context.Context) error
 	GetAction() TriggerAction
 	GetBranch() string
 	GetCommitSHA() string

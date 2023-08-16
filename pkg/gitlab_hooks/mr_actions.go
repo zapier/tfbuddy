@@ -6,15 +6,20 @@ import (
 	gogitlab "github.com/xanzy/go-gitlab"
 	"github.com/zapier/tfbuddy/pkg/allow_list"
 	"github.com/zapier/tfbuddy/pkg/tfc_trigger"
+	"go.opentelemetry.io/otel"
 )
 
 func (w *GitlabEventWorker) processMergeRequestEvent(msg *MergeRequestEventMsg) (projectName string, err error) {
+	ctx, span := otel.Tracer("GitlabHandler").Start(msg.Context, "processMergeRequestEvent")
+	defer span.End()
+
 	log.Trace().Msg("processMergeRequestEvent()")
 
 	labels := prometheus.Labels{}
 	labels["eventType"] = string(gogitlab.EventTypeMergeRequest)
 
-	event := msg.payload
+	event := msg.Payload
+
 	projectName = event.Project.PathWithNamespace
 	labels["project"] = projectName
 	if !allow_list.IsGitlabProjectAllowed(event.Project.PathWithNamespace) {
@@ -41,17 +46,17 @@ func (w *GitlabEventWorker) processMergeRequestEvent(msg *MergeRequestEventMsg) 
 	trigger := tfc_trigger.NewTFCTrigger(w.gl, w.tfc, w.runstream, cfg)
 	switch event.ObjectAttributes.Action {
 	case "open", "reopen":
-		_, err := trigger.TriggerTFCEvents()
+		_, err := trigger.TriggerTFCEvents(ctx)
 		return projectName, err
 
 	case "update":
 		if event.ObjectAttributes.OldRev != "" && event.ObjectAttributes.OldRev != event.ObjectAttributes.LastCommit.ID {
-			_, err := trigger.TriggerTFCEvents()
+			_, err := trigger.TriggerTFCEvents(ctx)
 			return projectName, err
 		}
 
 	case "merge", "close":
-		return projectName, trigger.TriggerCleanupEvent()
+		return projectName, trigger.TriggerCleanupEvent(ctx)
 	default:
 		labels["reason"] = "unhandled-action"
 		gitlabWebHookIgnored.With(labels).Inc()

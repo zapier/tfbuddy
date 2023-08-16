@@ -1,6 +1,7 @@
 package tfc_trigger_test
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/zapier/tfbuddy/pkg/mocks"
 	"github.com/zapier/tfbuddy/pkg/tfc_api"
 	"github.com/zapier/tfbuddy/pkg/tfc_trigger"
+	"go.opentelemetry.io/otel"
 )
 
 func TestTriggerAction_String(t *testing.T) {
@@ -83,7 +85,7 @@ func TestFindLockingMR(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := tfc_trigger.FindLockingMR(tt.tags, tt.MR)
+			got := tfc_trigger.FindLockingMR(context.Background(), tt.tags, tt.MR)
 			if got != tt.want {
 				t.Fatalf("didn't match got: %s, want: %s", got, tt.want)
 			}
@@ -103,8 +105,8 @@ func TestTFCEvents_SingleWorkspacePlan(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: ws}, t)
-	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, "Starting TFC plan for Workspace: `zapier-test/service-tfbuddy`.").Return(testSuite.MockGitDisc, nil)
-	testSuite.MockApiClient.EXPECT().CreateRunFromSource(gomock.Any()).Return(&tfe.Run{
+	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, "Starting TFC plan for Workspace: `zapier-test/service-tfbuddy`.").Return(testSuite.MockGitDisc, nil)
+	testSuite.MockApiClient.EXPECT().CreateRunFromSource(gomock.Any(), gomock.Any()).Return(&tfe.Run{
 		ID: "101",
 		Workspace: &tfe.Workspace{Name: "service-tfbuddy",
 			Organization: &tfe.Organization{Name: "zapier-test"},
@@ -112,7 +114,7 @@ func TestTFCEvents_SingleWorkspacePlan(t *testing.T) {
 		ConfigurationVersion: &tfe.ConfigurationVersion{Speculative: true}}, nil)
 
 	mockRunPollingTask := mocks.NewMockRunPollingTask(mockCtrl)
-	mockRunPollingTask.EXPECT().Schedule()
+	mockRunPollingTask.EXPECT().Schedule(gomock.Any())
 
 	testSuite.MockStreamClient.EXPECT().NewTFRunPollingTask(gomock.Any(), time.Second*1).Return(mockRunPollingTask)
 
@@ -127,7 +129,7 @@ func TestTFCEvents_SingleWorkspacePlan(t *testing.T) {
 		TriggerSource:            tfc_trigger.CommentTrigger,
 	})
 	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
-	triggeredWS, err := trigger.TriggerTFCEvents()
+	triggeredWS, err := trigger.TriggerTFCEvents(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,9 +157,9 @@ func TestTFCEvents_SingleWorkspacePlanError(t *testing.T) {
 	defer mockCtrl.Finish()
 	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: ws}, t)
 
-	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, "Starting TFC plan for Workspace: `zapier-test/service-tfbuddy`.").Return(testSuite.MockGitDisc, nil)
+	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, "Starting TFC plan for Workspace: `zapier-test/service-tfbuddy`.").Return(testSuite.MockGitDisc, nil)
 
-	testSuite.MockApiClient.EXPECT().CreateRunFromSource(gomock.Any()).Return(nil, fmt.Errorf("could not create run from source"))
+	testSuite.MockApiClient.EXPECT().CreateRunFromSource(gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("could not create run from source"))
 
 	testSuite.InitTestSuite()
 
@@ -173,7 +175,7 @@ func TestTFCEvents_SingleWorkspacePlanError(t *testing.T) {
 		TriggerSource:            tfc_trigger.CommentTrigger,
 	})
 	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
-	triggeredWS, err := trigger.TriggerTFCEvents()
+	triggeredWS, err := trigger.TriggerTFCEvents(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +210,7 @@ func TestTFCEvents_SingleWorkspaceApply(t *testing.T) {
 	defer mockCtrl.Finish()
 	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: ws}, t)
 	testSuite.MockGitRepo.EXPECT().GetModifiedFileNamesBetweenCommits(testSuite.MetaData.CommonSHA, "main").Return([]string{}, nil)
-	testSuite.MockApiClient.EXPECT().CreateRunFromSource(gomock.Any()).Return(&tfe.Run{
+	testSuite.MockApiClient.EXPECT().CreateRunFromSource(gomock.Any(), gomock.Any()).Return(&tfe.Run{
 		ID: "101",
 		Workspace: &tfe.Workspace{Name: "service-tfbuddy",
 			Organization: &tfe.Organization{Name: "zapier-test"},
@@ -230,7 +232,8 @@ func TestTFCEvents_SingleWorkspaceApply(t *testing.T) {
 		TriggerSource:            tfc_trigger.CommentTrigger,
 	})
 	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
-	triggeredWS, err := trigger.TriggerTFCEvents()
+	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
+	triggeredWS, err := trigger.TriggerTFCEvents(ctx)
 	if err != nil {
 		t.Fatal(err)
 		return
@@ -271,16 +274,16 @@ func TestTFCEvents_MultiWorkspaceApply(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: ws}, t)
-	testSuite.MockGitClient.EXPECT().GetMergeRequestModifiedFiles(testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS).Return([]string{"main.tf", "staging/terraform.tf"}, nil)
+	testSuite.MockGitClient.EXPECT().GetMergeRequestModifiedFiles(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS).Return([]string{"main.tf", "staging/terraform.tf"}, nil)
 
-	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, "Starting TFC apply for Workspace: `zapier-test/service-tfbuddy`.").Return(testSuite.MockGitDisc, nil)
-	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, "Starting TFC apply for Workspace: `zapier-test/service-tfbuddy-staging`.").Return(testSuite.MockGitDisc, nil)
+	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, "Starting TFC apply for Workspace: `zapier-test/service-tfbuddy`.").Return(testSuite.MockGitDisc, nil)
+	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, "Starting TFC apply for Workspace: `zapier-test/service-tfbuddy-staging`.").Return(testSuite.MockGitDisc, nil)
 
-	testSuite.MockApiClient.EXPECT().GetWorkspaceByName(gomock.Any(), "zapier-test", gomock.Any()).DoAndReturn(func(a interface{}, b, c string) (*tfe.Workspace, error) {
+	testSuite.MockApiClient.EXPECT().GetWorkspaceByName(gomock.Any(), "zapier-test", gomock.Any()).DoAndReturn(func(a interface{}, c, d string) (*tfe.Workspace, error) {
 		return &tfe.Workspace{ID: c}, nil
 	}).AnyTimes()
 
-	testSuite.MockApiClient.EXPECT().CreateRunFromSource(gomock.Any()).DoAndReturn(func(opts *tfc_api.ApiRunOptions) (*tfe.Run, error) {
+	testSuite.MockApiClient.EXPECT().CreateRunFromSource(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, opts *tfc_api.ApiRunOptions) (*tfe.Run, error) {
 		return &tfe.Run{
 			ID: "101",
 			Workspace: &tfe.Workspace{Name: opts.Workspace,
@@ -303,7 +306,8 @@ func TestTFCEvents_MultiWorkspaceApply(t *testing.T) {
 		TriggerSource:            tfc_trigger.CommentTrigger,
 	})
 	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
-	triggeredWS, err := trigger.TriggerTFCEvents()
+	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
+	triggeredWS, err := trigger.TriggerTFCEvents(ctx)
 	if err != nil {
 		t.Fatal(err)
 		return
@@ -345,9 +349,9 @@ func TestTFCEvents_SingleWorkspaceApplyError(t *testing.T) {
 	defer mockCtrl.Finish()
 	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: ws}, t)
 
-	testSuite.MockGitClient.EXPECT().GetMergeRequestModifiedFiles(testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS).Return([]string{"main.tf"}, nil)
-	testSuite.MockGitClient.EXPECT().CloneMergeRequest(testSuite.MetaData.ProjectNameNS, gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("could not clone repo"))
-	testSuite.MockGitClient.EXPECT().CreateMergeRequestComment(testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, "Error: could not clone repo: could not clone repo").MaxTimes(2)
+	testSuite.MockGitClient.EXPECT().GetMergeRequestModifiedFiles(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS).Return([]string{"main.tf"}, nil)
+	testSuite.MockGitClient.EXPECT().CloneMergeRequest(gomock.Any(), testSuite.MetaData.ProjectNameNS, gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("could not clone repo"))
+	testSuite.MockGitClient.EXPECT().CreateMergeRequestComment(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, "Error: could not clone repo: could not clone repo").MaxTimes(2)
 
 	testSuite.InitTestSuite()
 
@@ -363,8 +367,7 @@ func TestTFCEvents_SingleWorkspaceApplyError(t *testing.T) {
 		TriggerSource:            tfc_trigger.CommentTrigger,
 	})
 	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
-
-	triggeredWS, err := trigger.TriggerTFCEvents()
+	triggeredWS, err := trigger.TriggerTFCEvents(context.Background())
 	if err == nil {
 		t.Fatal("expected error to be returned")
 		return
@@ -401,16 +404,16 @@ func TestTFCEvents_MultiWorkspaceApplyError(t *testing.T) {
 	defer mockCtrl.Finish()
 
 	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: ws}, t)
-	testSuite.MockGitClient.EXPECT().GetMergeRequestModifiedFiles(testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS).Return([]string{"main.tf", "staging/terraform.tf"}, nil)
+	testSuite.MockGitClient.EXPECT().GetMergeRequestModifiedFiles(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS).Return([]string{"main.tf", "staging/terraform.tf"}, nil)
 
-	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, "Starting TFC apply for Workspace: `zapier-test/service-tfbuddy`.").Return(testSuite.MockGitDisc, nil)
-	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, "Starting TFC apply for Workspace: `zapier-test/service-tfbuddy-staging`.").Return(testSuite.MockGitDisc, nil)
+	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, "Starting TFC apply for Workspace: `zapier-test/service-tfbuddy`.").Return(testSuite.MockGitDisc, nil)
+	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, "Starting TFC apply for Workspace: `zapier-test/service-tfbuddy-staging`.").Return(testSuite.MockGitDisc, nil)
 
 	testSuite.MockApiClient.EXPECT().GetWorkspaceByName(gomock.Any(), "zapier-test", gomock.Any()).DoAndReturn(func(a interface{}, b, c string) (*tfe.Workspace, error) {
 		return &tfe.Workspace{ID: c}, nil
 	}).AnyTimes()
 
-	testSuite.MockApiClient.EXPECT().CreateRunFromSource(gomock.Any()).DoAndReturn(func(opts *tfc_api.ApiRunOptions) (*tfe.Run, error) {
+	testSuite.MockApiClient.EXPECT().CreateRunFromSource(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, opts *tfc_api.ApiRunOptions) (*tfe.Run, error) {
 		if opts.Workspace == "service-tfbuddy" {
 			return nil, fmt.Errorf("api error with terraform cloud")
 		}
@@ -433,7 +436,8 @@ func TestTFCEvents_MultiWorkspaceApplyError(t *testing.T) {
 		TriggerSource:            tfc_trigger.CommentTrigger,
 	})
 	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
-	triggeredWS, err := trigger.TriggerTFCEvents()
+	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
+	triggeredWS, err := trigger.TriggerTFCEvents(ctx)
 	if err != nil {
 		t.Fatal(err)
 		return
@@ -464,7 +468,7 @@ func TestTFCEvents_WorkspaceApplyModifiedBothSrcDstBranches(t *testing.T) {
 	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
 
 	testSuite.MockGitRepo.EXPECT().GetModifiedFileNamesBetweenCommits(testSuite.MetaData.CommonSHA, "main").Return([]string{"terraform.tf"}, nil)
-	testSuite.MockGitClient.EXPECT().GetMergeRequestModifiedFiles(testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS).Return([]string{"main.tf"}, nil)
+	testSuite.MockGitClient.EXPECT().GetMergeRequestModifiedFiles(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS).Return([]string{"main.tf"}, nil)
 
 	mockStreamClient := mocks.NewMockStreamClient(mockCtrl)
 
@@ -482,7 +486,8 @@ func TestTFCEvents_WorkspaceApplyModifiedBothSrcDstBranches(t *testing.T) {
 		TriggerSource:            tfc_trigger.CommentTrigger,
 	})
 	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, mockStreamClient, tCfg)
-	triggeredWS, err := trigger.TriggerTFCEvents()
+	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
+	triggeredWS, err := trigger.TriggerTFCEvents(ctx)
 	if err != nil {
 		t.Fatal(err)
 		return
@@ -522,10 +527,10 @@ func TestTFCEvents_MultiWorkspaceApplyModifiedBothSrcDstBranches(t *testing.T) {
 				Dir:          "production",
 			}}},
 	}, t)
-	testSuite.MockGitClient.EXPECT().GetMergeRequestModifiedFiles(testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS).Return([]string{"/production/main.tf"}, nil).AnyTimes()
+	testSuite.MockGitClient.EXPECT().GetMergeRequestModifiedFiles(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS).Return([]string{"/production/main.tf"}, nil).AnyTimes()
 	testSuite.MockGitRepo.EXPECT().GetModifiedFileNamesBetweenCommits(testSuite.MetaData.CommonSHA, testSuite.MetaData.TargetBranch).Return([]string{"/staging/terraform.tf"}, nil).AnyTimes()
 
-	testSuite.MockApiClient.EXPECT().CreateRunFromSource(gomock.Any()).Return(&tfe.Run{
+	testSuite.MockApiClient.EXPECT().CreateRunFromSource(gomock.Any(), gomock.Any()).Return(&tfe.Run{
 		ID: "101",
 		Workspace: &tfe.Workspace{Name: "service-tfbuddy",
 			Organization: &tfe.Organization{Name: "zapier-test"},
@@ -533,7 +538,7 @@ func TestTFCEvents_MultiWorkspaceApplyModifiedBothSrcDstBranches(t *testing.T) {
 		ConfigurationVersion: &tfe.ConfigurationVersion{Speculative: true}}, nil)
 
 	mockRunPollingTask := mocks.NewMockRunPollingTask(mockCtrl)
-	mockRunPollingTask.EXPECT().Schedule()
+	mockRunPollingTask.EXPECT().Schedule(gomock.Any())
 	testSuite.MockStreamClient.EXPECT().NewTFRunPollingTask(gomock.Any(), time.Second*1).Return(mockRunPollingTask)
 
 	testSuite.InitTestSuite()
@@ -550,7 +555,8 @@ func TestTFCEvents_MultiWorkspaceApplyModifiedBothSrcDstBranches(t *testing.T) {
 		CommitSHA:                "abcd12233",
 	})
 	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
-	triggeredWS, err := trigger.TriggerTFCEvents()
+	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
+	triggeredWS, err := trigger.TriggerTFCEvents(ctx)
 	if err != nil {
 		t.Fatal(err)
 		return

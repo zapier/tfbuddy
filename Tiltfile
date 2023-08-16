@@ -180,10 +180,11 @@ test_go(
   labels=["tfbuddy"]
 )
 
-build_cmd='CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -gcflags="all=-N -l" -o build/tfbuddy ./'
+arch="arm64" if str(local("uname -m")).strip('\n') == "arm64" else "amd64"
+build_cmd='CGO_ENABLED=0 GOOS=linux GOARCH={} go build -gcflags="all=-N -l" -o build/tfbuddy ./'
 local_resource(
   'go-build',
-  build_cmd,
+  build_cmd.format(arch),
   deps=[
     './main.go',
     './go.mod',

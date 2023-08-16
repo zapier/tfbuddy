@@ -1,6 +1,7 @@
 package tfc_trigger
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/zapier/tfbuddy/pkg/utils"
 	"github.com/zapier/tfbuddy/pkg/vcs"
+	"go.opentelemetry.io/otel"
 	"gopkg.in/dealancer/validate.v2"
 	"gopkg.in/yaml.v2"
 )
@@ -91,11 +93,14 @@ type TFCWorkspace struct {
 	TriggerDirs  []string `yaml:"triggerDirs"`
 }
 
-func getProjectConfigFile(gl vcs.GitClient, trigger *TFCTrigger) (*ProjectConfig, error) {
+func getProjectConfigFile(ctx context.Context, gl vcs.GitClient, trigger *TFCTrigger) (*ProjectConfig, error) {
+	ctx, span := otel.Tracer("GitlabHandler").Start(ctx, "getProjectConfigFile")
+	defer span.End()
+
 	branches := []string{trigger.GetBranch(), "master", "main"}
 	for _, branch := range branches {
 		log.Debug().Msg(fmt.Sprintf("considering branch %s", branch))
-		b, err := gl.GetRepoFile(trigger.GetProjectNameWithNamespace(), ProjectConfigFilename, branch)
+		b, err := gl.GetRepoFile(ctx, trigger.GetProjectNameWithNamespace(), ProjectConfigFilename, branch)
 		if err != nil {
 			log.Info().Err(err).Msg(fmt.Sprintf("no file on branch %s", branch))
 			continue

@@ -1,6 +1,7 @@
 package runstream
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,8 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/nats-io/nats.go"
 	"github.com/rs/zerolog/log"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 const RunEventsStreamName = "RUN_EVENTS"
@@ -20,10 +23,21 @@ type TFRunEvent struct {
 	Workspace    string
 	NewStatus    string
 	Metadata     RunMetadata
+	Carrier      propagation.MapCarrier `json:"Carrier"`
+	context      context.Context
 }
 
 func (e *TFRunEvent) GetRunID() string {
 	return e.RunID
+}
+func (e *TFRunEvent) GetContext() context.Context {
+	return e.context
+}
+func (e *TFRunEvent) SetContext(ctx context.Context) {
+	e.context = ctx
+}
+func (e *TFRunEvent) SetCarrier(carrier map[string]string) {
+	e.Carrier = carrier
 }
 func (e *TFRunEvent) GetNewStatus() string {
 	return e.NewStatus
@@ -34,14 +48,19 @@ func (e *TFRunEvent) GetMetadata() RunMetadata {
 func (e *TFRunEvent) SetMetadata(meta RunMetadata) {
 	e.Metadata = meta
 }
-func (s *Stream) PublishTFRunEvent(re RunEvent) error {
+
+func (s *Stream) PublishTFRunEvent(ctx context.Context, re RunEvent) error {
+	ctx, span := otel.Tracer("TF").Start(ctx, "PublishTFRunEvent")
+	defer span.End()
+	re.SetContext(ctx)
+
 	rmd, err := s.waitForTFRunMetadata(re)
 	if err != nil {
 		log.Error().Err(err).Msg("unable to publish TF Run Event: could not get RunMetadata")
 		return err
 	}
 
-	b, err := encodeTFRunEvent(re)
+	b, err := encodeTFRunEvent(ctx, re)
 	if err != nil {
 		return err
 	}
@@ -153,9 +172,13 @@ func decodeTFRunEvent(b []byte) (RunEvent, error) {
 	run := &TFRunEvent{}
 	run.Metadata = &TFRunMetadata{}
 	err := json.Unmarshal(b, &run)
+	run.context = otel.GetTextMapPropagator().Extract(context.Background(), run.Carrier)
 	return run, err
 }
 
-func encodeTFRunEvent(run RunEvent) ([]byte, error) {
+func encodeTFRunEvent(ctx context.Context, run RunEvent) ([]byte, error) {
+	carrier := propagation.MapCarrier(map[string]string{})
+	otel.GetTextMapPropagator().Inject(ctx, carrier)
+	run.SetCarrier(carrier)
 	return json.Marshal(run)
 }

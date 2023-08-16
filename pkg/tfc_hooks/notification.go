@@ -1,6 +1,7 @@
 package tfc_hooks
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/zapier/tfbuddy/pkg/runstream"
 	"github.com/zapier/tfbuddy/pkg/tfc_api"
+	"go.opentelemetry.io/otel"
 )
 
 var (
@@ -67,6 +69,9 @@ func NewNotificationHandler(api tfc_api.ApiClient, stream runstream.StreamClient
 
 func (h *NotificationHandler) Handler() func(c echo.Context) error {
 	return func(c echo.Context) error {
+		ctx, span := otel.Tracer("TFBuddy").Start(c.Request().Context(), "NotificationHandler")
+		defer span.End()
+
 		labels := prometheus.Labels{
 			"status": "processed",
 		}
@@ -81,7 +86,7 @@ func (h *NotificationHandler) Handler() func(c echo.Context) error {
 		log.Debug().Str("event", pretty.Sprint(event))
 
 		// do something with event
-		h.processNotification(&event)
+		h.processNotification(ctx, &event)
 
 		tfcNotificationsReceived.With(labels).Inc()
 		return c.String(http.StatusOK, "OK")
@@ -108,13 +113,17 @@ type NotificationPayload struct {
 	} `json:"notifications"`
 }
 
-func (h *NotificationHandler) processNotification(n *NotificationPayload) {
+func (h *NotificationHandler) processNotification(ctx context.Context, n *NotificationPayload) {
+	ctx, span := otel.Tracer("TFBuddy").Start(ctx, "ProcessNotification")
+	defer span.End()
+
 	log.Debug().Interface("NotificationPayload", *n).Msg("processNotification()")
 	if n.RunId == "" {
 		return
 	}
-	run, err := h.api.GetRun(n.RunId)
+	run, err := h.api.GetRun(ctx, n.RunId)
 	if err != nil {
+		span.RecordError(err)
 		log.Error().Err(err)
 	}
 	runJson, _ := json.Marshal(run)
@@ -127,13 +136,14 @@ func (h *NotificationHandler) processNotification(n *NotificationPayload) {
 		"organization": n.OrganizationName,
 		"workspace":    n.WorkspaceName,
 	}
-	err = h.stream.PublishTFRunEvent(&runstream.TFRunEvent{
+	err = h.stream.PublishTFRunEvent(ctx, &runstream.TFRunEvent{
 		Organization: n.OrganizationName,
 		Workspace:    n.WorkspaceName,
 		RunID:        n.RunId,
 		NewStatus:    string(n.Notifications[0].RunStatus),
 	})
 	if err != nil {
+		span.RecordError(err)
 		tfcNotificationPublishFailed.With(labels).Inc()
 	} else {
 		tfcNotificationPublishSuccess.With(labels).Inc()

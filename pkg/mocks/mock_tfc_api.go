@@ -51,18 +51,18 @@ func (mr *MockApiClientMockRecorder) AddTags(ctx, workspace, prefix, value inter
 }
 
 // CreateRunFromSource mocks base method.
-func (m *MockApiClient) CreateRunFromSource(opts *tfc_api.ApiRunOptions) (*tfe.Run, error) {
+func (m *MockApiClient) CreateRunFromSource(ctx context.Context, opts *tfc_api.ApiRunOptions) (*tfe.Run, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateRunFromSource", opts)
+	ret := m.ctrl.Call(m, "CreateRunFromSource", ctx, opts)
 	ret0, _ := ret[0].(*tfe.Run)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CreateRunFromSource indicates an expected call of CreateRunFromSource.
-func (mr *MockApiClientMockRecorder) CreateRunFromSource(opts interface{}) *gomock.Call {
+func (mr *MockApiClientMockRecorder) CreateRunFromSource(ctx, opts interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRunFromSource", reflect.TypeOf((*MockApiClient)(nil).CreateRunFromSource), opts)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRunFromSource", reflect.TypeOf((*MockApiClient)(nil).CreateRunFromSource), ctx, opts)
 }
 
 // GetPlanOutput mocks base method.
@@ -81,18 +81,18 @@ func (mr *MockApiClientMockRecorder) GetPlanOutput(id interface{}) *gomock.Call 
 }
 
 // GetRun mocks base method.
-func (m *MockApiClient) GetRun(id string) (*tfe.Run, error) {
+func (m *MockApiClient) GetRun(ctx context.Context, id string) (*tfe.Run, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetRun", id)
+	ret := m.ctrl.Call(m, "GetRun", ctx, id)
 	ret0, _ := ret[0].(*tfe.Run)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetRun indicates an expected call of GetRun.
-func (mr *MockApiClientMockRecorder) GetRun(id interface{}) *gomock.Call {
+func (mr *MockApiClientMockRecorder) GetRun(ctx, id interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRun", reflect.TypeOf((*MockApiClient)(nil).GetRun), id)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRun", reflect.TypeOf((*MockApiClient)(nil).GetRun), ctx, id)
 }
 
 // GetTagsByQuery mocks base method.

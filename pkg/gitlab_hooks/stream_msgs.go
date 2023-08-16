@@ -1,6 +1,7 @@
 package gitlab_hooks
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -8,6 +9,10 @@ import (
 	"github.com/zapier/tfbuddy/pkg/hooks_stream"
 	"github.com/zapier/tfbuddy/pkg/vcs"
 	"github.com/zapier/tfbuddy/pkg/vcs/gitlab"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const GitlabHooksSubject = "gitlab"
@@ -31,42 +36,51 @@ func (e *GitlabHookEvent) GetPlatform() string {
 type NoteEventMsg struct {
 	GitlabHookEvent
 
-	payload *gitlab.GitlabMergeCommentEvent
+	Payload *gitlab.GitlabMergeCommentEvent `json:"payload"`
+	Carrier propagation.MapCarrier          `json:"Carrier"`
+	Context context.Context
 }
 
-func (e *NoteEventMsg) GetId() string {
-	return e.payload.GetDiscussionID()
+func (e *NoteEventMsg) GetId(ctx context.Context) string {
+	return e.Payload.GetDiscussionID()
 }
 
 func (e *NoteEventMsg) DecodeEventData(b []byte) error {
-	d := &gitlab.GitlabMergeCommentEvent{}
-	err := json.Unmarshal(b, d)
+	err := json.Unmarshal(b, e)
 	if err != nil {
 		return err
 	}
-	e.payload = d
+	e.Context = otel.GetTextMapPropagator().Extract(context.Background(), e.Carrier)
 	return nil
 }
 
-func (e *NoteEventMsg) EncodeEventData() []byte {
-	b, _ := json.Marshal(e.payload)
+func (e *NoteEventMsg) EncodeEventData(ctx context.Context) []byte {
+	ctx, span := otel.Tracer("hooks").Start(ctx, "encode_event_data",
+		trace.WithAttributes(
+			attribute.String("event_type", "NoteEvent"),
+			attribute.String("vcs", "gitlab"),
+		))
+	defer span.End()
+	e.Carrier = make(map[string]string)
+	otel.GetTextMapPropagator().Inject(ctx, e.Carrier)
+	b, _ := json.Marshal(e)
 	return b
 }
 
 func (e *NoteEventMsg) GetProject() vcs.Project {
-	return e.payload.GetProject()
+	return e.Payload.GetProject()
 }
 
 func (e *NoteEventMsg) GetMR() vcs.MR {
-	return e.payload
+	return e.Payload
 }
 
 func (e *NoteEventMsg) GetAttributes() vcs.MRAttributes {
-	return e.payload.GetAttributes()
+	return e.Payload.GetAttributes()
 }
 
 func (e *NoteEventMsg) GetLastCommit() vcs.Commit {
-	return e.payload.GetLastCommit()
+	return e.Payload.GetLastCommit()
 }
 
 // ----------------------------------------------
@@ -78,32 +92,41 @@ func mrEventsStreamSubject() string {
 type MergeRequestEventMsg struct {
 	GitlabHookEvent
 
-	payload *gogitlab.MergeEvent
+	Payload *gogitlab.MergeEvent   `json:"payload"`
+	Carrier propagation.MapCarrier `json:"Carrier"`
+	Context context.Context
 }
 
-func (e *MergeRequestEventMsg) GetId() string {
-	return fmt.Sprintf("%d-%s", e.payload.ObjectAttributes.ID, e.payload.ObjectAttributes.Action)
+func (e *MergeRequestEventMsg) GetId(ctx context.Context) string {
+	return fmt.Sprintf("%d-%s", e.Payload.ObjectAttributes.ID, e.Payload.ObjectAttributes.Action)
 }
 
 func (e *MergeRequestEventMsg) DecodeEventData(b []byte) error {
-	d := &gogitlab.MergeEvent{}
-	err := json.Unmarshal(b, d)
+	err := json.Unmarshal(b, e)
 	if err != nil {
 		return err
 	}
-	e.payload = d
+	e.Context = otel.GetTextMapPropagator().Extract(context.Background(), e.Carrier)
 	return nil
 }
 
-func (e *MergeRequestEventMsg) EncodeEventData() []byte {
-	b, _ := json.Marshal(e.payload)
+func (e *MergeRequestEventMsg) EncodeEventData(ctx context.Context) []byte {
+	ctx, span := otel.Tracer("hooks").Start(ctx, "encode_event_data",
+		trace.WithAttributes(
+			attribute.String("event_type", "MergeRequestEventMsg"),
+			attribute.String("vcs", "gitlab"),
+		))
+	defer span.End()
+	e.Carrier = make(map[string]string)
+	otel.GetTextMapPropagator().Inject(ctx, e.Carrier)
+	b, _ := json.Marshal(e)
 	return b
 }
 
-func (e *MergeRequestEventMsg) GetType() string {
+func (e *MergeRequestEventMsg) GetType(ctx context.Context) string {
 	return "MergeRequestEventMsg"
 }
 
 func (e *MergeRequestEventMsg) GetPayload() interface{} {
-	return *e.payload
+	return *e.Payload
 }

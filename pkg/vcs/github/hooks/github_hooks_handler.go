@@ -1,6 +1,7 @@
 package hooks
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -15,6 +16,9 @@ import (
 	"github.com/zapier/tfbuddy/pkg/tfc_api"
 	"github.com/zapier/tfbuddy/pkg/tfc_trigger"
 	"github.com/zapier/tfbuddy/pkg/vcs"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type TriggerCreationFunc func(
@@ -77,21 +81,31 @@ func (h *GithubHooksHandler) Handler(c echo.Context) error {
 }
 
 func onError(deliveryID string, eventName string, event interface{}, err error) error {
+	_, span := otel.Tracer("GithubEvents").Start(context.Background(), "Github - ErrorHookHandler")
+	defer span.End()
+
 	log.Warn().Str("deliveryID", deliveryID).Str("eventName", eventName).Err(err).Msg("GitHub hook handler error")
 	lbl := prometheus.Labels{}
 	lbl["event-type"] = eventName
 	lbl["repository"] = ""
+	span.RecordError(err, trace.WithAttributes(
+		attribute.String("event-type", eventName),
+		attribute.String("deliveryID", deliveryID),
+	))
 	log.Error().Err(err).Msg("unexpected error while processing Github event")
 	githubWebHookFailed.With(lbl).Inc()
 	return nil
 }
 
 func (h *GithubHooksHandler) handleIssueCommentCreatedEvent(deliveryID string, eventName string, event *github.IssueCommentEvent) error {
+	ctx, span := otel.Tracer("GithubHandler").Start(context.Background(), "Github - HooksHandler")
+	defer span.End()
+
 	lbls := prometheus.Labels{
 		"eventType":  eventName,
 		"repository": *event.Repo.FullName,
 	}
-	_, err := h.commentStream.Publish(&GithubIssueCommentEventMsg{payload: event})
+	_, err := h.commentStream.Publish(ctx, &GithubIssueCommentEventMsg{Payload: event})
 	if err != nil {
 		githubWebHookFailed.With(lbls).Inc()
 	}

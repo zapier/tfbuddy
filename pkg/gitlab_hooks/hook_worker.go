@@ -8,6 +8,7 @@ import (
 	"github.com/zapier/tfbuddy/pkg/tfc_trigger"
 	"github.com/zapier/tfbuddy/pkg/utils"
 	"github.com/zapier/tfbuddy/pkg/vcs"
+	"go.opentelemetry.io/otel"
 )
 
 type GitlabEventWorker struct {
@@ -39,6 +40,9 @@ func NewGitlabEventWorker(h *GitlabHooksHandler, js nats.JetStreamContext) *Gitl
 }
 
 func (w *GitlabEventWorker) processNoteEventStreamMsg(msg *NoteEventMsg) error {
+	ctx, span := otel.Tracer("hooks").Start(msg.Context, "CheckForMergeConflicts")
+	defer span.End()
+
 	var noteErr error
 	defer func() {
 		if r := recover(); r != nil {
@@ -46,7 +50,7 @@ func (w *GitlabEventWorker) processNoteEventStreamMsg(msg *NoteEventMsg) error {
 			noteErr = nil
 		}
 	}()
-	_, noteErr = w.processNoteEvent(msg)
+	_, noteErr = w.processNoteEvent(ctx, msg)
 
 	return utils.EmitPermanentError(noteErr, func(err error) {
 		log.Error().Msgf("got permanent error processing Note event: %s", err.Error())

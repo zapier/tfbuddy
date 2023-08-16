@@ -23,6 +23,14 @@ spec:
           env:
             - name: TFBUDDY_NATS_SERVICE_URL
               value: nats://nats:4222
+            - name: TFBUDDY_OTEL_ENABLED
+              value: "true"
+            - name: TFBUDDY_OTEL_COLLECTOR_PORT
+              value: "4317"
+            - name: TFBUDDY_OTEL_COLLECTOR_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
           envFrom:
             - configMapRef:
                 name: tfbuddy-config
