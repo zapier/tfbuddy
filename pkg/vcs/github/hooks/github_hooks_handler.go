@@ -2,7 +2,6 @@ package hooks
 
 import (
 	"context"
-	"fmt"
 	"os"
 
 	"github.com/cbrgm/githubevents/githubevents"
@@ -75,7 +74,7 @@ func NewGithubHooksHandler(vcs vcs.GitClient, tfc tfc_api.ApiClient, rs runstrea
 func (h *GithubHooksHandler) Handler(c echo.Context) error {
 	err := h.ghEvents.HandleEventRequest(c.Request())
 	if err != nil {
-		fmt.Printf("error: %v\n", err)
+		log.Printf("error: %v\n", err)
 	}
 	return c.String(200, "NOK")
 }

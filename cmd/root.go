@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -38,7 +39,7 @@ func resolveLogLevel() zerolog.Level {
 
 	lvl, err := zerolog.ParseLevel(logLevel)
 	if err != nil {
-		fmt.Println("could not parse log level, defaulting to 'info'")
+		log.Println("could not parse log level, defaulting to 'info'")
 		lvl = zerolog.InfoLevel
 	}
 	return lvl
@@ -68,9 +69,9 @@ func initTelemetry(ctx context.Context) (*telemetry.OperatorTelemetry, error) {
 		Version:   pkg.GitTag,
 		CommitSHA: pkg.GitCommit,
 	}
-	fmt.Printf("enabled: %v\thost: %s\tport: %s\n", enableOtel, otelHost, otelPort)
+	log.Printf("enabled: %v\thost: %s\tport: %s\n", enableOtel, otelHost, otelPort)
 
-	fmt.Printf("OpenTelemetry Opts: %+v\n", opts)
+	log.Printf("OpenTelemetry Opts: %+v\n", opts)
 
 	return telemetry.Init(ctx, "tfbuddy", opts)
 }
