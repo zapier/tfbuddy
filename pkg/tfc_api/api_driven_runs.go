@@ -26,6 +26,8 @@ type ApiRunOptions struct {
 	TFVersion string
 	// Terraform Target
 	Target string
+	// Terraform AllowEmptyApply
+	AllowEmptyRun bool
 }
 
 // CreateRunFromSource creates a new Terraform Cloud run from source files
@@ -49,11 +51,17 @@ func (c *TFCClient) CreateRunFromSource(ctx context.Context, opts *ApiRunOptions
 	// TODO: Clean this up maybe check for valid Versions from TFCloud
 	var tfVersion *string = nil
 	var tfPlanOnly *bool = nil
+	var tfAllowEmptyApply *bool = tfe.Bool(false)
 	tfTarget := []string{}
+
 	if opts.TFVersion != "" && !opts.IsApply {
 		log.Debug().Str("version", opts.TFVersion).Msg("setting tf version")
 		tfVersion = tfe.String(opts.TFVersion)
 		tfPlanOnly = tfe.Bool(true)
+	}
+
+	if opts.AllowEmptyRun {
+		tfAllowEmptyApply = tfe.Bool(true)
 	}
 
 	if opts.Target != "" {
@@ -69,6 +77,7 @@ func (c *TFCClient) CreateRunFromSource(ctx context.Context, opts *ApiRunOptions
 		TargetAddrs:          tfTarget,
 		PlanOnly:             tfPlanOnly,
 		TerraformVersion:     tfVersion,
+		AllowEmptyApply:      tfAllowEmptyApply,
 	})
 	if err != nil {
 		log.Error().Err(err).Msg("could create run")

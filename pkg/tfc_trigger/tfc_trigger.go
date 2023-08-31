@@ -100,6 +100,7 @@ type TFCTriggerOptions struct {
 	Workspace                string `short:"w" long:"workspace" description:"A specific terraform Workspace to use" required:"false"`
 	TFVersion                string `short:"v" long:"tf_version" description:"A specific terraform version to use" required:"false"`
 	Target                   string `short:"t" long:"target" description:"A specific terraform target to use" required:"false"`
+	AllowEmptyRun            bool   `short:"e" long:"allow_empty_run" description:"A specific terraform AllowEmptyRun" required:"false"`
 }
 
 func NewTFCTriggerConfig(opts *TFCTriggerOptions) (*TFCTriggerOptions, error) {
@@ -598,13 +599,14 @@ func (t *TFCTrigger) triggerRunForWorkspace(ctx context.Context, cfgWS *TFCWorks
 
 	// create new TFC run
 	run, err := t.tfc.CreateRunFromSource(ctx, &tfc_api.ApiRunOptions{
-		IsApply:      isApply,
-		Path:         pkgDir,
-		Message:      fmt.Sprintf("MR [!%d]: %s", t.GetMergeRequestIID(), mr.GetTitle()),
-		Organization: org,
-		Workspace:    wsName,
-		TFVersion:    t.cfg.TFVersion,
-		Target:       t.cfg.Target,
+		IsApply:       isApply,
+		Path:          pkgDir,
+		Message:       fmt.Sprintf("MR [!%d]: %s", t.GetMergeRequestIID(), mr.GetTitle()),
+		Organization:  org,
+		Workspace:     wsName,
+		TFVersion:     t.cfg.TFVersion,
+		Target:        t.cfg.Target,
+		AllowEmptyRun: t.cfg.AllowEmptyRun,
 	})
 	if err != nil {
 		return fmt.Errorf("could not create TFC run. %w", err)
