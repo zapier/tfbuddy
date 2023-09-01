@@ -59,7 +59,7 @@ func (c *TFCClient) CreateRunFromSource(ctx context.Context, opts *ApiRunOptions
 		tfVersion = tfe.String(opts.TFVersion)
 		tfPlanOnly = tfe.Bool(true)
 	}
-
+		
 	if opts.AllowEmptyRun {
 		tfAllowEmptyApply = tfe.Bool(true)
 	}
