@@ -55,16 +55,11 @@ func TestParseCommentCommand(t *testing.T) {
 				Command: "plan",
 			},
 		}, nil, "simple plan with version"},
-		{"tfc plan -w -v 1.1.8",
-			nil,
-			ErrNotTFCCommand,
-			"not a valid command",
-		},
 	}
 
 	for _, tc := range tcs {
 		t.Run(tc.testName, func(t *testing.T) {
-			opts, err := ParseCommentCommand(tc.noteBody)
+			opts, err := ParseCommentCommand(tc.noteBody)			
 			assert.Equal(t, tc.expectedOpts, opts, tc.testName)
 			assert.ErrorIs(t, err, tc.e, tc.testName)
 		})

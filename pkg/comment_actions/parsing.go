@@ -29,36 +29,12 @@ type CommentArgs struct {
 	Rest    []string
 }
 
-func Contains(s []string, str string) bool {
-	existedOnce := false
-	for _, v := range s {
-		if v == str {
-			existedOnce = true
-		}
-	}
-
-	return existedOnce
-}
-
 func ParseCommentCommand(noteBody string) (*CommentOpts, error) {
 	comment := strings.TrimSpace(strings.ToLower(noteBody))
 	words := strings.Fields(comment)
-	escapeKeyword := []string{"-e", "--allow_empty_run"}
 
 	if len(words) == 0 {
 		return nil, ErrNoNotePassed
-	}
-
-	isEscaped := false
-	for _, a := range escapeKeyword {
-		if Contains(words, a) {
-			isEscaped = true
-		}
-	}
-
-	if len(words)%2 != 0 && !isEscaped {
-		log.Debug().Str("comment", comment[0:10]).Msg("not a tfc command")
-		return nil, ErrNotTFCCommand
 	}
 
 	opts := &CommentOpts{
