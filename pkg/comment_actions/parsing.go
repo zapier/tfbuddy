@@ -16,6 +16,7 @@ var (
 	ErrOtherTFTool   = errors.New("use 'tfc' to interact with tfbuddy")
 	ErrNoNotePassed  = errors.New("no notes passed in note block")
 	ErrInvalidAction = errors.New("invalid tfc action")
+	ErrPermanent     = fmt.Errorf("could not parse comment as command. %w", utils.ErrPermanent)
 )
 
 type CommentOpts struct {
@@ -37,18 +38,13 @@ func ParseCommentCommand(noteBody string) (*CommentOpts, error) {
 		return nil, ErrNoNotePassed
 	}
 
-	if len(words)%2 != 0 {
-		log.Debug().Str("comment", comment[0:10]).Msg("not a tfc command")
-		return nil, ErrNotTFCCommand
-	}
-
 	opts := &CommentOpts{
 		TriggerOpts: &tfc_trigger.TFCTriggerOptions{},
 	}
 	_, err := flags.ParseArgs(opts, words)
 	if err != nil {
 		log.Error().Err(err).Msg("error parsing comment as command")
-		return nil, fmt.Errorf("could not parse comment as command. %w", utils.ErrPermanent)
+		return nil, ErrPermanent
 	}
 
 	if opts.Args.Agent == "terraform" || opts.Args.Agent == "atlantis" {
