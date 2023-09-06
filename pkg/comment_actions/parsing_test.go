@@ -55,11 +55,36 @@ func TestParseCommentCommand(t *testing.T) {
 				Command: "plan",
 			},
 		}, nil, "simple plan with version"},
+		{"tfc plan -w -v 1.1.8",
+			nil,
+			ErrPermanent,
+			"not a valid command",
+		},
+		{"tfc apply -e", &CommentOpts{
+			TriggerOpts: &tfc_trigger.TFCTriggerOptions{
+				Action:        tfc_trigger.ApplyAction,
+				AllowEmptyRun: true,
+			},
+			Args: CommentArgs{
+				Agent:   "tfc",
+				Command: "apply",
+			},
+		}, nil, "short flag for allow empty run"},
+		{"tfc apply --allow_empty_run", &CommentOpts{
+			TriggerOpts: &tfc_trigger.TFCTriggerOptions{
+				Action:        tfc_trigger.ApplyAction,
+				AllowEmptyRun: true,
+			},
+			Args: CommentArgs{
+				Agent:   "tfc",
+				Command: "apply",
+			},
+		}, nil, "long flag for allow empty run"},
 	}
 
 	for _, tc := range tcs {
 		t.Run(tc.testName, func(t *testing.T) {
-			opts, err := ParseCommentCommand(tc.noteBody)			
+			opts, err := ParseCommentCommand(tc.noteBody)
 			assert.Equal(t, tc.expectedOpts, opts, tc.testName)
 			assert.ErrorIs(t, err, tc.e, tc.testName)
 		})
