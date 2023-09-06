@@ -80,6 +80,7 @@ func TestParseCommentCommand(t *testing.T) {
 				Command: "apply",
 			},
 		}, nil, "long flag for allow empty run"},
+		{"tfc apply -k", nil, ErrPermanent, "invalid command"},
 	}
 
 	for _, tc := range tcs {
