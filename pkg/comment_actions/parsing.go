@@ -16,7 +16,7 @@ var (
 	ErrOtherTFTool   = errors.New("use 'tfc' to interact with tfbuddy")
 	ErrNoNotePassed  = errors.New("no notes passed in note block")
 	ErrInvalidAction = errors.New("invalid tfc action")
-	ErrPermanent 		 = fmt.Errorf("could not parse comment as command. %w", utils.ErrPermanent)
+	ErrPermanent     = fmt.Errorf("could not parse comment as command. %w", utils.ErrPermanent)
 )
 
 type CommentOpts struct {
