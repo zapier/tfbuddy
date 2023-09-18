@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -75,9 +74,26 @@ func CheckTriggerAction(action string) TriggerAction {
 	}
 }
 
+// GetCloneRootDir reads the provided env var and provides a directory path to store git clone files to.
+// default is "" for the OS default tmp directory path
+func GetCloneRootDir(envVar string) string {
+	val := os.Getenv(envVar)
+	if val != "" {
+		if _, err := os.Stat(val); errors.Is(err, os.ErrNotExist) {
+			log.Debug().Msg(fmt.Sprintf("'%s' does not exist in filepath. Attempting to create the directory...", val))
+			mkDirErr := os.Mkdir(val, 0750)
+			if mkDirErr != nil {
+				log.Fatal().Msgf("could not create tmp root dir for %s: %s", val, err)
+			}
+		}
+	}
+	return val
+}
+
 const (
 	CommentTrigger TriggerSource = iota
 	MergeRequestEventTrigger
+	GIT_CLONE_ROOT_DIRECTORY = "GIT_CLONE_ROOT_DIRECTORY"
 )
 
 type TFCTrigger struct {
@@ -361,7 +377,8 @@ func (t *TFCTrigger) cloneGitRepo(ctx context.Context, mr vcs.MR) (vcs.GitRepo, 
 	defer span.End()
 
 	safeProj := strings.ReplaceAll(t.GetProjectNameWithNamespace(), "/", "-")
-	cloneDir, err := ioutil.TempDir("", fmt.Sprintf("%s-%d-*", safeProj, t.GetMergeRequestIID()))
+	rootDir := GetCloneRootDir(GIT_CLONE_ROOT_DIRECTORY)
+	cloneDir, err := os.MkdirTemp(rootDir, fmt.Sprintf("%s-%d-*", safeProj, t.GetMergeRequestIID()))
 	if err != nil {
 		return nil, fmt.Errorf("could not create tmp directory. %w", err)
 	}
