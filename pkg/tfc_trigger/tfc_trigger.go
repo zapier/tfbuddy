@@ -93,7 +93,7 @@ func GetCloneRootDir(envVar string) string {
 const (
 	CommentTrigger TriggerSource = iota
 	MergeRequestEventTrigger
-	GIT_CLONE_ROOT_DIRECTORY = "GIT_CLONE_ROOT_DIRECTORY"
+	GIT_CLONE_ROOT_DIRECTORY = "TFBUDDY_GIT_CLONE_ROOT_DIRECTORY"
 )
 
 type TFCTrigger struct {
