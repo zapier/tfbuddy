@@ -24,7 +24,7 @@ spec:
             - name: TFBUDDY_NATS_SERVICE_URL
               value: nats://nats:4222
             - name: TFBUDDY_OTEL_ENABLED
-              value: "true"
+              value: "false"
             - name: TFBUDDY_OTEL_COLLECTOR_PORT
               value: "4317"
             - name: TFBUDDY_OTEL_COLLECTOR_HOST
@@ -36,9 +36,12 @@ spec:
                 name: tfbuddy-config
             - secretRef:
                 name: tfbuddy-secrets
+          # volumeMounts:
+          #   - mountPath: /tmp/git
+          #     name: tmp
           resources:
             limits:
-              memory: 512Mi
+              memory: 4096Mi
             requests:
               memory: 256Mi
               cpu: 200m
@@ -62,3 +65,7 @@ spec:
             periodSeconds: 10
             successThreshold: 1
             timeoutSeconds: 5
+      # volumes:
+      #   - name: tmp
+      #     emptyDir:
+      #       sizeLimit: 20Gi
