@@ -41,6 +41,7 @@ func (gr *Repository) FetchUpstreamBranch(branch string) error {
 	}
 	return nil
 }
+
 func (gr *Repository) GetMergeBase(oldest, newest string) (string, error) {
 	var hashes []*plumbing.Hash
 	for _, rev := range []string{oldest, newest} {

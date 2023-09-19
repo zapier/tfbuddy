@@ -414,6 +414,7 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 
 		modifiedWSMap, err := t.getModifiedWorkspaceBetweenMergeBaseTargetBranch(ctx, mr, repo)
 		if err != nil {
+			log.Error().Err(err).Msg("Unable to get modified workspace map")
 			err = t.postUpdate(ctx, ":warning: Could not identify modified workspaces on target branch. Please review the plan carefully for unrelated changes.")
 			if err != nil {
 				log.Error().Err(err).Msg("could not update MR with message")
