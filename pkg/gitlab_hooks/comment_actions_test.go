@@ -9,13 +9,13 @@ import (
 	"github.com/zapier/tfbuddy/pkg/allow_list"
 	"github.com/zapier/tfbuddy/pkg/comment_actions"
 
-	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	"github.com/zapier/tfbuddy/pkg/mocks"
 	"github.com/zapier/tfbuddy/pkg/runstream"
 	"github.com/zapier/tfbuddy/pkg/tfc_api"
 	"github.com/zapier/tfbuddy/pkg/tfc_trigger"
 	"github.com/zapier/tfbuddy/pkg/vcs"
+	"go.uber.org/mock/gomock"
 )
 
 func Test_parseCommentCommand(t *testing.T) {

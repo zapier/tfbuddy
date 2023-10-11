@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/mock/gomock"
 	"github.com/hashicorp/go-tfe"
 	"github.com/rs/zerolog/log"
 	"github.com/rzajac/zltest"
@@ -14,6 +13,7 @@ import (
 	"github.com/zapier/tfbuddy/pkg/tfc_api"
 	"github.com/zapier/tfbuddy/pkg/tfc_trigger"
 	"go.opentelemetry.io/otel"
+	"go.uber.org/mock/gomock"
 )
 
 func TestTriggerAction_String(t *testing.T) {

@@ -11,11 +11,11 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage/memory"
-	gomock "github.com/golang/mock/gomock"
 	tfe "github.com/hashicorp/go-tfe"
 	"github.com/stretchr/testify/assert"
 	tfc_trigger "github.com/zapier/tfbuddy/pkg/tfc_trigger"
 	vcs "github.com/zapier/tfbuddy/pkg/vcs"
+	gomock "go.uber.org/mock/gomock"
 	"gopkg.in/yaml.v2"
 )
 
