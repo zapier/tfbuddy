@@ -48,6 +48,7 @@ func (p *RunStatusUpdater) updateCommitStatusForRun(ctx context.Context, run *tf
 		}
 		// The applying phase of a run has completed.
 		p.updateStatus(ctx, gogitlab.Success, "apply", rmd)
+		p.mergeMRIfPossible(ctx, rmd)
 
 	case tfe.RunCanceled:
 		// The run has been discarded. This is a final state.
@@ -194,6 +195,12 @@ func (p *RunStatusUpdater) getLatestPipelineID(ctx context.Context, rmd runstrea
 		}
 	}
 	return nil
+}
+
+func (p *RunStatusUpdater) mergeMRIfPossible(ctx context.Context, rmd runstream.RunMetadata) error {
+	err := p.client.MergeMR(ctx, rmd.GetMRInternalID(), rmd.GetMRProjectNameWithNamespace())
+	log.Debug().AnErr("err", err).Msg("merge MR")
+	return err
 }
 
 // configureBackOff returns a backoff configuration to use to retry requests
