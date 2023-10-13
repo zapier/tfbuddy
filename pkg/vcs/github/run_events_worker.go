@@ -81,5 +81,11 @@ func (w *RunEventsWorker) postRunStatusComment(ctx context.Context, run *tfe.Run
 		)
 
 	}
-
+	if run.Status == tfe.RunApplied {
+		if len(run.TargetAddrs) > 0 {
+			return
+		}
+		// The applying phase of a run has completed.
+		w.client.MergeMR(ctx, rmd.GetMRInternalID(), rmd.GetMRProjectNameWithNamespace())
+	}
 }

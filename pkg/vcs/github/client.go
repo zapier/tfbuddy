@@ -64,6 +64,15 @@ func (c *Client) GetMergeRequestApprovals(ctx context.Context, id int, project s
 	}
 	return pr, nil
 }
+func (c *Client) MergeMR(ctx context.Context, mrIID int, project string) error {
+	projectParts, err := splitFullName(project)
+	if err != nil {
+		utils.CreatePermanentError(err)
+	}
+	_, _, err = c.client.PullRequests.Merge(c.ctx, projectParts[0], projectParts[1], mrIID, "", nil)
+
+	return err
+}
 
 // Go over all comments on a PR, trying to grab any old TFC run urls and deleting the bodies
 func (c *Client) GetOldRunUrls(ctx context.Context, prID int, fullName string, rootCommentID int) (string, error) {
