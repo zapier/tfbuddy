@@ -9,6 +9,7 @@ import (
 	"github.com/zapier/tfbuddy/pkg/runstream"
 	"github.com/zapier/tfbuddy/pkg/terraform_plan"
 	"github.com/zapier/tfbuddy/pkg/tfc_api"
+	"github.com/zapier/tfbuddy/pkg/vcs"
 )
 
 func FormatRunStatusCommentBody(tfc tfc_api.ApiClient, run *tfe.Run, rmd runstream.RunMetadata) (main, toplevel string, resolve bool) {
@@ -32,7 +33,11 @@ func FormatRunStatusCommentBody(tfc tfc_api.ApiClient, run *tfe.Run, rmd runstre
 		extraInfo = fmt.Sprintf(successPlanSummaryFormat, run.Apply.ResourceImports, run.Apply.ResourceAdditions, run.Apply.ResourceChanges, run.Apply.ResourceDestructions)
 		if len(run.TargetAddrs) > 0 {
 			extraInfo += needToApplyFullWorkSpace
-			extraInfo += fmt.Sprintf(howToApplyFormat, wsName)
+			if rmd.GetAutoMerge() && vcs.IsGlobalAutoMergeEnabled() {
+				extraInfo += fmt.Sprintf(howToApplyFormatAutoMerge, wsName)
+			} else {
+				extraInfo += fmt.Sprintf(howToApplyFormat, wsName)
+			}
 		} else {
 			resolveDiscussion = true
 		}
@@ -54,7 +59,11 @@ func FormatRunStatusCommentBody(tfc tfc_api.ApiClient, run *tfe.Run, rmd runstre
 			if len(run.TargetAddrs) > 0 {
 				extraInfo += fmt.Sprintf(howToApplyFormatWithTarget, strings.Join(run.TargetAddrs, ","), wsName, strings.Join(run.TargetAddrs, ","))
 			} else {
-				extraInfo += fmt.Sprintf(howToApplyFormat, wsName)
+				if rmd.GetAutoMerge() && vcs.IsGlobalAutoMergeEnabled() {
+					extraInfo += fmt.Sprintf(howToApplyFormatAutoMerge, wsName)
+				} else {
+					extraInfo += fmt.Sprintf(howToApplyFormat, wsName)
+				}
 			}
 		}
 	case tfe.RunPlannedAndFinished:
@@ -72,12 +81,20 @@ func FormatRunStatusCommentBody(tfc tfc_api.ApiClient, run *tfe.Run, rmd runstre
 			if len(run.TargetAddrs) > 0 {
 				extraInfo += fmt.Sprintf(howToApplyFormatWithTarget, strings.Join(run.TargetAddrs, ","), wsName, strings.Join(run.TargetAddrs, ","))
 			} else {
-				extraInfo += fmt.Sprintf(howToApplyFormat, wsName)
+				if rmd.GetAutoMerge() && vcs.IsGlobalAutoMergeEnabled() {
+					extraInfo += fmt.Sprintf(howToApplyFormatAutoMerge, wsName)
+				} else {
+					extraInfo += fmt.Sprintf(howToApplyFormat, wsName)
+				}
 			}
 		} else {
 			if len(run.TargetAddrs) > 0 {
 				extraInfo += needToApplyFullWorkSpace
-				extraInfo += fmt.Sprintf(howToApplyFormat, wsName)
+				if rmd.GetAutoMerge() && vcs.IsGlobalAutoMergeEnabled() {
+					extraInfo += fmt.Sprintf(howToApplyFormatAutoMerge, wsName)
+				} else {
+					extraInfo += fmt.Sprintf(howToApplyFormat, wsName)
+				}
 			} else {
 				resolveDiscussion = true
 			}
@@ -154,6 +171,17 @@ var howToApplyFormat = `
 	> ` + "`tfc apply -w %s`" + `
 
 Remember to **merge** the MR once the apply has succeeded`
+
+var howToApplyFormatAutoMerge = `
+
+---
+* To **apply** the plan for all workspaces, comment:
+	> ` + "`tfc apply`" + `
+
+* To **apply** the plan for this workspace only, comment:
+	> ` + "`tfc apply -w %s`" + `
+
+Your MR will be **automatically** merged once the apply has succeeded`
 
 var howToApplyFormatWithTarget = `
 
