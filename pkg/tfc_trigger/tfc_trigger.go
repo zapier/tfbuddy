@@ -620,10 +620,10 @@ func (t *TFCTrigger) triggerRunForWorkspace(ctx context.Context, cfgWS *TFCWorks
 		Bool("speculative", run.ConfigurationVersion.Speculative).
 		Msg("created TFC run")
 
-	return t.publishRunToStream(ctx, run)
+	return t.publishRunToStream(ctx, run, cfgWS)
 }
 
-func (t *TFCTrigger) publishRunToStream(ctx context.Context, run *tfe.Run) error {
+func (t *TFCTrigger) publishRunToStream(ctx context.Context, run *tfe.Run, cfgWS *TFCWorkspace) error {
 	ctx, span := otel.Tracer("TFC").Start(ctx, "publishRunToStream")
 	defer span.End()
 
@@ -639,6 +639,8 @@ func (t *TFCTrigger) publishRunToStream(ctx context.Context, run *tfe.Run) error
 		DiscussionID:                         t.GetMergeRequestDiscussionID(),
 		RootNoteID:                           t.GetMergeRequestRootNoteID(),
 		VcsProvider:                          t.GetVcsProvider(),
+		//set Auto Merge if both conditions are met.
+		AutoMerge: cfgWS.AutoMerge && cfgWS.Mode == "apply-before-merge",
 	}
 	err := t.runstream.AddRunMeta(rmd)
 	if err != nil {

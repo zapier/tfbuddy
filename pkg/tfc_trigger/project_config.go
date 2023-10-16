@@ -91,6 +91,7 @@ type TFCWorkspace struct {
 	Dir          string   `yaml:"dir"`
 	Mode         string   `yaml:"mode" default:"apply-before-merge" validate:"one_of=apply-before-merge,merge-before-apply,tfc-vcs-repo"`
 	TriggerDirs  []string `yaml:"triggerDirs"`
+	AutoMerge    bool     `yaml:"autoMerge" default:"true"`
 }
 
 func getProjectConfigFile(ctx context.Context, gl vcs.GitClient, trigger *TFCTrigger) (*ProjectConfig, error) {

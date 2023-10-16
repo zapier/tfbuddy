@@ -86,6 +86,12 @@ func (w *RunEventsWorker) postRunStatusComment(ctx context.Context, run *tfe.Run
 			return
 		}
 		// The applying phase of a run has completed.
-		w.client.MergeMR(ctx, rmd.GetMRInternalID(), rmd.GetMRProjectNameWithNamespace())
+		w.mergePRIfPossible(ctx, rmd)
 	}
+}
+func (w *RunEventsWorker) mergePRIfPossible(ctx context.Context, rmd runstream.RunMetadata) {
+	if !rmd.GetAutoMerge() || !vcs.IsGlobalAutoMergeEnabled() {
+		return
+	}
+	w.client.MergeMR(ctx, rmd.GetMRInternalID(), rmd.GetMRProjectNameWithNamespace())
 }

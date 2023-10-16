@@ -11,6 +11,7 @@ import (
 	"github.com/rs/zerolog/log"
 	gogitlab "github.com/xanzy/go-gitlab"
 	"github.com/zapier/tfbuddy/pkg/runstream"
+	"github.com/zapier/tfbuddy/pkg/vcs"
 	"go.opentelemetry.io/otel"
 )
 
@@ -197,10 +198,20 @@ func (p *RunStatusUpdater) getLatestPipelineID(ctx context.Context, rmd runstrea
 	return nil
 }
 
-func (p *RunStatusUpdater) mergeMRIfPossible(ctx context.Context, rmd runstream.RunMetadata) error {
+func (p *RunStatusUpdater) mergeMRIfPossible(ctx context.Context, rmd runstream.RunMetadata) {
+	ctx, span := otel.Tracer("TFC").Start(ctx, "mergeMRIfPossible")
+	defer span.End()
+
+	if !rmd.GetAutoMerge() || !vcs.IsGlobalAutoMergeEnabled() {
+		return
+	}
+
 	err := p.client.MergeMR(ctx, rmd.GetMRInternalID(), rmd.GetMRProjectNameWithNamespace())
+	if err != nil {
+		span.RecordError(err)
+	}
 	log.Debug().AnErr("err", err).Msg("merge MR")
-	return err
+
 }
 
 // configureBackOff returns a backoff configuration to use to retry requests

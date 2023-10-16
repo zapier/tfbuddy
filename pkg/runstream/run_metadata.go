@@ -43,6 +43,8 @@ type TFRunMetadata struct {
 	RootNoteID int64
 
 	VcsProvider string
+
+	AutoMerge bool
 }
 
 func (r *TFRunMetadata) GetAction() string {
@@ -74,6 +76,9 @@ func (r *TFRunMetadata) GetOrganization() string {
 }
 func (r *TFRunMetadata) GetVcsProvider() string {
 	return r.VcsProvider
+}
+func (r *TFRunMetadata) GetAutoMerge() bool {
+	return r.AutoMerge
 }
 func (s *Stream) AddRunMeta(rmd RunMetadata) error {
 	b, err := encodeTFRunMetadata(rmd)
