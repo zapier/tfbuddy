@@ -182,6 +182,21 @@ func Test_loadProjectConfig(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "no auto merge",
+			args: args{b: []byte(tfbuddyYamlNoTriggerDirsNoAutoMerge)},
+			want: &ProjectConfig{Workspaces: []*TFCWorkspace{
+				{
+					Name:         "service-tfbuddy-dev",
+					Organization: "foo-corp",
+					Dir:          "terraform/dev/",
+					Mode:         "apply-before-merge",
+					TriggerDirs:  nil,
+					AutoMerge:    false,
+				},
+			}},
+			wantErr: false,
+		},
+		{
 			name:    "no-organization",
 			args:    args{b: []byte(tfbuddyYamlNoOrg)},
 			want:    nil,
@@ -319,6 +334,15 @@ workspaces:
     organization: foo-corp
     dir: terraform/dev/
     mode: apply-before-merge
+`
+const tfbuddyYamlNoTriggerDirsNoAutoMerge = `
+---
+workspaces:
+  - name: service-tfbuddy-dev
+    organization: foo-corp
+    dir: terraform/dev/
+    mode: apply-before-merge
+    autoMerge: false
 `
 
 const tfbuddyYamlNoOrg = `
