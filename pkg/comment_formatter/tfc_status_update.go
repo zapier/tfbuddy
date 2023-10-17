@@ -12,6 +12,21 @@ import (
 	"github.com/zapier/tfbuddy/pkg/vcs"
 )
 
+func getProperApplyText(rmd runstream.RunMetadata, wsName string) string {
+	if rmd.GetAutoMerge() && vcs.IsGlobalAutoMergeEnabled() {
+		return fmt.Sprintf(howToApplyFormat, wsName, autoMRMergeSnippet)
+	} else {
+		return fmt.Sprintf(howToApplyFormat, wsName, manualMRMergeSnippet)
+	}
+}
+func getProperTargetedApplyText(rmd runstream.RunMetadata, run *tfe.Run, wsName string) string {
+	targets := strings.Join(run.TargetAddrs, ",")
+	if rmd.GetAutoMerge() && vcs.IsGlobalAutoMergeEnabled() {
+		return fmt.Sprintf(howToApplyFormatWithTarget, targets, wsName, targets, autoMRMergeSnippet)
+	} else {
+		return fmt.Sprintf(howToApplyFormatWithTarget, targets, wsName, targets, manualMRMergeSnippet)
+	}
+}
 func FormatRunStatusCommentBody(tfc tfc_api.ApiClient, run *tfe.Run, rmd runstream.RunMetadata) (main, toplevel string, resolve bool) {
 	wsName := run.Workspace.Name
 	org := run.Workspace.Organization.Name
@@ -33,11 +48,7 @@ func FormatRunStatusCommentBody(tfc tfc_api.ApiClient, run *tfe.Run, rmd runstre
 		extraInfo = fmt.Sprintf(successPlanSummaryFormat, run.Apply.ResourceImports, run.Apply.ResourceAdditions, run.Apply.ResourceChanges, run.Apply.ResourceDestructions)
 		if len(run.TargetAddrs) > 0 {
 			extraInfo += needToApplyFullWorkSpace
-			if rmd.GetAutoMerge() && vcs.IsGlobalAutoMergeEnabled() {
-				extraInfo += fmt.Sprintf(howToApplyFormatAutoMerge, wsName)
-			} else {
-				extraInfo += fmt.Sprintf(howToApplyFormat, wsName)
-			}
+			extraInfo += getProperApplyText(rmd, wsName)
 		} else {
 			resolveDiscussion = true
 		}
@@ -57,13 +68,9 @@ func FormatRunStatusCommentBody(tfc tfc_api.ApiClient, run *tfe.Run, rmd runstre
 		extraInfo = fmt.Sprintf(successPlanSummaryFormat, run.Apply.ResourceImports, run.Plan.ResourceAdditions, run.Plan.ResourceChanges, run.Plan.ResourceDestructions)
 		if !run.AutoApply {
 			if len(run.TargetAddrs) > 0 {
-				extraInfo += fmt.Sprintf(howToApplyFormatWithTarget, strings.Join(run.TargetAddrs, ","), wsName, strings.Join(run.TargetAddrs, ","))
+				extraInfo += getProperTargetedApplyText(rmd, run, wsName)
 			} else {
-				if rmd.GetAutoMerge() && vcs.IsGlobalAutoMergeEnabled() {
-					extraInfo += fmt.Sprintf(howToApplyFormatAutoMerge, wsName)
-				} else {
-					extraInfo += fmt.Sprintf(howToApplyFormat, wsName)
-				}
+				extraInfo += getProperApplyText(rmd, wsName)
 			}
 		}
 	case tfe.RunPlannedAndFinished:
@@ -79,22 +86,14 @@ func FormatRunStatusCommentBody(tfc tfc_api.ApiClient, run *tfe.Run, rmd runstre
 
 		if hasChanges(run.Plan) {
 			if len(run.TargetAddrs) > 0 {
-				extraInfo += fmt.Sprintf(howToApplyFormatWithTarget, strings.Join(run.TargetAddrs, ","), wsName, strings.Join(run.TargetAddrs, ","))
+				extraInfo += getProperTargetedApplyText(rmd, run, wsName)
 			} else {
-				if rmd.GetAutoMerge() && vcs.IsGlobalAutoMergeEnabled() {
-					extraInfo += fmt.Sprintf(howToApplyFormatAutoMerge, wsName)
-				} else {
-					extraInfo += fmt.Sprintf(howToApplyFormat, wsName)
-				}
+				extraInfo += getProperApplyText(rmd, wsName)
 			}
 		} else {
 			if len(run.TargetAddrs) > 0 {
 				extraInfo += needToApplyFullWorkSpace
-				if rmd.GetAutoMerge() && vcs.IsGlobalAutoMergeEnabled() {
-					extraInfo += fmt.Sprintf(howToApplyFormatAutoMerge, wsName)
-				} else {
-					extraInfo += fmt.Sprintf(howToApplyFormat, wsName)
-				}
+				extraInfo += getProperApplyText(rmd, wsName)
 			} else {
 				resolveDiscussion = true
 			}
@@ -161,6 +160,8 @@ var successPlanSummaryFormat = `
   * Changes: %d
   * Destructions: %d`
 
+var manualMRMergeSnippet = `Remember to **merge** the MR once the apply has succeeded`
+var autoMRMergeSnippet = `Your MR will be **automatically** merged once the apply has succeeded`
 var howToApplyFormat = `
 
 ---
@@ -170,18 +171,7 @@ var howToApplyFormat = `
 * To **apply** the plan for this workspace only, comment:
 	> ` + "`tfc apply -w %s`" + `
 
-Remember to **merge** the MR once the apply has succeeded`
-
-var howToApplyFormatAutoMerge = `
-
----
-* To **apply** the plan for all workspaces, comment:
-	> ` + "`tfc apply`" + `
-
-* To **apply** the plan for this workspace only, comment:
-	> ` + "`tfc apply -w %s`" + `
-
-Your MR will be **automatically** merged once the apply has succeeded`
+%s`
 
 var howToApplyFormatWithTarget = `
 
@@ -192,7 +182,7 @@ var howToApplyFormatWithTarget = `
 * To **apply** the plan for this workspace only, comment:
 	> ` + "`tfc apply -w %s -t %s`" + `
 
-Remember to **merge** the MR once the apply has succeeded`
+%s`
 
 var needToApplyFullWorkSpace = `
 
