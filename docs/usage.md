@@ -50,6 +50,8 @@ env:
   TFBUDDY_PROJECT_ALLOW_LIST: tfc-project/
   TFBUDDY_WORKSPACE_ALLOW_LIST: tfc-workspace
   TFBUDDY_DEFAULT_TFC_ORGANIZATION: companyX
+  # Optional setting to disable auto merging MRs after a successful apply. This is enabled by default.
+  TFBUDDY_ENABLE_AUTO_MERGE: "false"
 ```
 
 For sensitive environment variables use `secrets.envs` which can contain a list of key/value pairs
@@ -100,6 +102,8 @@ workspaces:
       - terraform/staging/**/*.tf
       - terraform/staging/{foo,bar}/**
       - terraform/staging/**/[^0-9]*
+    # Merge MR once all workspaces have been applied. This is enabled by default, and can be disabled globally by setting TFBUDDY_ENABLE_AUTO_MERGE to false
+    autoMerge: true
 ```
 
 TF Buddy uses [doublestar](https://github.com/bmatcuk/doublestar#about) for its path matching. In the example above, the following directories/files would be watched:
