@@ -9,11 +9,10 @@ import (
 	"github.com/zapier/tfbuddy/pkg/runstream"
 	"github.com/zapier/tfbuddy/pkg/terraform_plan"
 	"github.com/zapier/tfbuddy/pkg/tfc_api"
-	"github.com/zapier/tfbuddy/pkg/vcs"
 )
 
 func getProperApplyText(rmd runstream.RunMetadata, wsName string) string {
-	if rmd.GetAutoMerge() && vcs.IsGlobalAutoMergeEnabled() {
+	if rmd.GetAutoMerge() {
 		return fmt.Sprintf(howToApplyFormat, wsName, autoMRMergeSnippet)
 	} else {
 		return fmt.Sprintf(howToApplyFormat, wsName, manualMRMergeSnippet)
@@ -21,7 +20,7 @@ func getProperApplyText(rmd runstream.RunMetadata, wsName string) string {
 }
 func getProperTargetedApplyText(rmd runstream.RunMetadata, run *tfe.Run, wsName string) string {
 	targets := strings.Join(run.TargetAddrs, ",")
-	if rmd.GetAutoMerge() && vcs.IsGlobalAutoMergeEnabled() {
+	if rmd.GetAutoMerge() {
 		return fmt.Sprintf(howToApplyFormatWithTarget, targets, wsName, targets, autoMRMergeSnippet)
 	} else {
 		return fmt.Sprintf(howToApplyFormatWithTarget, targets, wsName, targets, manualMRMergeSnippet)

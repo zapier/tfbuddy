@@ -639,8 +639,20 @@ func (t *TFCTrigger) publishRunToStream(ctx context.Context, run *tfe.Run, cfgWS
 		DiscussionID:                         t.GetMergeRequestDiscussionID(),
 		RootNoteID:                           t.GetMergeRequestRootNoteID(),
 		VcsProvider:                          t.GetVcsProvider(),
-		//set Auto Merge if both conditions are met.
-		AutoMerge: cfgWS.AutoMerge && cfgWS.Mode == "apply-before-merge",
+		AutoMerge:                            cfgWS.AutoMerge,
+	}
+	//disable Auto Merge and log if the mode is not apply-before-merge
+	if cfgWS.Mode != "apply-before-merge" && cfgWS.AutoMerge {
+		log.Info().Str("RunID", run.ID).
+			Str("Org", run.Workspace.Organization.Name).
+			Str("WS", run.Workspace.Name).Msg("auto-merge cannot be enabled because the 'apply-before-merge' mode is not in use")
+		rmd.AutoMerge = false
+	}
+	if cfgWS.AutoMerge && !vcs.IsGlobalAutoMergeEnabled() {
+		log.Info().Str("RunID", run.ID).
+			Str("Org", run.Workspace.Organization.Name).
+			Str("WS", run.Workspace.Name).Msg("auto-merge cannot be enabled since the feature is globally disabled")
+		rmd.AutoMerge = false
 	}
 	err := t.runstream.AddRunMeta(rmd)
 	if err != nil {

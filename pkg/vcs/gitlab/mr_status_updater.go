@@ -11,7 +11,6 @@ import (
 	"github.com/rs/zerolog/log"
 	gogitlab "github.com/xanzy/go-gitlab"
 	"github.com/zapier/tfbuddy/pkg/runstream"
-	"github.com/zapier/tfbuddy/pkg/vcs"
 	"go.opentelemetry.io/otel"
 )
 
@@ -202,7 +201,7 @@ func (p *RunStatusUpdater) mergeMRIfPossible(ctx context.Context, rmd runstream.
 	ctx, span := otel.Tracer("TFC").Start(ctx, "mergeMRIfPossible")
 	defer span.End()
 
-	if !rmd.GetAutoMerge() || !vcs.IsGlobalAutoMergeEnabled() {
+	if !rmd.GetAutoMerge() {
 		return
 	}
 

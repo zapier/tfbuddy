@@ -90,7 +90,7 @@ func (w *RunEventsWorker) postRunStatusComment(ctx context.Context, run *tfe.Run
 	}
 }
 func (w *RunEventsWorker) mergePRIfPossible(ctx context.Context, rmd runstream.RunMetadata) {
-	if !rmd.GetAutoMerge() || !vcs.IsGlobalAutoMergeEnabled() {
+	if !rmd.GetAutoMerge() {
 		return
 	}
 	w.client.MergeMR(ctx, rmd.GetMRInternalID(), rmd.GetMRProjectNameWithNamespace())
