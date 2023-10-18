@@ -27,7 +27,7 @@ spec:
               value: "true"
             - name: TFBUDDY_OTEL_COLLECTOR_PORT
               value: "4317"
-            - name: TFBUDDY_ENABLE_AUTO_MERGE
+            - name: TFBUDDY_ALLOW_AUTO_MERGE
               value: "true"
             - name: TFBUDDY_OTEL_COLLECTOR_HOST
               valueFrom:
