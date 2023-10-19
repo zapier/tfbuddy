@@ -76,8 +76,12 @@ func (p *RunStatusUpdater) updateCommitStatusForRun(ctx context.Context, run *tf
 		// This is a final state.
 		p.updateStatus(ctx, gogitlab.Success, rmd.GetAction(), rmd)
 		if run.HasChanges {
-			// TODO: is pending enough to block merging before apply?
 			p.updateStatus(ctx, gogitlab.Pending, "apply", rmd)
+		} else {
+			// if the apply returns no changes we can still go ahead and merge if auto-merge is enabled
+			if rmd.GetAction() == "apply" {
+				p.mergeMRIfPossible(ctx, rmd)
+			}
 		}
 
 	case tfe.RunPolicySoftFailed:

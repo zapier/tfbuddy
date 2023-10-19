@@ -88,6 +88,14 @@ func (w *RunEventsWorker) postRunStatusComment(ctx context.Context, run *tfe.Run
 		// The applying phase of a run has completed.
 		w.mergePRIfPossible(ctx, rmd)
 	}
+	if run.Status == tfe.RunPlannedAndFinished {
+		if len(run.TargetAddrs) > 0 {
+			return
+		}
+		if rmd.GetAction() == "apply" {
+			w.mergePRIfPossible(ctx, rmd)
+		}
+	}
 }
 func (w *RunEventsWorker) mergePRIfPossible(ctx context.Context, rmd runstream.RunMetadata) {
 	if !rmd.GetAutoMerge() {
