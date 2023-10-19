@@ -79,7 +79,7 @@ func (p *RunStatusUpdater) updateCommitStatusForRun(ctx context.Context, run *tf
 			p.updateStatus(ctx, gogitlab.Pending, "apply", rmd)
 		} else {
 			// if the apply returns no changes we can still go ahead and merge if auto-merge is enabled
-			if rmd.GetAction() == "apply" {
+			if len(run.TargetAddrs) == 0 && rmd.GetAction() == "apply" {
 				p.mergeMRIfPossible(ctx, rmd)
 			}
 		}
