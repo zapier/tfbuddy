@@ -54,7 +54,7 @@ func FormatRunStatusCommentBody(tfc tfc_api.ApiClient, run *tfe.Run, rmd runstre
 	case tfe.RunDiscarded:
 		// no extra info
 	case tfe.RunErrored:
-		if rmd.GetAction() == "plan" {
+		if rmd.GetAction() == runstream.PlanAction {
 			extraInfo += failedPlanSummaryFormat
 		}
 

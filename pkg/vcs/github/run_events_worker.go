@@ -92,7 +92,7 @@ func (w *RunEventsWorker) postRunStatusComment(ctx context.Context, run *tfe.Run
 		if len(run.TargetAddrs) > 0 {
 			return
 		}
-		if rmd.GetAction() == "apply" {
+		if rmd.GetAction() == runstream.ApplyAction {
 			w.mergePRIfPossible(ctx, rmd)
 		}
 	}
