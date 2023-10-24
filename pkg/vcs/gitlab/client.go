@@ -121,6 +121,12 @@ func (c *GitlabClient) GetCommitStatuses(ctx context.Context, projectID, commitS
 
 	return statuses
 }
+func (c *GitlabClient) MergeMR(ctx context.Context, mrIID int, project string) error {
+	_, span := otel.Tracer("TFC").Start(ctx, "MergeMR")
+	defer span.End()
+	_, _, err := c.client.MergeRequests.AcceptMergeRequest(project, mrIID, &gogitlab.AcceptMergeRequestOptions{})
+	return err
+}
 
 // Crawl the comments on this MR for tfbuddy comments, grab any TFC urls out of them, and delete them.
 func (c *GitlabClient) GetOldRunUrls(ctx context.Context, mrIID int, project string, rootNoteID int) (string, error) {

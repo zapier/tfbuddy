@@ -38,6 +38,7 @@ type RunMetadata interface {
 	GetCommitSHA() string
 	GetOrganization() string
 	GetVcsProvider() string
+	GetAutoMerge() bool
 }
 
 type RunPollingTask interface {

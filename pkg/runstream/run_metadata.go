@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
+	"github.com/zapier/tfbuddy/pkg/vcs"
 )
 
 // ensure type complies with interface
@@ -43,6 +44,8 @@ type TFRunMetadata struct {
 	RootNoteID int64
 
 	VcsProvider string
+
+	AutoMerge bool
 }
 
 func (r *TFRunMetadata) GetAction() string {
@@ -74,6 +77,9 @@ func (r *TFRunMetadata) GetOrganization() string {
 }
 func (r *TFRunMetadata) GetVcsProvider() string {
 	return r.VcsProvider
+}
+func (r *TFRunMetadata) GetAutoMerge() bool {
+	return r.AutoMerge && vcs.IsGlobalAutoMergeEnabled()
 }
 func (s *Stream) AddRunMeta(rmd RunMetadata) error {
 	b, err := encodeTFRunMetadata(rmd)

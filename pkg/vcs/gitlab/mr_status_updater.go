@@ -25,7 +25,7 @@ func (p *RunStatusUpdater) updateCommitStatusForRun(ctx context.Context, run *tf
 	// https://www.terraform.io/cloud-docs/api-docs/run#run-states
 	case tfe.RunPending:
 		// The initial status of a run once it has been created.
-		if rmd.GetAction() == "plan" {
+		if rmd.GetAction() == runstream.PlanAction {
 			p.updateStatus(ctx, gogitlab.Pending, "plan", rmd)
 			p.updateStatus(ctx, gogitlab.Failed, "apply", rmd)
 		} else {
@@ -48,6 +48,7 @@ func (p *RunStatusUpdater) updateCommitStatusForRun(ctx context.Context, run *tf
 		}
 		// The applying phase of a run has completed.
 		p.updateStatus(ctx, gogitlab.Success, "apply", rmd)
+		p.mergeMRIfPossible(ctx, rmd)
 
 	case tfe.RunCanceled:
 		// The run has been discarded. This is a final state.
@@ -75,8 +76,12 @@ func (p *RunStatusUpdater) updateCommitStatusForRun(ctx context.Context, run *tf
 		// This is a final state.
 		p.updateStatus(ctx, gogitlab.Success, rmd.GetAction(), rmd)
 		if run.HasChanges {
-			// TODO: is pending enough to block merging before apply?
 			p.updateStatus(ctx, gogitlab.Pending, "apply", rmd)
+		} else {
+			// if the apply returns no changes we can still go ahead and merge if auto-merge is enabled
+			if len(run.TargetAddrs) == 0 && rmd.GetAction() == runstream.ApplyAction {
+				p.mergeMRIfPossible(ctx, rmd)
+			}
 		}
 
 	case tfe.RunPolicySoftFailed:
@@ -194,6 +199,22 @@ func (p *RunStatusUpdater) getLatestPipelineID(ctx context.Context, rmd runstrea
 		}
 	}
 	return nil
+}
+
+func (p *RunStatusUpdater) mergeMRIfPossible(ctx context.Context, rmd runstream.RunMetadata) {
+	ctx, span := otel.Tracer("TFC").Start(ctx, "mergeMRIfPossible")
+	defer span.End()
+
+	if !rmd.GetAutoMerge() {
+		return
+	}
+
+	err := p.client.MergeMR(ctx, rmd.GetMRInternalID(), rmd.GetMRProjectNameWithNamespace())
+	if err != nil {
+		span.RecordError(err)
+	}
+	log.Debug().AnErr("err", err).Msg("merge MR")
+
 }
 
 // configureBackOff returns a backoff configuration to use to retry requests

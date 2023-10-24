@@ -176,6 +176,22 @@ func Test_loadProjectConfig(t *testing.T) {
 					Dir:          "terraform/dev/",
 					Mode:         "apply-before-merge",
 					TriggerDirs:  nil,
+					AutoMerge:    true,
+				},
+			}},
+			wantErr: false,
+		},
+		{
+			name: "no auto merge",
+			args: args{b: []byte(tfbuddyYamlNoTriggerDirsNoAutoMerge)},
+			want: &ProjectConfig{Workspaces: []*TFCWorkspace{
+				{
+					Name:         "service-tfbuddy-dev",
+					Organization: "foo-corp",
+					Dir:          "terraform/dev/",
+					Mode:         "apply-before-merge",
+					TriggerDirs:  nil,
+					AutoMerge:    false,
 				},
 			}},
 			wantErr: false,
@@ -202,6 +218,7 @@ func Test_loadProjectConfig(t *testing.T) {
 					Dir:          "terraform/dev/",
 					Mode:         "apply-before-merge",
 					TriggerDirs:  nil,
+					AutoMerge:    true,
 				},
 			}},
 			wantErr: false,
@@ -215,6 +232,7 @@ func Test_loadProjectConfig(t *testing.T) {
 					Organization: "foo-corp",
 					Dir:          "terraform/dev/",
 					Mode:         "apply-before-merge",
+					AutoMerge:    true,
 					TriggerDirs: []string{
 						"modules/**",
 					},
@@ -231,6 +249,7 @@ func Test_loadProjectConfig(t *testing.T) {
 					Organization: "foo-corp",
 					Dir:          "terraform/dev/",
 					Mode:         "apply-before-merge",
+					AutoMerge:    true,
 					TriggerDirs: []string{
 						"modules/database/",
 					},
@@ -247,6 +266,7 @@ func Test_loadProjectConfig(t *testing.T) {
 					Organization: "foo-corp",
 					Dir:          "terraform/dev/",
 					Mode:         "apply-before-merge",
+					AutoMerge:    true,
 				},
 			}},
 			wantErr: false,
@@ -266,12 +286,14 @@ func Test_loadProjectConfig(t *testing.T) {
 					Organization: "foo-corp",
 					Dir:          "terraform/dev/",
 					Mode:         "apply-before-merge",
+					AutoMerge:    true,
 				},
 				{
 					Name:         "service-tfbuddy-tooling",
 					Organization: "foo-corp",
 					Dir:          "terraform/tooling/",
 					Mode:         "apply-before-merge",
+					AutoMerge:    true,
 				},
 			}},
 			wantErr: false,
@@ -312,6 +334,15 @@ workspaces:
     organization: foo-corp
     dir: terraform/dev/
     mode: apply-before-merge
+`
+const tfbuddyYamlNoTriggerDirsNoAutoMerge = `
+---
+workspaces:
+  - name: service-tfbuddy-dev
+    organization: foo-corp
+    dir: terraform/dev/
+    mode: apply-before-merge
+    autoMerge: false
 `
 
 const tfbuddyYamlNoOrg = `

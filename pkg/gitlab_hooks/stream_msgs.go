@@ -98,7 +98,7 @@ type MergeRequestEventMsg struct {
 }
 
 func (e *MergeRequestEventMsg) GetId(ctx context.Context) string {
-	return fmt.Sprintf("%d-%s", e.Payload.ObjectAttributes.ID, e.Payload.ObjectAttributes.Action)
+	return fmt.Sprintf("%d-%s-%s", e.Payload.ObjectAttributes.ID, e.Payload.ObjectAttributes.Action, e.Payload.ObjectAttributes.LastCommit.ID)
 }
 
 func (e *MergeRequestEventMsg) DecodeEventData(b []byte) error {

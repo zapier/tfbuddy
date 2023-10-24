@@ -620,10 +620,10 @@ func (t *TFCTrigger) triggerRunForWorkspace(ctx context.Context, cfgWS *TFCWorks
 		Bool("speculative", run.ConfigurationVersion.Speculative).
 		Msg("created TFC run")
 
-	return t.publishRunToStream(ctx, run)
+	return t.publishRunToStream(ctx, run, cfgWS)
 }
 
-func (t *TFCTrigger) publishRunToStream(ctx context.Context, run *tfe.Run) error {
+func (t *TFCTrigger) publishRunToStream(ctx context.Context, run *tfe.Run, cfgWS *TFCWorkspace) error {
 	ctx, span := otel.Tracer("TFC").Start(ctx, "publishRunToStream")
 	defer span.End()
 
@@ -639,6 +639,20 @@ func (t *TFCTrigger) publishRunToStream(ctx context.Context, run *tfe.Run) error
 		DiscussionID:                         t.GetMergeRequestDiscussionID(),
 		RootNoteID:                           t.GetMergeRequestRootNoteID(),
 		VcsProvider:                          t.GetVcsProvider(),
+		AutoMerge:                            cfgWS.AutoMerge,
+	}
+	//disable Auto Merge and log if the mode is not apply-before-merge
+	if cfgWS.Mode != "apply-before-merge" && cfgWS.AutoMerge {
+		log.Info().Str("RunID", run.ID).
+			Str("Org", run.Workspace.Organization.Name).
+			Str("WS", run.Workspace.Name).Msg("auto-merge cannot be enabled because the 'apply-before-merge' mode is not in use")
+		rmd.AutoMerge = false
+	}
+	if cfgWS.AutoMerge && !vcs.IsGlobalAutoMergeEnabled() {
+		log.Info().Str("RunID", run.ID).
+			Str("Org", run.Workspace.Organization.Name).
+			Str("WS", run.Workspace.Name).Msg("auto-merge cannot be enabled since the feature is globally disabled")
+		rmd.AutoMerge = false
 	}
 	err := t.runstream.AddRunMeta(rmd)
 	if err != nil {

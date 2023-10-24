@@ -81,5 +81,25 @@ func (w *RunEventsWorker) postRunStatusComment(ctx context.Context, run *tfe.Run
 		)
 
 	}
-
+	if run.Status == tfe.RunApplied {
+		if len(run.TargetAddrs) > 0 {
+			return
+		}
+		// The applying phase of a run has completed.
+		w.mergePRIfPossible(ctx, rmd)
+	}
+	if run.Status == tfe.RunPlannedAndFinished {
+		if len(run.TargetAddrs) > 0 {
+			return
+		}
+		if rmd.GetAction() == runstream.ApplyAction {
+			w.mergePRIfPossible(ctx, rmd)
+		}
+	}
+}
+func (w *RunEventsWorker) mergePRIfPossible(ctx context.Context, rmd runstream.RunMetadata) {
+	if !rmd.GetAutoMerge() {
+		return
+	}
+	w.client.MergeMR(ctx, rmd.GetMRInternalID(), rmd.GetMRProjectNameWithNamespace())
 }
