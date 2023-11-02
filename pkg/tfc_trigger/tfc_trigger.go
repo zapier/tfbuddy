@@ -441,7 +441,7 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 		log.Debug().Msg("No Terraform changes found in changeset.")
 		return nil, nil
 	}
-
+	t.runstream.AddWorkspaceMeta(&runstream.TFCWorkspacesMetadata{}, t.GetMergeRequestIID(), t.GetProjectNameWithNamespace())
 	return workspaceStatus, nil
 }
 
