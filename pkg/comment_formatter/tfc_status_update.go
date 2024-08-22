@@ -102,7 +102,7 @@ func FormatRunStatusCommentBody(tfc tfc_api.ApiClient, run *tfe.Run, rmd runstre
 		wsName,
 		rmd.GetAction(),
 		run.Status,
-		runUrl, runUrl,
+		run.ID, runUrl,
 	)
 
 	return extraInfo, topLevelNoteBody, resolveDiscussion
