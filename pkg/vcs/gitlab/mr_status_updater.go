@@ -208,8 +208,29 @@ func (p *RunStatusUpdater) mergeMRIfPossible(ctx context.Context, rmd runstream.
 	if !rmd.GetAutoMerge() {
 		return
 	}
+	//check that all triggered workspaces have been executed or increment
+	wsMeta, err := p.rs.GetWorkspaceMeta(fmt.Sprintf("%d", rmd.GetMRInternalID()), rmd.GetMRProjectNameWithNamespace())
+	if err != nil {
+		log.Debug().AnErr("err", err).Msg("get workspace metadata")
+		return
+	}
+	wsMeta.CountExecutedWorkspaces++
 
-	err := p.client.MergeMR(ctx, rmd.GetMRInternalID(), rmd.GetMRProjectNameWithNamespace())
+	if wsMeta.CountTotalWorkspaces > wsMeta.CountExecutedWorkspaces {
+		err = p.rs.AddWorkspaceMeta(wsMeta, fmt.Sprintf("%d", rmd.GetMRInternalID()), rmd.GetMRProjectNameWithNamespace())
+		if err != nil {
+			log.Debug().AnErr("err", err).Msg("add workspace metadata")
+			span.RecordError(err)
+		}
+		return
+	}
+	if wsMeta.CountExecutedWorkspaces > wsMeta.CountTotalWorkspaces {
+		log.Debug().Msg("count executed workspaces is greater than total workspaces")
+		span.RecordError(errors.New("count executed workspaces is greater than total workspaces"))
+		return
+	}
+
+	err = p.client.MergeMR(ctx, rmd.GetMRInternalID(), rmd.GetMRProjectNameWithNamespace())
 	if err != nil {
 		span.RecordError(err)
 	}
