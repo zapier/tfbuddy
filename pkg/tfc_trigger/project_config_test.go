@@ -138,6 +138,46 @@ func TestProjectConfig_triggeredWorkspaces(t *testing.T) {
 				testLoadConfig(t, tfbuddyYamlSharedTriggerDirMultipleWorkspaces).Workspaces[1],
 			},
 		},
+		{
+			name:    "subdir-and-dir-same-name",
+			cfgYaml: tfbuddyYamlSubdirAndDirSameName,
+			args: args{
+				modifiedFiles: []string{
+					"workspaces/main.tf",
+				},
+			},
+			want: []*TFCWorkspace{
+				testLoadConfig(t, tfbuddyYamlSubdirAndDirSameName).Workspaces[1],
+			},
+		},
+		{
+			name:    "different-dir-same-subdir-name",
+			cfgYaml: tfbuddyYamlDifferentDirSameSubdir,
+			args: args{
+				modifiedFiles: []string{
+					"gcp/workspaces/main.tf",
+				},
+			},
+			want: []*TFCWorkspace{
+				testLoadConfig(t, tfbuddyYamlDifferentDirSameSubdir).Workspaces[1],
+			},
+		},
+		{
+			name:    "multiple-dir-and-subdir",
+			cfgYaml: tfbuddyYamlMultipleDirAndSubdir,
+			args: args{
+				modifiedFiles: []string{
+					"aws/workspaces/main.tf",
+					"gcp/workspaces/main.tf",
+					"workspaces/main.tf",
+				},
+			},
+			want: []*TFCWorkspace{
+				testLoadConfig(t, tfbuddyYamlMultipleDirAndSubdir).Workspaces[0],
+				testLoadConfig(t, tfbuddyYamlMultipleDirAndSubdir).Workspaces[1],
+				testLoadConfig(t, tfbuddyYamlMultipleDirAndSubdir).Workspaces[2],
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -453,5 +493,44 @@ workspaces:
     dir: terraform/prod
     triggerDirs:
     - modules/database
+
+`
+
+const tfbuddyYamlSubdirAndDirSameName = `
+---
+workspaces:
+  - name: aws-workspaces
+    organization: foo-corp
+    dir: aws/workspaces
+  - name: workspaces
+    organization: foo-corp
+    dir: workspaces
+
+`
+
+const tfbuddyYamlDifferentDirSameSubdir = `
+---
+workspaces:
+  - name: aws-workspaces
+    organization: foo-corp
+    dir: aws/workspaces
+  - name: gcp-workspaces
+    organization: foo-corp
+    dir: gcp/workspaces
+
+`
+
+const tfbuddyYamlMultipleDirAndSubdir = `
+---
+workspaces:
+  - name: aws-workspaces
+    organization: foo-corp
+    dir: aws/workspaces
+  - name: gcp-workspaces
+    organization: foo-corp
+    dir: gcp/workspaces
+ - name: workspaces
+    organization: foo-corp
+    dir: workspaces
 
 `
