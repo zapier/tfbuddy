@@ -529,7 +529,7 @@ workspaces:
   - name: gcp-workspaces
     organization: foo-corp
     dir: gcp/workspaces
- - name: workspaces
+  - name: workspaces
     organization: foo-corp
     dir: workspaces
 
