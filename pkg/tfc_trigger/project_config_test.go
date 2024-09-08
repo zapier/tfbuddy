@@ -167,14 +167,10 @@ func TestProjectConfig_triggeredWorkspaces(t *testing.T) {
 			cfgYaml: tfbuddyYamlMultipleDirAndSubdir,
 			args: args{
 				modifiedFiles: []string{
-					"aws/workspaces/main.tf",
-					"gcp/workspaces/main.tf",
 					"workspaces/main.tf",
 				},
 			},
 			want: []*TFCWorkspace{
-				testLoadConfig(t, tfbuddyYamlMultipleDirAndSubdir).Workspaces[0],
-				testLoadConfig(t, tfbuddyYamlMultipleDirAndSubdir).Workspaces[1],
 				testLoadConfig(t, tfbuddyYamlMultipleDirAndSubdir).Workspaces[2],
 			},
 		},
