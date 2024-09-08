@@ -104,6 +104,139 @@ func TestProjectConfig_workspaceForDir(t *testing.T) {
 	}
 }
 
+func TestProjectConfig_workspacesForTriggerDir(t *testing.T) {
+	type fields struct {
+		Workspaces []*TFCWorkspace
+	}
+	type args struct {
+		dir string
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		args   args
+		want   []*TFCWorkspace
+	}{
+		{
+			name: "trigger-dir-match",
+			fields: fields{
+				Workspaces: []*TFCWorkspace{
+					{
+						Name:         "service-a",
+						Organization: "foo-corp",
+						Dir:          "a/",
+						TriggerDirs:  []string{"modules/"},
+					},
+				},
+			},
+			args: args{
+				dir: "modules/",
+			},
+			want: []*TFCWorkspace{
+				{
+					Name:         "service-a",
+					Organization: "foo-corp",
+					Dir:          "a/",
+					TriggerDirs:  []string{"modules/"},
+				},
+			},
+		},
+		{
+			name: "trigger-dir-multiple-workspace-match",
+			fields: fields{
+				Workspaces: []*TFCWorkspace{
+					{
+						Name:         "service-a",
+						Organization: "foo-corp",
+						Dir:          "a/",
+						TriggerDirs:  []string{"modules/"},
+					},
+					{
+						Name:         "service-b",
+						Organization: "foo-corp",
+						Dir:          "b/",
+						TriggerDirs:  []string{"modules/"},
+					},
+				},
+			},
+			args: args{
+				dir: "modules/",
+			},
+			want: []*TFCWorkspace{
+				{
+					Name:         "service-a",
+					Organization: "foo-corp",
+					Dir:          "a/",
+					TriggerDirs:  []string{"modules/"},
+				},
+				{
+					Name:         "service-b",
+					Organization: "foo-corp",
+					Dir:          "b/",
+					TriggerDirs:  []string{"modules/"},
+				},
+			},
+		},
+		{
+			name: "multiple-trigger-dir-workspace-match",
+			fields: fields{
+				Workspaces: []*TFCWorkspace{
+					{
+						Name:         "service-a",
+						Organization: "foo-corp",
+						Dir:          "a/",
+						TriggerDirs: []string{
+							"modules/a",
+							"modules/c",
+						},
+					},
+				},
+			},
+			args: args{
+				dir: "modules/c",
+			},
+			want: []*TFCWorkspace{
+				{
+					Name:         "service-a",
+					Organization: "foo-corp",
+					Dir:          "a/",
+					TriggerDirs: []string{"" +
+						"modules/a",
+						"modules/c",
+					},
+				},
+			},
+		},
+		{
+			name: "trigger-no-match",
+			fields: fields{
+				Workspaces: []*TFCWorkspace{
+					{
+						Name:         "service-a",
+						Organization: "foo-corp",
+						Dir:          "a/",
+						TriggerDirs:  []string{"modules/"},
+					},
+				},
+			},
+			args: args{
+				dir: "docs/",
+			},
+			want: make([]*TFCWorkspace, 0),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &ProjectConfig{
+				Workspaces: tt.fields.Workspaces,
+			}
+			if got := cfg.workspacesForTriggerDir(tt.args.dir); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("workspacesForTriggerDir() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestProjectConfig_triggeredWorkspaces(t *testing.T) {
 
 	type args struct {
