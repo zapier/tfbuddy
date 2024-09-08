@@ -11,6 +11,99 @@ import (
 	"github.com/kr/pretty"
 )
 
+func TestProjectConfig_workspaceForDir(t *testing.T) {
+	type fields struct {
+		Workspaces []*TFCWorkspace
+	}
+	type args struct {
+		dir string
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		args   args
+		want   *TFCWorkspace
+	}{
+		{
+			name: "workspace-for-dir-matching",
+			fields: fields{
+				Workspaces: []*TFCWorkspace{
+					{
+						Name:         "service-tfbuddy-dev",
+						Organization: "foo-corp",
+						Dir:          "terraform/dev/",
+						Mode:         "apply-before-merge",
+					},
+				},
+			},
+			args: args{
+				dir: "terraform/dev/",
+			},
+			want: &TFCWorkspace{
+				Name:         "service-tfbuddy-dev",
+				Organization: "foo-corp",
+				Dir:          "terraform/dev/",
+				Mode:         "apply-before-merge",
+			},
+		},
+		{
+			name: "workspace-for-non-matching-dir",
+			fields: fields{
+				Workspaces: []*TFCWorkspace{
+					{
+						Name:         "service-tfbuddy-dev",
+						Organization: "foo-corp",
+						Dir:          "terraform/dev/",
+						Mode:         "apply-before-merge",
+					},
+				},
+			},
+			args: args{
+				dir: "extra/workspaces/",
+			},
+			want: nil,
+		},
+		{
+			name: "different-dir-same-subdir-name",
+			fields: fields{
+				Workspaces: []*TFCWorkspace{
+					{
+						Name:         "a-compute",
+						Organization: "foo-corp",
+						Dir:          "a/compute/",
+						Mode:         "apply-before-merge",
+					},
+					{
+						Name:         "b-compute",
+						Organization: "foo-corp",
+						Dir:          "b/compute/",
+						Mode:         "apply-before-merge",
+					},
+				},
+			},
+			args: args{
+				dir: "b/compute/",
+			},
+			want: &TFCWorkspace{
+				Name:         "b-compute",
+				Organization: "foo-corp",
+				Dir:          "b/compute/",
+				Mode:         "apply-before-merge",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &ProjectConfig{
+				Workspaces: tt.fields.Workspaces,
+			}
+			if got := cfg.workspaceForDir(tt.args.dir); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("ProjectConfig.workspaceForDir() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestProjectConfig_triggeredWorkspaces(t *testing.T) {
 
 	type args struct {
