@@ -11,6 +11,232 @@ import (
 	"github.com/kr/pretty"
 )
 
+func TestProjectConfig_workspaceForDir(t *testing.T) {
+	type fields struct {
+		Workspaces []*TFCWorkspace
+	}
+	type args struct {
+		dir string
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		args   args
+		want   *TFCWorkspace
+	}{
+		{
+			name: "workspace-for-dir-matching",
+			fields: fields{
+				Workspaces: []*TFCWorkspace{
+					{
+						Name:         "service-tfbuddy-dev",
+						Organization: "foo-corp",
+						Dir:          "terraform/dev/",
+						Mode:         "apply-before-merge",
+					},
+				},
+			},
+			args: args{
+				dir: "terraform/dev/",
+			},
+			want: &TFCWorkspace{
+				Name:         "service-tfbuddy-dev",
+				Organization: "foo-corp",
+				Dir:          "terraform/dev/",
+				Mode:         "apply-before-merge",
+			},
+		},
+		{
+			name: "workspace-for-non-matching-dir",
+			fields: fields{
+				Workspaces: []*TFCWorkspace{
+					{
+						Name:         "service-tfbuddy-dev",
+						Organization: "foo-corp",
+						Dir:          "terraform/dev/",
+						Mode:         "apply-before-merge",
+					},
+				},
+			},
+			args: args{
+				dir: "extra/workspaces/",
+			},
+			want: nil,
+		},
+		{
+			name: "different-dir-same-subdir-name",
+			fields: fields{
+				Workspaces: []*TFCWorkspace{
+					{
+						Name:         "a-compute",
+						Organization: "foo-corp",
+						Dir:          "a/compute/",
+						Mode:         "apply-before-merge",
+					},
+					{
+						Name:         "b-compute",
+						Organization: "foo-corp",
+						Dir:          "b/compute/",
+						Mode:         "apply-before-merge",
+					},
+				},
+			},
+			args: args{
+				dir: "b/compute/",
+			},
+			want: &TFCWorkspace{
+				Name:         "b-compute",
+				Organization: "foo-corp",
+				Dir:          "b/compute/",
+				Mode:         "apply-before-merge",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &ProjectConfig{
+				Workspaces: tt.fields.Workspaces,
+			}
+			if got := cfg.workspaceForDir(tt.args.dir); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("ProjectConfig.workspaceForDir() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestProjectConfig_workspacesForTriggerDir(t *testing.T) {
+	type fields struct {
+		Workspaces []*TFCWorkspace
+	}
+	type args struct {
+		dir string
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		args   args
+		want   []*TFCWorkspace
+	}{
+		{
+			name: "trigger-dir-match",
+			fields: fields{
+				Workspaces: []*TFCWorkspace{
+					{
+						Name:         "service-a",
+						Organization: "foo-corp",
+						Dir:          "a/",
+						TriggerDirs:  []string{"modules/"},
+					},
+				},
+			},
+			args: args{
+				dir: "modules/",
+			},
+			want: []*TFCWorkspace{
+				{
+					Name:         "service-a",
+					Organization: "foo-corp",
+					Dir:          "a/",
+					TriggerDirs:  []string{"modules/"},
+				},
+			},
+		},
+		{
+			name: "trigger-dir-multiple-workspace-match",
+			fields: fields{
+				Workspaces: []*TFCWorkspace{
+					{
+						Name:         "service-a",
+						Organization: "foo-corp",
+						Dir:          "a/",
+						TriggerDirs:  []string{"modules/"},
+					},
+					{
+						Name:         "service-b",
+						Organization: "foo-corp",
+						Dir:          "b/",
+						TriggerDirs:  []string{"modules/"},
+					},
+				},
+			},
+			args: args{
+				dir: "modules/",
+			},
+			want: []*TFCWorkspace{
+				{
+					Name:         "service-a",
+					Organization: "foo-corp",
+					Dir:          "a/",
+					TriggerDirs:  []string{"modules/"},
+				},
+				{
+					Name:         "service-b",
+					Organization: "foo-corp",
+					Dir:          "b/",
+					TriggerDirs:  []string{"modules/"},
+				},
+			},
+		},
+		{
+			name: "multiple-trigger-dir-workspace-match",
+			fields: fields{
+				Workspaces: []*TFCWorkspace{
+					{
+						Name:         "service-a",
+						Organization: "foo-corp",
+						Dir:          "a/",
+						TriggerDirs: []string{
+							"modules/a",
+							"modules/c",
+						},
+					},
+				},
+			},
+			args: args{
+				dir: "modules/c",
+			},
+			want: []*TFCWorkspace{
+				{
+					Name:         "service-a",
+					Organization: "foo-corp",
+					Dir:          "a/",
+					TriggerDirs: []string{"" +
+						"modules/a",
+						"modules/c",
+					},
+				},
+			},
+		},
+		{
+			name: "trigger-no-match",
+			fields: fields{
+				Workspaces: []*TFCWorkspace{
+					{
+						Name:         "service-a",
+						Organization: "foo-corp",
+						Dir:          "a/",
+						TriggerDirs:  []string{"modules/"},
+					},
+				},
+			},
+			args: args{
+				dir: "docs/",
+			},
+			want: make([]*TFCWorkspace, 0),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &ProjectConfig{
+				Workspaces: tt.fields.Workspaces,
+			}
+			if got := cfg.workspacesForTriggerDir(tt.args.dir); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("workspacesForTriggerDir() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestProjectConfig_triggeredWorkspaces(t *testing.T) {
 
 	type args struct {
@@ -136,6 +362,42 @@ func TestProjectConfig_triggeredWorkspaces(t *testing.T) {
 			want: []*TFCWorkspace{
 				testLoadConfig(t, tfbuddyYamlSharedTriggerDirMultipleWorkspaces).Workspaces[0],
 				testLoadConfig(t, tfbuddyYamlSharedTriggerDirMultipleWorkspaces).Workspaces[1],
+			},
+		},
+		{
+			name:    "subdir-and-dir-same-name",
+			cfgYaml: tfbuddyYamlSubdirAndDirSameName,
+			args: args{
+				modifiedFiles: []string{
+					"workspaces/main.tf",
+				},
+			},
+			want: []*TFCWorkspace{
+				testLoadConfig(t, tfbuddyYamlSubdirAndDirSameName).Workspaces[1],
+			},
+		},
+		{
+			name:    "different-dir-same-subdir-name",
+			cfgYaml: tfbuddyYamlDifferentDirSameSubdir,
+			args: args{
+				modifiedFiles: []string{
+					"gcp/workspaces/main.tf",
+				},
+			},
+			want: []*TFCWorkspace{
+				testLoadConfig(t, tfbuddyYamlDifferentDirSameSubdir).Workspaces[1],
+			},
+		},
+		{
+			name:    "multiple-dir-and-subdir",
+			cfgYaml: tfbuddyYamlMultipleDirAndSubdir,
+			args: args{
+				modifiedFiles: []string{
+					"workspaces/main.tf",
+				},
+			},
+			want: []*TFCWorkspace{
+				testLoadConfig(t, tfbuddyYamlMultipleDirAndSubdir).Workspaces[2],
 			},
 		},
 	}
@@ -453,5 +715,44 @@ workspaces:
     dir: terraform/prod
     triggerDirs:
     - modules/database
+
+`
+
+const tfbuddyYamlSubdirAndDirSameName = `
+---
+workspaces:
+  - name: aws-workspaces
+    organization: foo-corp
+    dir: aws/workspaces
+  - name: workspaces
+    organization: foo-corp
+    dir: workspaces
+
+`
+
+const tfbuddyYamlDifferentDirSameSubdir = `
+---
+workspaces:
+  - name: aws-workspaces
+    organization: foo-corp
+    dir: aws/workspaces
+  - name: gcp-workspaces
+    organization: foo-corp
+    dir: gcp/workspaces
+
+`
+
+const tfbuddyYamlMultipleDirAndSubdir = `
+---
+workspaces:
+  - name: aws-workspaces
+    organization: foo-corp
+    dir: aws/workspaces
+  - name: gcp-workspaces
+    organization: foo-corp
+    dir: gcp/workspaces
+  - name: workspaces
+    organization: foo-corp
+    dir: workspaces
 
 `
