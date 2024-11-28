@@ -43,10 +43,6 @@ func (cfg *ProjectConfig) workspaceForDir(dir string) *TFCWorkspace {
 
 		if (strings.HasSuffix(dir+"/", wsDir) || strings.HasSuffix(dir, wsDir)) {
 			wsDirDepth := len(strings.Split(wsDir, "/"))
-			fmt.Println(dir)
-			fmt.Println(wsDir)
-			fmt.Println(strings.Split(wsDir, "/"))
-			fmt.Println(wsDirDepth)
 			if wsDirDepth > longestMatchDepth {
 				longestMatch = ws
 				longestMatchDepth = wsDirDepth
