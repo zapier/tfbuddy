@@ -365,15 +365,39 @@ func TestProjectConfig_triggeredWorkspaces(t *testing.T) {
 			},
 		},
 		{
-			name:    "subdir-and-dir-same-name--dir-change",
-			cfgYaml: tfbuddyYamlSubdirAndDirSameName,
+			name:    "dir-and-subdir-same-name--dir-change",
+			cfgYaml: tfbuddyYamlDirAndSubdirSameName,
 			args: args{
 				modifiedFiles: []string{
 					"workspaces/main.tf",
 				},
 			},
 			want: []*TFCWorkspace{
-				testLoadConfig(t, tfbuddyYamlSubdirAndDirSameName).Workspaces[0], // "workspaces" workspace
+				testLoadConfig(t, tfbuddyYamlDirAndSubdirSameName).Workspaces[0], // "workspaces" workspace
+			},
+		},
+		{
+			name:    "dir-and-subdir-same-name--subdir-change",
+			cfgYaml: tfbuddyYamlDirAndSubdirSameName,
+			args: args{
+				modifiedFiles: []string{
+					"aws/workspaces/main.tf",
+				},
+			},
+			want: []*TFCWorkspace{
+				testLoadConfig(t, tfbuddyYamlDirAndSubdirSameName).Workspaces[1], // "aws/workspaces" workspace
+			},
+		},
+		{
+			name:    "subdir-and-dir-same-name--dir-change",
+			cfgYaml: tfbuddyYamlSubdirAndDirSameName,
+			args: args{
+				modifiedFiles: []string{
+					"test2/test3/main.tf",
+				},
+			},
+			want: []*TFCWorkspace{
+				testLoadConfig(t, tfbuddyYamlSubdirAndDirSameName).Workspaces[1], // "test2/test3" workspace
 			},
 		},
 		{
@@ -381,11 +405,11 @@ func TestProjectConfig_triggeredWorkspaces(t *testing.T) {
 			cfgYaml: tfbuddyYamlSubdirAndDirSameName,
 			args: args{
 				modifiedFiles: []string{
-					"aws/workspaces/main.tf",
+					"test1/test2/test3/main.tf",
 				},
 			},
 			want: []*TFCWorkspace{
-				testLoadConfig(t, tfbuddyYamlSubdirAndDirSameName).Workspaces[1], // "aws/workspaces" workspace
+				testLoadConfig(t, tfbuddyYamlSubdirAndDirSameName).Workspaces[0], // "test1/test2/test3" workspace
 			},
 		},
 		{
@@ -699,7 +723,7 @@ workspaces:
 
 `
 
-const tfbuddyYamlSubdirAndDirSameName = `
+const tfbuddyYamlDirAndSubdirSameName = `
 ---
 workspaces:
   - name: workspaces
@@ -708,6 +732,18 @@ workspaces:
   - name: aws-workspaces
     organization: foo-corp
     dir: aws/workspaces
+
+`
+
+const tfbuddyYamlSubdirAndDirSameName = `
+---
+workspaces:
+  - name: subdir
+    organization: foo-corp
+    dir: test1/test2/test3
+  - name: dir
+    organization: foo-corp
+    dir: test2/test3
 
 `
 
