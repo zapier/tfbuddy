@@ -365,7 +365,7 @@ func TestProjectConfig_triggeredWorkspaces(t *testing.T) {
 			},
 		},
 		{
-			name:    "subdir-and-dir-same-name",
+			name:    "subdir-and-dir-same-name--dir-change",
 			cfgYaml: tfbuddyYamlSubdirAndDirSameName,
 			args: args{
 				modifiedFiles: []string{
@@ -373,7 +373,19 @@ func TestProjectConfig_triggeredWorkspaces(t *testing.T) {
 				},
 			},
 			want: []*TFCWorkspace{
-				testLoadConfig(t, tfbuddyYamlSubdirAndDirSameName).Workspaces[1],
+				testLoadConfig(t, tfbuddyYamlSubdirAndDirSameName).Workspaces[0], // "workspaces" workspace
+			},
+		},
+		{
+			name:    "subdir-and-dir-same-name--subdir-change",
+			cfgYaml: tfbuddyYamlSubdirAndDirSameName,
+			args: args{
+				modifiedFiles: []string{
+					"aws/workspaces/main.tf",
+				},
+			},
+			want: []*TFCWorkspace{
+				testLoadConfig(t, tfbuddyYamlSubdirAndDirSameName).Workspaces[1], // "aws/workspaces" workspace
 			},
 		},
 		{
@@ -690,12 +702,12 @@ workspaces:
 const tfbuddyYamlSubdirAndDirSameName = `
 ---
 workspaces:
-  - name: aws-workspaces
-    organization: foo-corp
-    dir: aws/workspaces
   - name: workspaces
     organization: foo-corp
     dir: workspaces
+  - name: aws-workspaces
+    organization: foo-corp
+    dir: aws/workspaces
 
 `
 
