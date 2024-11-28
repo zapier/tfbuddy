@@ -25,22 +25,28 @@ type ProjectConfig struct {
 }
 
 func (cfg *ProjectConfig) workspaceForDir(dir string) *TFCWorkspace {
+	var longestMatch *TFCWorkspace
+	var longestMatchDepth int
+
 	for _, ws := range cfg.Workspaces {
 		wsDir := ws.Dir
 		if !strings.HasSuffix(wsDir, "/") {
 			wsDir += "/"
 		}
 
-		if strings.HasSuffix(dir, wsDir) {
-			return ws
-		} else if wsDir != "/" && strings.HasSuffix(dir+"/", wsDir) {
-			return ws
-		} else if dir == "." && wsDir == "/" {
+		if dir == "." && wsDir == "/" {
 			return ws
 		}
 
+		if strings.HasSuffix(dir+"/", wsDir) {
+			wsDirDepth := len(strings.Split(wsDir, "/"))
+			if wsDirDepth > longestMatchDepth {
+				longestMatch = ws
+				longestMatchDepth = wsDirDepth
+			}
+		}
 	}
-	return nil
+	return longestMatch
 }
 
 func (cfg *ProjectConfig) workspacesForTriggerDir(dir string) []*TFCWorkspace {
