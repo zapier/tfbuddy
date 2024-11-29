@@ -24,23 +24,38 @@ type ProjectConfig struct {
 	Workspaces []*TFCWorkspace `yaml:"workspaces"`
 }
 
+// Finds the workspace with the deepest matching directory suffix.
+// For example, given workspaces with config "terraform/dev/" and a dir of "dev/",
+// and a filepath directory of "filesystem/terraform/dev/" - "dev" and "terraform/dev/" are both a suffix 
+// we would return the ws for "terraform/dev/"as it is the deepest match.
+// Special case: if a workspace has config "/" and the input dir is ".", that workspace is returned.
+// If no workspace matches, returns nil.
 func (cfg *ProjectConfig) workspaceForDir(dir string) *TFCWorkspace {
+	var longestMatch *TFCWorkspace
+	var longestMatchDepth int
+
 	for _, ws := range cfg.Workspaces {
 		wsDir := ws.Dir
 		if !strings.HasSuffix(wsDir, "/") {
 			wsDir += "/"
 		}
 
-		if strings.HasSuffix(dir, wsDir) {
-			return ws
-		} else if wsDir != "/" && strings.HasSuffix(dir+"/", wsDir) {
-			return ws
-		} else if dir == "." && wsDir == "/" {
-			return ws
+		if wsDir == "/" {
+			if dir == "." {
+				return ws
+			}
+			continue
 		}
 
+		if (strings.HasSuffix(dir+"/", wsDir) || strings.HasSuffix(dir, wsDir)) {
+			wsDirDepth := len(strings.Split(wsDir, "/"))
+			if wsDirDepth > longestMatchDepth {
+				longestMatch = ws
+				longestMatchDepth = wsDirDepth
+			}
+		}
 	}
-	return nil
+	return longestMatch
 }
 
 func (cfg *ProjectConfig) workspacesForTriggerDir(dir string) []*TFCWorkspace {
