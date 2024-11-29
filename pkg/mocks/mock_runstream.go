@@ -54,6 +54,20 @@ func (mr *MockStreamClientMockRecorder) AddRunMeta(rmd any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddRunMeta", reflect.TypeOf((*MockStreamClient)(nil).AddRunMeta), rmd)
 }
 
+// AddWorkspaceMeta mocks base method.
+func (m *MockStreamClient) AddWorkspaceMeta(rmd runstream.WorkspaceMetadata, mrID, workspace string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddWorkspaceMeta", rmd, mrID, workspace)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AddWorkspaceMeta indicates an expected call of AddWorkspaceMeta.
+func (mr *MockStreamClientMockRecorder) AddWorkspaceMeta(rmd, mrID, workspace any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddWorkspaceMeta", reflect.TypeOf((*MockStreamClient)(nil).AddWorkspaceMeta), rmd, mrID, workspace)
+}
+
 // GetRunMeta mocks base method.
 func (m *MockStreamClient) GetRunMeta(runID string) (runstream.RunMetadata, error) {
 	m.ctrl.T.Helper()
@@ -67,6 +81,21 @@ func (m *MockStreamClient) GetRunMeta(runID string) (runstream.RunMetadata, erro
 func (mr *MockStreamClientMockRecorder) GetRunMeta(runID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRunMeta", reflect.TypeOf((*MockStreamClient)(nil).GetRunMeta), runID)
+}
+
+// GetWorkspaceMeta mocks base method.
+func (m *MockStreamClient) GetWorkspaceMeta(mrID, workspace string) (*runstream.TFCWorkspacesMetadata, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetWorkspaceMeta", mrID, workspace)
+	ret0, _ := ret[0].(*runstream.TFCWorkspacesMetadata)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetWorkspaceMeta indicates an expected call of GetWorkspaceMeta.
+func (mr *MockStreamClientMockRecorder) GetWorkspaceMeta(mrID, workspace any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetWorkspaceMeta", reflect.TypeOf((*MockStreamClient)(nil).GetWorkspaceMeta), mrID, workspace)
 }
 
 // HealthCheck mocks base method.
