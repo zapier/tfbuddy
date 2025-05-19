@@ -48,7 +48,7 @@ func (s *Stream) HealthCheck() error {
 					Uint64("msgs", s.State.Msgs).
 					Str("cluster_leader", s.Cluster.Leader).
 					Msg("Healthcheck status.")
-				return fmt.Errorf(s.Config.Name + " stream has no consumers")
+				return fmt.Errorf("%s stream has no consumers", s.Config.Name)
 			}
 		default:
 			log.Trace().Str("stream", s.Config.Name).

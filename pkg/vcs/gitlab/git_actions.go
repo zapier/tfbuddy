@@ -10,9 +10,9 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/sideband"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/rs/zerolog/log"
-	"github.com/xanzy/go-gitlab"
 	zgit "github.com/zapier/tfbuddy/pkg/git"
 	"github.com/zapier/tfbuddy/pkg/vcs"
+	"gitlab.com/gitlab-org/api/client-go"
 	"go.opentelemetry.io/otel"
 	"gopkg.in/errgo.v2/fmt/errors"
 )
@@ -25,9 +25,9 @@ func (c *GitlabClient) CloneMergeRequest(ctx context.Context, project string, mr
 	defer span.End()
 
 	proj, _, err := c.client.Projects.GetProject(project, &gitlab.GetProjectOptions{
-		License:              gitlab.Bool(false),
-		Statistics:           gitlab.Bool(false),
-		WithCustomAttributes: gitlab.Bool(false),
+		License:              ptr(false),
+		Statistics:           ptr(false),
+		WithCustomAttributes: ptr(false),
 	})
 	if err != nil {
 		err = errors.Newf("could not clone MR - unable to read project details from Gitlab API: %v", err)

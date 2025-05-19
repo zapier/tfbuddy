@@ -15,7 +15,7 @@ import (
 	"github.com/zapier/tfbuddy/pkg/vcs"
 	"go.opentelemetry.io/otel"
 
-	gogitlab "github.com/xanzy/go-gitlab"
+	gogitlab "gitlab.com/gitlab-org/api/client-go"
 )
 
 var glExternalStageName = "external"
@@ -64,7 +64,7 @@ func (c *GitlabClient) ResolveMergeRequestDiscussion(ctx context.Context, projec
 	defer span.End()
 
 	return backoff.Retry(func() error {
-		_, _, err := c.client.Discussions.ResolveMergeRequestDiscussion(projectWithNamespace, mrIID, discussionID, &gogitlab.ResolveMergeRequestDiscussionOptions{Resolved: gogitlab.Bool(true)})
+		_, _, err := c.client.Discussions.ResolveMergeRequestDiscussion(projectWithNamespace, mrIID, discussionID, &gogitlab.ResolveMergeRequestDiscussionOptions{Resolved: ptr(true)})
 		return utils.CreatePermanentError(err)
 	}, createBackOffWithRetries())
 }
@@ -205,7 +205,7 @@ func (c *GitlabClient) CreateMergeRequestComment(ctx context.Context, mrIID int,
 	if comment != "" {
 		return backoff.Retry(func() error {
 			log.Debug().Str("projectID", projectID).Int("mrIID", mrIID).Msg("posting Gitlab comment")
-			_, _, err := c.client.Notes.CreateMergeRequestNote(projectID, mrIID, &gogitlab.CreateMergeRequestNoteOptions{Body: gogitlab.String(comment)})
+			_, _, err := c.client.Notes.CreateMergeRequestNote(projectID, mrIID, &gogitlab.CreateMergeRequestNoteOptions{Body: &comment})
 			return utils.CreatePermanentError(err)
 		}, createBackOffWithRetries())
 	}
@@ -246,7 +246,7 @@ func (c *GitlabClient) CreateMergeRequestDiscussion(ctx context.Context, mrIID i
 	return backoff.RetryWithData(func() (vcs.MRDiscussionNotes, error) {
 		log.Debug().Str("project", project).Int("mrIID", mrIID).Msg("create Gitlab discussion")
 		dis, _, err := c.client.Discussions.CreateMergeRequestDiscussion(project, mrIID, &gogitlab.CreateMergeRequestDiscussionOptions{
-			Body: gogitlab.String(comment),
+			Body: &comment,
 		})
 		return &GitlabMRDiscussion{dis}, utils.CreatePermanentError(err)
 	}, createBackOffWithRetries())
@@ -267,7 +267,7 @@ func (c *GitlabClient) UpdateMergeRequestDiscussionNote(ctx context.Context, mrI
 			discussionID,
 			noteID,
 			&gogitlab.UpdateMergeRequestDiscussionNoteOptions{
-				Body: gogitlab.String(comment),
+				Body: &comment,
 			})
 		return &GitlabMRNote{note}, utils.CreatePermanentError(err)
 	}, createBackOffWithRetries())
@@ -281,7 +281,7 @@ func (c *GitlabClient) AddMergeRequestDiscussionReply(ctx context.Context, mrIID
 	if comment != "" {
 		return backoff.RetryWithData(func() (vcs.MRNote, error) {
 			log.Debug().Str("project", project).Int("mrIID", mrIID).Msg("posting Gitlab discussion reply")
-			note, _, err := c.client.Discussions.AddMergeRequestDiscussionNote(project, mrIID, discussionID, &gogitlab.AddMergeRequestDiscussionNoteOptions{Body: gogitlab.String(comment)})
+			note, _, err := c.client.Discussions.AddMergeRequestDiscussionNote(project, mrIID, discussionID, &gogitlab.AddMergeRequestDiscussionNoteOptions{Body: &comment})
 
 			return &GitlabMRNote{note}, utils.CreatePermanentError(err)
 		}, createBackOffWithRetries())
@@ -296,7 +296,7 @@ func (c *GitlabClient) ResolveMergeRequestDiscussionReply(ctx context.Context, m
 
 	return backoff.Retry(func() error {
 		log.Debug().Str("project", project).Int("mrIID", mrIID).Msg("posting Gitlab discussion reply")
-		_, _, err := c.client.Discussions.ResolveMergeRequestDiscussion(project, mrIID, discussionID, &gogitlab.ResolveMergeRequestDiscussionOptions{Resolved: gogitlab.Bool(resolved)})
+		_, _, err := c.client.Discussions.ResolveMergeRequestDiscussion(project, mrIID, discussionID, &gogitlab.ResolveMergeRequestDiscussionOptions{Resolved: &resolved})
 		return utils.CreatePermanentError(err)
 	}, createBackOffWithRetries())
 }
@@ -310,7 +310,7 @@ func (g *GitlabClient) GetRepoFile(ctx context.Context, project, file, ref strin
 		ref = "HEAD"
 	}
 	return backoff.RetryWithData(func() ([]byte, error) {
-		b, _, err := g.client.RepositoryFiles.GetRawFile(project, file, &gogitlab.GetRawFileOptions{Ref: gogitlab.String(ref)})
+		b, _, err := g.client.RepositoryFiles.GetRawFile(project, file, &gogitlab.GetRawFileOptions{Ref: &ref})
 		return b, utils.CreatePermanentError(err)
 	}, createBackOffWithRetries())
 }
@@ -325,24 +325,22 @@ func (g *GitlabClient) GetMergeRequestModifiedFiles(ctx context.Context, mrIID i
 	return backoff.RetryWithData(func() ([]string, error) {
 		var files []string
 		nextPage := 1
-		// Constructing the api url by hand so we can do pagination.
-		apiURL := fmt.Sprintf("projects/%s/merge_requests/%d/changes", url.QueryEscape(projectID), mrIID)
+
 		for {
-			opts := gogitlab.ListOptions{
-				Page:    nextPage,
-				PerPage: maxPerPage,
+			opts := gogitlab.ListMergeRequestDiffsOptions{
+				ListOptions: gogitlab.ListOptions{
+					PerPage: maxPerPage,
+					Page:    nextPage,
+				},
 			}
-			req, err := g.client.NewRequest("GET", apiURL, opts, nil)
-			if err != nil {
-				return nil, utils.CreatePermanentError(err)
-			}
-			mr := new(gogitlab.MergeRequest)
-			resp, err := g.client.Do(req, mr)
+			diffs, resp, err := g.client.MergeRequests.ListMergeRequestDiffs(
+				url.QueryEscape(projectID), mrIID, &opts,
+			)
 			if err != nil {
 				return nil, utils.CreatePermanentError(err)
 			}
 
-			for _, f := range mr.Changes {
+			for _, f := range diffs {
 				files = append(files, f.NewPath)
 
 				// If the file was renamed, we'll want to run plan in the directory
@@ -405,9 +403,9 @@ func (g *GitlabClient) GetMergeRequest(ctx context.Context, mrIID int, project s
 			project,
 			mrIID,
 			&gogitlab.GetMergeRequestsOptions{
-				RenderHTML:                  gogitlab.Bool(false),
-				IncludeDivergedCommitsCount: gogitlab.Bool(true),
-				IncludeRebaseInProgress:     gogitlab.Bool(true),
+				RenderHTML:                  ptr(false),
+				IncludeDivergedCommitsCount: ptr(true),
+				IncludeRebaseInProgress:     ptr(true),
 			},
 		)
 		if err != nil {
@@ -456,7 +454,7 @@ func (g *GitlabClient) GetPipelinesForCommit(ctx context.Context, project, commi
 
 	return backoff.RetryWithData(func() ([]vcs.ProjectPipeline, error) {
 		pipelines, _, err := g.client.Pipelines.ListProjectPipelines(project, &gogitlab.ListProjectPipelinesOptions{
-			SHA: gogitlab.String(commitSHA),
+			SHA: &commitSHA,
 		})
 		if err != nil {
 			return nil, utils.CreatePermanentError(err)
@@ -516,4 +514,8 @@ func (gE *GitlabMergeCommentEvent) GetLastCommit() vcs.Commit {
 }
 func (gE *GitlabMergeCommentEvent) GetAttributes() vcs.MRAttributes {
 	return gE
+}
+
+func ptr[T any](t T) *T {
+	return &t
 }

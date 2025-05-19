@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	gogithub "github.com/google/go-github/v49/github"
+	gogithub "github.com/google/go-github/v69/github"
 	"github.com/rs/zerolog/log"
 	"github.com/zapier/tfbuddy/pkg/allow_list"
 	"github.com/zapier/tfbuddy/pkg/comment_actions"

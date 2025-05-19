@@ -1,4 +1,4 @@
-FROM golang:1.19.8 as localdev
+FROM golang:1.24.3 as localdev
 
 RUN apt update && apt install -y ca-certificates
 RUN go install github.com/go-delve/delve/cmd/dlv@latest

@@ -5,11 +5,11 @@ import (
 	"fmt"
 
 	"github.com/rs/zerolog/log"
-	"github.com/xanzy/go-gitlab"
 	"github.com/zapier/tfbuddy/pkg/allow_list"
 	"github.com/zapier/tfbuddy/pkg/comment_actions"
 	"github.com/zapier/tfbuddy/pkg/tfc_trigger"
 	"github.com/zapier/tfbuddy/pkg/vcs"
+	"gitlab.com/gitlab-org/api/client-go"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 )

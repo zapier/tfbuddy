@@ -15,7 +15,7 @@ import (
 	"github.com/labstack/echo/v4"
 	nats "github.com/nats-io/nats.go"
 	"github.com/rs/zerolog/log"
-	gogitlab "github.com/xanzy/go-gitlab"
+	gogitlab "gitlab.com/gitlab-org/api/client-go"
 
 	"github.com/zapier/tfbuddy/pkg/runstream"
 	"github.com/zapier/tfbuddy/pkg/tfc_api"
