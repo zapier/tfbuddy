@@ -13,7 +13,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/sideband"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
-	gogithub "github.com/google/go-github/v49/github"
+	gogithub "github.com/google/go-github/v69/github"
 	"github.com/rs/zerolog/log"
 	zgit "github.com/zapier/tfbuddy/pkg/git"
 	"github.com/zapier/tfbuddy/pkg/utils"

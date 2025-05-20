@@ -3,9 +3,9 @@ package gitlab_hooks
 import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog/log"
-	gogitlab "github.com/xanzy/go-gitlab"
 	"github.com/zapier/tfbuddy/pkg/allow_list"
 	"github.com/zapier/tfbuddy/pkg/tfc_trigger"
+	gogitlab "gitlab.com/gitlab-org/api/client-go"
 	"go.opentelemetry.io/otel"
 )
 

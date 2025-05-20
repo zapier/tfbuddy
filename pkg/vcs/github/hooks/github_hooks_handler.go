@@ -5,7 +5,7 @@ import (
 	"os"
 
 	"github.com/cbrgm/githubevents/githubevents"
-	"github.com/google/go-github/v49/github"
+	"github.com/google/go-github/v69/github"
 	"github.com/labstack/echo/v4"
 	"github.com/nats-io/nats.go"
 	"github.com/prometheus/client_golang/prometheus"

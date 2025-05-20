@@ -14,8 +14,8 @@ import (
 	"github.com/zapier/tfbuddy/pkg/vcs/gitlab"
 	"go.opentelemetry.io/otel"
 
-	tfe "github.com/hashicorp/go-tfe"
-	gogitlab "github.com/xanzy/go-gitlab"
+	"github.com/hashicorp/go-tfe"
+	gogitlab "gitlab.com/gitlab-org/api/client-go"
 )
 
 const TFC_RUN_STATUS_PREFIX = `Terraform Cloud/`

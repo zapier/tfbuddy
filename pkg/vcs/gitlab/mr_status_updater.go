@@ -9,8 +9,8 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/hashicorp/go-tfe"
 	"github.com/rs/zerolog/log"
-	gogitlab "github.com/xanzy/go-gitlab"
 	"github.com/zapier/tfbuddy/pkg/runstream"
+	gogitlab "gitlab.com/gitlab-org/api/client-go"
 	"go.opentelemetry.io/otel"
 )
 
@@ -149,25 +149,25 @@ func (p *RunStatusUpdater) updateStatus(ctx context.Context, state gogitlab.Buil
 }
 
 func statusName(ws, action string) *string {
-	return gogitlab.String(fmt.Sprintf("TFC/%v/%s", action, ws))
+	return ptr(fmt.Sprintf("TFC/%v/%s", action, ws))
 }
 
 func descriptionForState(state gogitlab.BuildStateValue) *string {
 	switch state {
 	case gogitlab.Pending:
-		return gogitlab.String("pending...")
+		return ptr("pending...")
 	case gogitlab.Running:
-		return gogitlab.String("in progress...")
+		return ptr("in progress...")
 	case gogitlab.Failed:
-		return gogitlab.String("failed.")
+		return ptr("failed.")
 	case gogitlab.Success:
-		return gogitlab.String("succeeded.")
+		return ptr("succeeded.")
 	}
-	return gogitlab.String("unknown")
+	return ptr("unknown")
 }
 
 func runUrlForTFRunMetadata(rmd runstream.RunMetadata) *string {
-	return gogitlab.String(fmt.Sprintf(
+	return ptr(fmt.Sprintf(
 		"https://app.terraform.io/app/%s/workspaces/%s/runs/%s",
 		rmd.GetOrganization(),
 		rmd.GetWorkspace(),
@@ -182,21 +182,16 @@ func (p *RunStatusUpdater) getLatestPipelineID(ctx context.Context, rmd runstrea
 		return nil
 	}
 	log.Trace().Interface("pipelines", pipelines).Msg("retrieved pipelines for commit")
-	var pipelineID *int
 	if len(pipelines) > 0 {
 		for _, p := range pipelines {
 			if p.GetSource() == "merge_request_event" {
-				pipelineID = gogitlab.Int(p.GetID())
-				return pipelineID
+				return ptr(p.GetID())
 			}
 		}
 		// Fallback behavior if Gitlab doesn't find any merge request pipelines
 		// Returns last pipeline ID in the pipelines list
-		if pipelineID == nil {
-			log.Debug().Msg("No merge request pipeline ID found for the commit. Using latest pipeline ID as fallback...")
-			pipelineID = gogitlab.Int(pipelines[len(pipelines)-1].GetID())
-			return pipelineID
-		}
+		log.Debug().Msg("No merge request pipeline ID found for the commit. Using latest pipeline ID as fallback...")
+		return ptr(pipelines[len(pipelines)-1].GetID())
 	}
 	return nil
 }
