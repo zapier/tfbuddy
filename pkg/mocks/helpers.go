@@ -1,6 +1,7 @@
 package mocks
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"regexp"
@@ -175,6 +176,8 @@ func (ts *TestSuite) InitTestSuite() {
 	ts.MockApiClient.EXPECT().AddTags(gomock.Any(), gomock.Any(), "tfbuddylock", "101").AnyTimes()
 
 	ts.MockStreamClient.EXPECT().AddRunMeta(gomock.Any()).AnyTimes()
+	ts.MockStreamClient.EXPECT().AddWorkspaceMeta(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+	ts.MockStreamClient.EXPECT().GetWorkspaceMeta(gomock.Any(), gomock.Any()).Return(nil, errors.New("not found")).AnyTimes()
 
 	ts.MockProject.EXPECT().GetPathWithNamespace().Return(ts.MetaData.ProjectNameNS).AnyTimes()
 
