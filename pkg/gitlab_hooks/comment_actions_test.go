@@ -408,3 +408,203 @@ func TestProcessNoteEventNoErrorNoRuns(t *testing.T) {
 		t.Fatal("expected a project name to be returned")
 	}
 }
+
+func TestGitlabEventWorker_checkApproval(t *testing.T) {
+	tests := []struct {
+		name           string
+		setupMocks     func(*mocks.MockGitClient, *mocks.MockMRCommentEvent, *mocks.MockMR, *mocks.MockProject)
+		expectApproval bool
+	}{
+		{
+			name: "approved merge request returns true",
+			setupMocks: func(mockGit *mocks.MockGitClient, mockEvent *mocks.MockMRCommentEvent, mockMR *mocks.MockMR, mockProject *mocks.MockProject) {
+				mockMR.EXPECT().GetInternalID().Return(123)
+				mockProject.EXPECT().GetPathWithNamespace().Return("test/project")
+				mockEvent.EXPECT().GetMR().Return(mockMR)
+				mockEvent.EXPECT().GetProject().Return(mockProject)
+
+				mockApprovals := mocks.NewMockMRApproved(gomock.NewController(t))
+				mockApprovals.EXPECT().IsApproved().Return(true)
+				mockGit.EXPECT().GetMergeRequestApprovals(gomock.Any(), 123, "test/project").Return(mockApprovals, nil)
+			},
+			expectApproval: true,
+		},
+		{
+			name: "not approved merge request returns false",
+			setupMocks: func(mockGit *mocks.MockGitClient, mockEvent *mocks.MockMRCommentEvent, mockMR *mocks.MockMR, mockProject *mocks.MockProject) {
+				mockMR.EXPECT().GetInternalID().Return(456)
+				mockProject.EXPECT().GetPathWithNamespace().Return("test/project")
+				mockEvent.EXPECT().GetMR().Return(mockMR)
+				mockEvent.EXPECT().GetProject().Return(mockProject)
+
+				mockApprovals := mocks.NewMockMRApproved(gomock.NewController(t))
+				mockApprovals.EXPECT().IsApproved().Return(false)
+				mockGit.EXPECT().GetMergeRequestApprovals(gomock.Any(), 456, "test/project").Return(mockApprovals, nil)
+			},
+			expectApproval: false,
+		},
+		{
+			name: "API error returns false",
+			setupMocks: func(mockGit *mocks.MockGitClient, mockEvent *mocks.MockMRCommentEvent, mockMR *mocks.MockMR, mockProject *mocks.MockProject) {
+				mockMR.EXPECT().GetInternalID().Return(789).Times(2)
+				mockProject.EXPECT().GetPathWithNamespace().Return("test/project").Times(2)
+				mockEvent.EXPECT().GetMR().Return(mockMR).Times(2)
+				mockEvent.EXPECT().GetProject().Return(mockProject).Times(2)
+
+				apiError := fmt.Errorf("API connection failed")
+				mockGit.EXPECT().GetMergeRequestApprovals(gomock.Any(), 789, "test/project").Return(nil, apiError)
+				mockGit.EXPECT().CreateMergeRequestComment(gomock.Any(), 789, "test/project", gomock.Any()).Return(nil)
+			},
+			expectApproval: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockGit := mocks.NewMockGitClient(ctrl)
+			mockEvent := mocks.NewMockMRCommentEvent(ctrl)
+			mockMR := mocks.NewMockMR(ctrl)
+			mockProject := mocks.NewMockProject(ctrl)
+
+			tt.setupMocks(mockGit, mockEvent, mockMR, mockProject)
+
+			worker := &GitlabEventWorker{
+				gl: mockGit,
+			}
+
+			result := worker.checkApproval(context.Background(), mockEvent)
+			assert.Equal(t, tt.expectApproval, result)
+		})
+	}
+}
+
+func TestGitlabEventWorker_checkForMergeConflicts(t *testing.T) {
+	tests := []struct {
+		name             string
+		setupMocks       func(*mocks.MockGitClient, *mocks.MockMRCommentEvent, *mocks.MockMR, *mocks.MockProject)
+		expectNoConflict bool
+	}{
+		{
+			name: "merge request without conflicts returns true",
+			setupMocks: func(mockGit *mocks.MockGitClient, mockEvent *mocks.MockMRCommentEvent, mockMR *mocks.MockMR, mockProject *mocks.MockProject) {
+				mockMR.EXPECT().GetInternalID().Return(123)
+				mockProject.EXPECT().GetPathWithNamespace().Return("test/project")
+				mockEvent.EXPECT().GetMR().Return(mockMR)
+				mockEvent.EXPECT().GetProject().Return(mockProject)
+
+				mockMRData := mocks.NewMockDetailedMR(gomock.NewController(t))
+				mockMRData.EXPECT().HasConflicts().Return(false)
+				mockGit.EXPECT().GetMergeRequest(gomock.Any(), 123, "test/project").Return(mockMRData, nil)
+			},
+			expectNoConflict: true,
+		},
+		{
+			name: "merge request with conflicts returns false",
+			setupMocks: func(mockGit *mocks.MockGitClient, mockEvent *mocks.MockMRCommentEvent, mockMR *mocks.MockMR, mockProject *mocks.MockProject) {
+				mockMR.EXPECT().GetInternalID().Return(456)
+				mockProject.EXPECT().GetPathWithNamespace().Return("test/project")
+				mockEvent.EXPECT().GetMR().Return(mockMR)
+				mockEvent.EXPECT().GetProject().Return(mockProject)
+
+				mockMRData := mocks.NewMockDetailedMR(gomock.NewController(t))
+				mockMRData.EXPECT().HasConflicts().Return(true)
+				mockGit.EXPECT().GetMergeRequest(gomock.Any(), 456, "test/project").Return(mockMRData, nil)
+			},
+			expectNoConflict: false,
+		},
+		{
+			name: "API error returns false",
+			setupMocks: func(mockGit *mocks.MockGitClient, mockEvent *mocks.MockMRCommentEvent, mockMR *mocks.MockMR, mockProject *mocks.MockProject) {
+				mockMR.EXPECT().GetInternalID().Return(789).Times(2)
+				mockProject.EXPECT().GetPathWithNamespace().Return("test/project").Times(2)
+				mockEvent.EXPECT().GetMR().Return(mockMR).Times(2)
+				mockEvent.EXPECT().GetProject().Return(mockProject).Times(2)
+
+				apiError := fmt.Errorf("API connection failed")
+				mockGit.EXPECT().GetMergeRequest(gomock.Any(), 789, "test/project").Return(nil, apiError)
+				mockGit.EXPECT().CreateMergeRequestComment(gomock.Any(), 789, "test/project", gomock.Any()).Return(nil)
+			},
+			expectNoConflict: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockGit := mocks.NewMockGitClient(ctrl)
+			mockEvent := mocks.NewMockMRCommentEvent(ctrl)
+			mockMR := mocks.NewMockMR(ctrl)
+			mockProject := mocks.NewMockProject(ctrl)
+
+			tt.setupMocks(mockGit, mockEvent, mockMR, mockProject)
+
+			worker := &GitlabEventWorker{
+				gl: mockGit,
+			}
+
+			result := worker.checkForMergeConflicts(context.Background(), mockEvent)
+			assert.Equal(t, tt.expectNoConflict, result)
+		})
+	}
+}
+
+func TestGitlabEventWorker_postErrorToMergeRequest(t *testing.T) {
+	tests := []struct {
+		name       string
+		error      error
+		setupMocks func(*mocks.MockGitClient, *mocks.MockMRCommentEvent, *mocks.MockMR, *mocks.MockProject)
+	}{
+		{
+			name:  "posts error message to merge request",
+			error: fmt.Errorf("test error message"),
+			setupMocks: func(mockGit *mocks.MockGitClient, mockEvent *mocks.MockMRCommentEvent, mockMR *mocks.MockMR, mockProject *mocks.MockProject) {
+				mockMR.EXPECT().GetInternalID().Return(123)
+				mockProject.EXPECT().GetPathWithNamespace().Return("test/project")
+				mockEvent.EXPECT().GetMR().Return(mockMR)
+				mockEvent.EXPECT().GetProject().Return(mockProject)
+
+				expectedMessage := ":fire: <br> Error: test error message"
+				mockGit.EXPECT().CreateMergeRequestComment(gomock.Any(), 123, "test/project", expectedMessage).Return(nil)
+			},
+		},
+		{
+			name:  "handles GitLab API error gracefully",
+			error: fmt.Errorf("original error"),
+			setupMocks: func(mockGit *mocks.MockGitClient, mockEvent *mocks.MockMRCommentEvent, mockMR *mocks.MockMR, mockProject *mocks.MockProject) {
+				mockMR.EXPECT().GetInternalID().Return(456)
+				mockProject.EXPECT().GetPathWithNamespace().Return("test/project")
+				mockEvent.EXPECT().GetMR().Return(mockMR)
+				mockEvent.EXPECT().GetProject().Return(mockProject)
+
+				gitlabError := fmt.Errorf("GitLab API error")
+				expectedMessage := ":fire: <br> Error: original error"
+				mockGit.EXPECT().CreateMergeRequestComment(gomock.Any(), 456, "test/project", expectedMessage).Return(gitlabError)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockGit := mocks.NewMockGitClient(ctrl)
+			mockEvent := mocks.NewMockMRCommentEvent(ctrl)
+			mockMR := mocks.NewMockMR(ctrl)
+			mockProject := mocks.NewMockProject(ctrl)
+
+			tt.setupMocks(mockGit, mockEvent, mockMR, mockProject)
+
+			worker := &GitlabEventWorker{
+				gl: mockGit,
+			}
+
+			worker.postErrorToMergeRequest(context.Background(), mockEvent, tt.error)
+		})
+	}
+}
