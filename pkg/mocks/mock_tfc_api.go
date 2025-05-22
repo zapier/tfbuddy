@@ -5,6 +5,7 @@
 //
 //	mockgen -source api_client.go -destination=../mocks/mock_tfc_api.go -package=mocks github.com/zapier/tfbuddy/pkg/tfc_api
 //
+
 // Package mocks is a generated GoMock package.
 package mocks
 
@@ -21,6 +22,7 @@ import (
 type MockApiClient struct {
 	ctrl     *gomock.Controller
 	recorder *MockApiClientMockRecorder
+	isgomock struct{}
 }
 
 // MockApiClientMockRecorder is the mock recorder for MockApiClient.
