@@ -49,8 +49,7 @@ func Test_getLastTag(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tag := GetLastTag(tt.args.dir)
-			assert.Equal(t, tag, tt.args.expected)
-
+			assert.Equal(t, tag, tt.args.expected, "tags should be equal")
 		})
 	}
 }
