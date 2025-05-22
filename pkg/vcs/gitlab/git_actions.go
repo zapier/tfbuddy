@@ -2,6 +2,7 @@ package gitlab
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -45,7 +46,10 @@ func (c *GitlabClient) CloneMergeRequest(ctx context.Context, project string, mr
 	if log.Trace().Enabled() {
 		progress = os.Stdout
 	}
-	cloneDepth := zgit.GetCloneDepth(GITLAB_CLONE_DEPTH_ENV)
+	cloneDepth, err := zgit.GetCloneDepth(GITLAB_CLONE_DEPTH_ENV)
+	if err != nil {
+		return nil, fmt.Errorf("invalid gitlab clone depth configuration: %w", err)
+	}
 
 	repo, err := git.PlainClone(dest, false, &git.CloneOptions{
 		Auth:          auth,

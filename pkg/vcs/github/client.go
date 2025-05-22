@@ -263,7 +263,10 @@ func (c *Client) CloneMergeRequest(ctx context.Context, project string, mr vcs.M
 	if log.Trace().Enabled() {
 		progress = os.Stdout
 	}
-	cloneDepth := zgit.GetCloneDepth(GITHUB_CLONE_DEPTH_ENV)
+	cloneDepth, err := zgit.GetCloneDepth(GITHUB_CLONE_DEPTH_ENV)
+	if err != nil {
+		return nil, fmt.Errorf("invalid github clone depth configuration: %w", err)
+	}
 	gitRepo, err := git.PlainClone(dest, false, &git.CloneOptions{
 		Auth:          auth,
 		URL:           *repo.CloneURL,
