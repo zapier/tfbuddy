@@ -5,6 +5,7 @@
 //
 //	mockgen -source interfaces.go -destination=../mocks/mock_runstream.go -package=mocks github.com/zapier/tfbuddy/pkg/runstream
 //
+
 // Package mocks is a generated GoMock package.
 package mocks
 
@@ -21,6 +22,7 @@ import (
 type MockStreamClient struct {
 	ctrl     *gomock.Controller
 	recorder *MockStreamClientMockRecorder
+	isgomock struct{}
 }
 
 // MockStreamClientMockRecorder is the mock recorder for MockStreamClient.
@@ -145,6 +147,7 @@ func (mr *MockStreamClientMockRecorder) SubscribeTFRunPollingTasks(cb any) *gomo
 type MockRunEvent struct {
 	ctrl     *gomock.Controller
 	recorder *MockRunEventMockRecorder
+	isgomock struct{}
 }
 
 // MockRunEventMockRecorder is the mock recorder for MockRunEvent.
@@ -260,6 +263,7 @@ func (mr *MockRunEventMockRecorder) SetMetadata(arg0 any) *gomock.Call {
 type MockRunMetadata struct {
 	ctrl     *gomock.Controller
 	recorder *MockRunMetadataMockRecorder
+	isgomock struct{}
 }
 
 // MockRunMetadataMockRecorder is the mock recorder for MockRunMetadata.
@@ -437,6 +441,7 @@ func (mr *MockRunMetadataMockRecorder) GetWorkspace() *gomock.Call {
 type MockRunPollingTask struct {
 	ctrl     *gomock.Controller
 	recorder *MockRunPollingTaskMockRecorder
+	isgomock struct{}
 }
 
 // MockRunPollingTaskMockRecorder is the mock recorder for MockRunPollingTask.

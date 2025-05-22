@@ -136,7 +136,7 @@ func (w *GitlabEventWorker) checkForMergeConflicts(ctx context.Context, event vc
 }
 
 func (w *GitlabEventWorker) postMessageToMergeRequest(ctx context.Context, event vcs.MRCommentEvent, msg string) {
-	ctx, span := otel.Tracer("GitlabHooks").Start(context.Background(), "postMessageToMergeRequest")
+	ctx, span := otel.Tracer("GitlabHooks").Start(ctx, "postMessageToMergeRequest")
 	defer span.End()
 
 	if err := w.gl.CreateMergeRequestComment(
@@ -150,7 +150,7 @@ func (w *GitlabEventWorker) postMessageToMergeRequest(ctx context.Context, event
 }
 
 func (w *GitlabEventWorker) postErrorToMergeRequest(ctx context.Context, event vcs.MRCommentEvent, err error) {
-	ctx, span := otel.Tracer("GitlabHooks").Start(context.Background(), "postErrorToMergeRequest")
+	ctx, span := otel.Tracer("GitlabHooks").Start(ctx, "postErrorToMergeRequest")
 	defer span.End()
 	span.RecordError(err)
 

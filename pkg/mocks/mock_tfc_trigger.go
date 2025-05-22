@@ -5,6 +5,7 @@
 //
 //	mockgen -source interfaces.go -destination=../mocks/mock_tfc_trigger.go -package=mocks github.com/zapier/tfbuddy/pkg/tfc_trigger
 //
+
 // Package mocks is a generated GoMock package.
 package mocks
 
@@ -20,6 +21,7 @@ import (
 type MockTrigger struct {
 	ctrl     *gomock.Controller
 	recorder *MockTriggerMockRecorder
+	isgomock struct{}
 }
 
 // MockTriggerMockRecorder is the mock recorder for MockTrigger.

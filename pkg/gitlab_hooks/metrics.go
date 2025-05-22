@@ -7,11 +7,13 @@ var (
 		Name: "tfbuddy_gitlab_webhook_received",
 		Help: "Count of all GitLab webhooks received",
 	})
+
 	commonLabels = []string{
 		"eventType",
 		"reason",
 		"project",
 	}
+
 	gitlabWebHookSuccess = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "tfbuddy_gitlab_webhook_success",
@@ -19,6 +21,7 @@ var (
 		},
 		commonLabels,
 	)
+
 	gitlabWebHookFailed = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "tfbuddy_gitlab_webhook_failed",
@@ -26,6 +29,7 @@ var (
 		},
 		commonLabels,
 	)
+
 	gitlabWebHookIgnored = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "tfbuddy_gitlab_webhook_ignored",
@@ -46,6 +50,5 @@ func init() {
 	r.MustRegister(gitlabWebHookSuccess)
 	r.MustRegister(gitlabWebHookFailed)
 	r.MustRegister(gitlabWebHookIgnored)
-
 	r.MustRegister(gitlabHookReadFromStream)
 }
