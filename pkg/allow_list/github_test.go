@@ -1,20 +1,10 @@
 package allow_list
 
 import (
-	"os"
 	"testing"
 )
 
 func TestIsGithubRepoAllowed(t *testing.T) {
-	originalValue, originalExists := os.LookupEnv(githubRepoAllowListEnv)
-
-	t.Cleanup(func() {
-		if originalExists {
-			os.Setenv(githubRepoAllowListEnv, originalValue)
-		} else {
-			os.Unsetenv(githubRepoAllowListEnv)
-		}
-	})
 
 	type args struct {
 		fullName string
@@ -69,11 +59,7 @@ func TestIsGithubRepoAllowed(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			os.Setenv(githubRepoAllowListEnv, tt.args.allowEnv)
-
-			t.Cleanup(func() {
-				os.Unsetenv(githubRepoAllowListEnv)
-			})
+			t.Setenv(githubRepoAllowListEnv, tt.args.allowEnv)
 
 			if got := IsGithubRepoAllowed(tt.args.fullName); got != tt.want {
 				t.Errorf("IsGithubRepoAllowed() = %v, want %v", got, tt.want)

@@ -101,15 +101,6 @@ func TestGetModifiedFileNamesBetweenCommitsNoResults(t *testing.T) {
 func TestGetCloneDepth(t *testing.T) {
 	const testEnvVar = "TEST_GIT_CLONE_DEPTH"
 
-	originalValue, originalExists := os.LookupEnv(testEnvVar)
-	t.Cleanup(func() {
-		if originalExists {
-			_ = os.Setenv(testEnvVar, originalValue)
-		} else {
-			_ = os.Unsetenv(testEnvVar)
-		}
-	})
-
 	tests := []struct {
 		name        string
 		envVal      string
@@ -199,15 +190,7 @@ func TestGetCloneDepth(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.envVal == "" {
-				_ = os.Unsetenv(testEnvVar)
-			} else {
-				_ = os.Setenv(testEnvVar, tt.envVal)
-			}
-
-			t.Cleanup(func() {
-				_ = os.Unsetenv(testEnvVar)
-			})
+			t.Setenv(testEnvVar, tt.envVal)
 
 			gotDepth, gotErr := GetCloneDepth(testEnvVar)
 

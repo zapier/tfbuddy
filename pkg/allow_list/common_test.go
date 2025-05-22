@@ -1,7 +1,6 @@
 package allow_list
 
 import (
-	"os"
 	"reflect"
 	"testing"
 )
@@ -9,15 +8,6 @@ import (
 func TestGetAllowList(t *testing.T) {
 	const testEnvVar = "TEST_ALLOW_LIST_ENV"
 
-	originalValue, originalExists := os.LookupEnv(testEnvVar)
-
-	t.Cleanup(func() {
-		if originalExists {
-			os.Setenv(testEnvVar, originalValue)
-		} else {
-			os.Unsetenv(testEnvVar)
-		}
-	})
 
 	tests := []struct {
 		name   string
@@ -53,11 +43,7 @@ func TestGetAllowList(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			os.Setenv(testEnvVar, tt.envVal)
-
-			t.Cleanup(func() {
-				os.Unsetenv(testEnvVar)
-			})
+			t.Setenv(testEnvVar, tt.envVal)
 
 			if got := getAllowList(testEnvVar); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("getAllowList() = %v, want %v", got, tt.want)
