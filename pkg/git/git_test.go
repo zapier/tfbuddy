@@ -1,7 +1,7 @@
 package git
 
 import (
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -105,11 +105,14 @@ func createTestRepo(t *testing.T, td TestData) (repo *git.Repository, dir string
 	for _, commit := range td.Commits {
 		for name, contents := range commit.Files {
 			filename := filepath.Join(dir, name)
-			err = ioutil.WriteFile(filename, []byte(contents), 0644)
+			err = os.WriteFile(filename, []byte(contents), 0644)
 			if err != nil {
 				t.Fatal(err)
 			}
-			w.Add(name)
+			_, err = w.Add(name)
+			if err != nil {
+				t.Fatalf("Failed to add file %s: %v", name, err)
+			}
 		}
 
 		gitUser := &object.Signature{
