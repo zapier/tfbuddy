@@ -18,6 +18,7 @@ func getProperApplyText(rmd runstream.RunMetadata, wsName string) string {
 		return fmt.Sprintf(howToApplyFormat, wsName, manualMRMergeSnippet)
 	}
 }
+
 func getProperTargetedApplyText(rmd runstream.RunMetadata, run *tfe.Run, wsName string) string {
 	targets := strings.Join(run.TargetAddrs, ",")
 	if rmd.GetAutoMerge() {
@@ -26,6 +27,7 @@ func getProperTargetedApplyText(rmd runstream.RunMetadata, run *tfe.Run, wsName 
 		return fmt.Sprintf(howToApplyFormatWithTarget, targets, wsName, targets, manualMRMergeSnippet)
 	}
 }
+
 func FormatRunStatusCommentBody(tfc tfc_api.ApiClient, run *tfe.Run, rmd runstream.RunMetadata) (main, toplevel string, resolve bool) {
 	wsName := run.Workspace.Name
 	org := run.Workspace.Organization.Name
@@ -57,7 +59,6 @@ func FormatRunStatusCommentBody(tfc tfc_api.ApiClient, run *tfe.Run, rmd runstre
 		if rmd.GetAction() == runstream.PlanAction {
 			extraInfo += failedPlanSummaryFormat
 		}
-
 	case tfe.RunPlanning:
 		// no extra info
 		if run.AutoApply {
@@ -97,23 +98,20 @@ func FormatRunStatusCommentBody(tfc tfc_api.ApiClient, run *tfe.Run, rmd runstre
 				resolveDiscussion = true
 			}
 		}
-
 	case tfe.RunPolicySoftFailed:
 		// no extra info
 		extraInfo = "The plan has soft failed policy checks, please open TFC URL to approve."
-
 	case tfe.RunPolicyChecked:
 		if !run.AutoApply {
 			extraInfo = "Plan requires confirmation through the Terraform Cloud console. Click Run URL link to open & confirm."
 		}
-
 	default:
 		log.Debug().Str("run_status", string(run.Status)).Msg("No action defined for status.")
 		return
 	}
 
 	topLevelNoteBody := fmt.Sprintf(
-		MR_RUN_DETAILS_FORMAT,
+		mrRunDetailsFormat,
 		wsName,
 		rmd.GetAction(),
 		run.Status,
@@ -121,7 +119,6 @@ func FormatRunStatusCommentBody(tfc tfc_api.ApiClient, run *tfe.Run, rmd runstre
 	)
 
 	return extraInfo, topLevelNoteBody, resolveDiscussion
-
 }
 
 func hasChanges(plan *tfe.Plan) bool {
@@ -137,11 +134,7 @@ func hasChanges(plan *tfe.Plan) bool {
 	return false
 }
 
-const MR_COMMENT_FORMAT = `
-### Terraform Cloud
-%s
-`
-const MR_RUN_DETAILS_FORMAT = `
+const mrRunDetailsFormat = `
 ### Terraform Cloud
 **Workspace**: ` + "`%s`" + `<br>
 **Command**: %s <br>
@@ -187,10 +180,3 @@ var needToApplyFullWorkSpace = `
 
 **Need to Apply Full Workspace Before Merging**
 `
-
-const OLD_RUN_BLOCK = `
-### Previous TFC URLS
-
-| Run ID | Status | Created at |
-| ------ | ------ | ---------- |
-%s`
