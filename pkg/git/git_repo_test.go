@@ -96,17 +96,37 @@ func TestGetModifiedFileNamesBetweenCommitsNoResults(t *testing.T) {
 
 func TestGitCloneDepth(t *testing.T) {
 	testVar := "git-clone-test"
-	defer os.Unsetenv(testVar)
+
+	originalValue, originalExists := os.LookupEnv(testVar)
+	t.Cleanup(func() {
+		if originalExists {
+			os.Setenv(testVar, originalValue)
+		} else {
+			os.Unsetenv(testVar)
+		}
+	})
+
 	t.Run("no value", func(t *testing.T) {
-		os.Unsetenv(testVar)
+		err := os.Unsetenv(testVar)
+		if err != nil {
+			t.Fatalf("Failed to unset env var %s: %v", testVar, err)
+		}
 		assert.Equal(t, 0, GetCloneDepth(testVar))
 	})
+
 	t.Run("500 depth", func(t *testing.T) {
-		os.Setenv(testVar, "500")
+		err := os.Setenv(testVar, "500")
+		if err != nil {
+			t.Fatalf("Failed to set env var %s: %v", testVar, err)
+		}
 		assert.Equal(t, 500, GetCloneDepth(testVar))
 	})
+
 	t.Run("invalid value", func(t *testing.T) {
-		os.Setenv(testVar, "somestuff")
+		err := os.Setenv(testVar, "somestuff")
+		if err != nil {
+			t.Fatalf("Failed to set env var %s: %v", testVar, err)
+		}
 		assert.Equal(t, 0, GetCloneDepth(testVar))
 	})
 }
