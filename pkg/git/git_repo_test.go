@@ -16,15 +16,15 @@ func TestGetMergeBase(t *testing.T) {
 	mrBranch := "test"
 	gitRepo, initialCommit := mocks.InitGitTestRepo(t)
 	err := gitRepo.SwitchToBranch(mrBranch)
-	assert.Equal(t, nil, err)
+	assert.NoError(t, err)
 	_, err = gitRepo.CreateCommitFileOnCurrentBranch("main2.tf", "test commit")
-	assert.Equal(t, nil, err)
+	assert.NoError(t, err)
 
 	client := Repository{
 		Repository: gitRepo.Repo,
 	}
 	common, err := client.GetMergeBase(mrBranch, "master")
-	assert.Equal(t, nil, err)
+	assert.NoError(t, err)
 	assert.Equal(t, common, initialCommit)
 
 }
@@ -33,47 +33,23 @@ func TestGetModifiedFileNamesBetweenCommits(t *testing.T) {
 	mrBranch := "test"
 	gitRepo, _ := mocks.InitGitTestRepo(t)
 	err := gitRepo.SwitchToBranch(mrBranch)
-	assert.Equal(t, nil, err)
+	assert.NoError(t, err)
 	_, err = gitRepo.CreateCommitFileOnCurrentBranch("main2.tf", "test commit")
-	assert.Equal(t, nil, err)
+	assert.NoError(t, err)
 
 	client := Repository{
 		Repository: gitRepo.Repo,
 	}
 	commonCommit, err := client.GetMergeBase(mrBranch, "master")
-	assert.Equal(t, nil, err)
+	assert.NoError(t, err)
 	err = gitRepo.SwitchToBranch("master")
-	assert.Equal(t, nil, err)
+	assert.NoError(t, err)
 	_, err = gitRepo.CreateCommitFileOnCurrentBranch("some.tf", "commit on target branch")
-	assert.Equal(t, nil, err)
+	assert.NoError(t, err)
 
 	modifiedFiles, err := client.GetModifiedFileNamesBetweenCommits(commonCommit, "master")
-	assert.Equal(t, nil, err)
-	assert.Equal(t, len(modifiedFiles), 1, "expected a single file to be modified between master & test")
-	assert.Equal(t, modifiedFiles[0], "some.tf")
-}
-
-func TestGetModifiedFileNamesBetweenCommitsNewDir(t *testing.T) {
-	mrBranch := "test"
-	gitRepo, _ := mocks.InitGitTestRepo(t)
-	err := gitRepo.SwitchToBranch(mrBranch)
-	assert.Equal(t, nil, err)
-	_, err = gitRepo.CreateCommitFileOnCurrentBranch("staging/main2.tf", "test commit")
-	assert.Equal(t, nil, err)
-
-	client := Repository{
-		Repository: gitRepo.Repo,
-	}
-	commonCommit, err := client.GetMergeBase(mrBranch, "master")
-	assert.Equal(t, nil, err)
-	err = gitRepo.SwitchToBranch("master")
-	assert.Equal(t, nil, err)
-	_, err = gitRepo.CreateCommitFileOnCurrentBranch("some.tf", "commit on target branch")
-	assert.Equal(t, nil, err)
-
-	modifiedFiles, err := client.GetModifiedFileNamesBetweenCommits(commonCommit, "master")
-	assert.Equal(t, nil, err)
-	assert.Equal(t, len(modifiedFiles), 1, "expected a single file to be modified between master & test")
+	assert.NoError(t, err)
+	assert.Len(t, modifiedFiles, 1)
 	assert.Equal(t, modifiedFiles[0], "some.tf")
 }
 
@@ -81,21 +57,21 @@ func TestGetModifiedFileNamesBetweenCommitsNoResults(t *testing.T) {
 	mrBranch := "test"
 	gitRepo, _ := mocks.InitGitTestRepo(t)
 	err := gitRepo.SwitchToBranch(mrBranch)
-	assert.Equal(t, nil, err)
+	assert.NoError(t, err)
 	_, err = gitRepo.CreateCommitFileOnCurrentBranch("main2.tf", "test commit")
-	assert.Equal(t, nil, err)
+	assert.NoError(t, err)
 
 	client := Repository{
 		Repository: gitRepo.Repo,
 	}
 	commonCommit, err := client.GetMergeBase(mrBranch, "master")
-	assert.Equal(t, nil, err)
+	assert.NoError(t, err)
 	err = gitRepo.SwitchToBranch("master")
-	assert.Equal(t, nil, err)
+	assert.NoError(t, err)
 
 	modifiedFiles, err := client.GetModifiedFileNamesBetweenCommits(commonCommit, "master")
-	assert.Equal(t, nil, err)
-	assert.Equal(t, len(modifiedFiles), 0, "expected no files modified between master and test")
+	assert.NoError(t, err)
+	assert.Empty(t, modifiedFiles)
 }
 
 func TestGetCloneDepth(t *testing.T) {
@@ -245,7 +221,7 @@ func TestFetchUpstreamBranch(t *testing.T) {
 	repo := NewRepository(gitRepo.Repo, nil, "")
 
 	err := repo.FetchUpstreamBranch("master")
-	assert.NotNil(t, err, "should fail when no remote is configured")
+	assert.Error(t, err)
 }
 
 func TestGetMergeBase_ErrorCases(t *testing.T) {
@@ -256,12 +232,12 @@ func TestGetMergeBase_ErrorCases(t *testing.T) {
 
 	t.Run("invalid_oldest_branch", func(t *testing.T) {
 		_, err := client.GetMergeBase("nonexistent", "master")
-		assert.NotNil(t, err)
+		assert.Error(t, err)
 	})
 
 	t.Run("invalid_newest_branch", func(t *testing.T) {
 		_, err := client.GetMergeBase("master", "nonexistent")
-		assert.NotNil(t, err)
+		assert.Error(t, err)
 	})
 }
 
@@ -273,12 +249,12 @@ func TestGetModifiedFileNamesBetweenCommits_ErrorCases(t *testing.T) {
 
 	t.Run("invalid_oldest_commit", func(t *testing.T) {
 		_, err := client.GetModifiedFileNamesBetweenCommits("invalidhash", "master")
-		assert.NotNil(t, err)
+		assert.Error(t, err)
 	})
 
 	t.Run("invalid_newest_commit", func(t *testing.T) {
 		_, err := client.GetModifiedFileNamesBetweenCommits("master", "invalidhash")
-		assert.NotNil(t, err)
+		assert.Error(t, err)
 	})
 }
 
@@ -286,16 +262,16 @@ func TestGetModifiedFileNamesBetweenCommits_FileOperations(t *testing.T) {
 	mrBranch := "test"
 	gitRepo, _ := mocks.InitGitTestRepo(t)
 	err := gitRepo.SwitchToBranch(mrBranch)
-	assert.Equal(t, nil, err)
+	assert.NoError(t, err)
 
 	commit1Hash, err := gitRepo.CreateCommitFileOnCurrentBranch("file1.tf", "content1")
-	assert.Equal(t, nil, err)
+	assert.NoError(t, err)
 
 	commit2Hash, err := gitRepo.CreateCommitFileOnCurrentBranch("file2.tf", "content2")
-	assert.Equal(t, nil, err)
+	assert.NoError(t, err)
 
 	commit3Hash, err := gitRepo.CreateCommitFileOnCurrentBranch("file3.tf", "content3")
-	assert.Equal(t, nil, err)
+	assert.NoError(t, err)
 
 	client := Repository{
 		Repository: gitRepo.Repo,
@@ -303,13 +279,13 @@ func TestGetModifiedFileNamesBetweenCommits_FileOperations(t *testing.T) {
 
 	t.Run("added_files", func(t *testing.T) {
 		modifiedFiles, err := client.GetModifiedFileNamesBetweenCommits(commit1Hash, commit2Hash)
-		assert.Equal(t, nil, err)
+		assert.NoError(t, err)
 		assert.Contains(t, modifiedFiles, "file2.tf")
 	})
 
 	t.Run("multiple_files", func(t *testing.T) {
 		modifiedFiles, err := client.GetModifiedFileNamesBetweenCommits(commit2Hash, commit3Hash)
-		assert.Equal(t, nil, err)
+		assert.NoError(t, err)
 		assert.Contains(t, modifiedFiles, "file3.tf")
 	})
 }

@@ -5,7 +5,6 @@ import (
 )
 
 func TestIsGitlabProjectAllowed(t *testing.T) {
-
 	type args struct {
 		projectWithNamespace string
 		allowEnv             string
@@ -106,9 +105,8 @@ func TestIsGitlabProjectAllowed(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		// Test with primary environment variable
 		t.Run(tt.name+"_primary", func(t *testing.T) {
-			t.Setenv(legacyAllowListEnv, "")       // Ensure legacy is empty
+			t.Setenv(legacyAllowListEnv, "")
 			t.Setenv(GitlabProjectAllowListEnv, tt.args.allowEnv)
 
 			if got := IsGitlabProjectAllowed(tt.args.projectWithNamespace); got != tt.want {
@@ -116,23 +114,12 @@ func TestIsGitlabProjectAllowed(t *testing.T) {
 			}
 		})
 
-		// Test with legacy environment variable
 		t.Run(tt.name+"_legacy", func(t *testing.T) {
-			t.Setenv(GitlabProjectAllowListEnv, "")  // Ensure primary is empty
-			t.Setenv(legacyAllowListEnv, tt.args.allowEnv)
-
-			if got := IsGitlabProjectAllowed(tt.args.projectWithNamespace); got != tt.want {
-				t.Errorf("IsGitlabProjectAllowed() with legacy env = %v, want %v", got, tt.want)
-			}
-		})
-
-		// Test fallback behavior (primary empty, using legacy)
-		t.Run(tt.name+"_fallback", func(t *testing.T) {
 			t.Setenv(GitlabProjectAllowListEnv, "")
 			t.Setenv(legacyAllowListEnv, tt.args.allowEnv)
 
 			if got := IsGitlabProjectAllowed(tt.args.projectWithNamespace); got != tt.want {
-				t.Errorf("IsGitlabProjectAllowed() with fallback = %v, want %v", got, tt.want)
+				t.Errorf("IsGitlabProjectAllowed() with legacy env = %v, want %v", got, tt.want)
 			}
 		})
 	}

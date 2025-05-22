@@ -40,10 +40,8 @@ func TestGetProperApplyText(t *testing.T) {
 
 			result := getProperApplyText(mockRunMeta, tc.workspace)
 
-			// Verify the result contains the workspace name
 			assert.Contains(t, result, tc.workspace)
 
-			// Verify the correct merge snippet is included based on autoMerge
 			if tc.autoMerge {
 				assert.Contains(t, result, autoMRMergeSnippet)
 			} else {
@@ -94,14 +92,11 @@ func TestGetProperTargetedApplyText(t *testing.T) {
 
 			result := getProperTargetedApplyText(mockRunMeta, run, tc.workspace)
 
-			// Verify the result contains the workspace name
 			assert.Contains(t, result, tc.workspace)
 
-			// Verify the targets are included in the result
 			targetsJoined := strings.Join(tc.targets, ",")
 			assert.Contains(t, result, targetsJoined)
 
-			// Verify the correct merge snippet is included based on autoMerge
 			if tc.autoMerge {
 				assert.Contains(t, result, autoMRMergeSnippet)
 			} else {
@@ -352,7 +347,6 @@ func TestFormatRunStatusCommentBody(t *testing.T) {
 			mockApiClient := mocks.NewMockApiClient(ctrl)
 			mockRunMeta := mocks.NewMockRunMetadata(ctrl)
 
-			// Set up expectations for all methods that might be called
 			mockRunMeta.EXPECT().GetAction().Return(tc.runAction).AnyTimes()
 			mockRunMeta.EXPECT().GetAutoMerge().Return(tc.autoMerge).AnyTimes()
 
@@ -360,7 +354,6 @@ func TestFormatRunStatusCommentBody(t *testing.T) {
 				mockApiClient.EXPECT().GetPlanOutput(gomock.Any()).Return(tc.planOutput, tc.planOutputErr).AnyTimes()
 			}
 
-			// Setup the run object with all necessary fields
 			run := &tfe.Run{
 				ID:              "run-id",
 				Status:          tc.runStatus,
@@ -375,7 +368,6 @@ func TestFormatRunStatusCommentBody(t *testing.T) {
 				},
 			}
 
-			// Setup plan and apply objects if needed
 			if tc.runStatus == tfe.RunPlanned || tc.runStatus == tfe.RunApplied {
 				run.Plan = &tfe.Plan{
 					ID:                   "plan-id",
@@ -402,7 +394,6 @@ func TestFormatRunStatusCommentBody(t *testing.T) {
 
 			extraInfo, topLevel, resolve := FormatRunStatusCommentBody(mockApiClient, run, mockRunMeta)
 
-			// Verify the expected outcomes
 			if tc.runStatus != "unknown-status" {
 				assert.Contains(t, topLevel, "test-workspace")
 				assert.Contains(t, topLevel, "Run URL")

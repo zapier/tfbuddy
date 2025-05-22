@@ -49,7 +49,7 @@ func Test_getLastTag(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tag := GetLastTag(tt.args.dir)
-			assert.Equal(t, tag, tt.args.expected, "tags should be equal")
+			assert.Equal(t, tag, tt.args.expected)
 
 		})
 	}
@@ -139,12 +139,12 @@ func TestGetLastTag_NoTags(t *testing.T) {
 	}
 
 	tag := GetLastTag(dir)
-	assert.Empty(t, tag, "should return empty string when no tags exist")
+	assert.Empty(t, tag)
 }
 
 func TestCleanTagReference_NilHandling(t *testing.T) {
 	result := CleanTagReference(nil)
-	assert.Empty(t, result, "should return empty string when tagRef is nil")
+	assert.Empty(t, result)
 }
 
 func TestFormatRef(t *testing.T) {

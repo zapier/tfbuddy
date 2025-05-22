@@ -8,7 +8,6 @@ import (
 func TestGetAllowList(t *testing.T) {
 	const testEnvVar = "TEST_ALLOW_LIST_ENV"
 
-
 	tests := []struct {
 		name   string
 		envVal string

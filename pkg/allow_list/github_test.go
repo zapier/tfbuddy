@@ -5,7 +5,6 @@ import (
 )
 
 func TestIsGithubRepoAllowed(t *testing.T) {
-
 	type args struct {
 		fullName string
 		allowEnv string
