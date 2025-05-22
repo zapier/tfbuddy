@@ -38,6 +38,9 @@ func GetLastTag(dir string) string {
 }
 
 func CleanTagReference(tagRef *plumbing.Reference) string {
+	if tagRef == nil {
+		return ""
+	}
 	return CleanTagRefName(tagRef.Strings()[0])
 }
 
