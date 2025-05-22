@@ -49,7 +49,7 @@ func configureHooksStream(js nats.JetStreamContext) {
 	}
 
 	if strInfo == nil {
-		strInfo, err = js.AddStream(sCfg)
+		_, err = js.AddStream(sCfg)
 		if err != nil {
 			log.Error().Err(err).Msg("could not create hook stream")
 		}
@@ -71,18 +71,26 @@ func (s *HooksStream) HealthCheck() error {
 		case HooksStreamName:
 
 			if s.State.Consumers < 1 {
+				clusterLeader := ""
+				if s.Cluster != nil {
+					clusterLeader = s.Cluster.Leader
+				}
 				log.Warn().Str("stream", s.Config.Name).
 					Int("consumers", s.State.Consumers).
 					Uint64("msgs", s.State.Msgs).
-					Str("cluster_leader", s.Cluster.Leader).
+					Str("cluster_leader", clusterLeader).
 					Msg("Healthcheck status.")
 				return fmt.Errorf("%s stream has no consumers", s.Config.Name)
 			}
 		default:
+			clusterLeader := ""
+			if s.Cluster != nil {
+				clusterLeader = s.Cluster.Leader
+			}
 			log.Trace().Str("stream", s.Config.Name).
 				Int("consumers", s.State.Consumers).
 				Uint64("msgs", s.State.Msgs).
-				Str("cluster_leader", s.Cluster.Leader).
+				Str("cluster_leader", clusterLeader).
 				Msg("Healthcheck status.")
 		}
 
