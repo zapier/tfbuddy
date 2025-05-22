@@ -21,11 +21,14 @@ func GetLastTagRef(dir string) *plumbing.Reference {
 	}
 
 	var tag *plumbing.Reference
-	tagrefs.ForEach(func(t *plumbing.Reference) error {
+	err = tagrefs.ForEach(func(t *plumbing.Reference) error {
 		log.Trace().Msg(FormatRef(t))
 		tag = t
 		return nil
 	})
+	if err != nil {
+		log.Fatal().Msgf("could not iterate git tags: %v", err)
+	}
 
 	return tag
 }
