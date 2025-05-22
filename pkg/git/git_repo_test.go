@@ -104,9 +104,9 @@ func TestGetCloneDepth(t *testing.T) {
 	originalValue, originalExists := os.LookupEnv(testEnvVar)
 	t.Cleanup(func() {
 		if originalExists {
-			os.Setenv(testEnvVar, originalValue)
+			_ = os.Setenv(testEnvVar, originalValue)
 		} else {
-			os.Unsetenv(testEnvVar)
+			_ = os.Unsetenv(testEnvVar)
 		}
 	})
 
@@ -200,13 +200,13 @@ func TestGetCloneDepth(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.envVal == "" {
-				os.Unsetenv(testEnvVar)
+				_ = os.Unsetenv(testEnvVar)
 			} else {
-				os.Setenv(testEnvVar, tt.envVal)
+				_ = os.Setenv(testEnvVar, tt.envVal)
 			}
 
 			t.Cleanup(func() {
-				os.Unsetenv(testEnvVar)
+				_ = os.Unsetenv(testEnvVar)
 			})
 
 			gotDepth, gotErr := GetCloneDepth(testEnvVar)
