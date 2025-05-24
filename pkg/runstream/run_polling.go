@@ -16,10 +16,6 @@ import (
 const RunPollingStreamNameV0 = "RUN_POLLING"
 const RunPollingKvName = "POLLING_TASKS"
 
-var SuccessResponse = []byte("success")
-var SuccessDoneResponse = []byte("done")
-var FailedResponse = []byte("failed")
-
 const TaskPollingDelayMinimum = 1 * time.Second
 const TaskPollingDelayDefault = 10 * time.Second
 

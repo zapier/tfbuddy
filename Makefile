@@ -9,6 +9,15 @@ generate-mocks:
 test:
 	go test -v ./...
 
+test-coverage:
+	go test ./... -cover
+
+test-integration:
+	go test ./pkg/runstream/ -integration
+
+test-integration-coverage:
+	go test ./pkg/runstream/ -integration -cover
+
 docker:
 	docker build -t tfbuddy:dev -f Dockerfile.server ./
 
