@@ -143,7 +143,9 @@ func configureTFRunEventsStream(js nats.JetStreamContext) {
 		Replicas:    1,
 	}
 
-	addOrUpdateStream(js, sCfg)
+	if err := addOrUpdateStream(js, sCfg); err != nil {
+		log.Error().Err(err).Msg("failed to configure TF run events stream")
+	}
 }
 
 func (s *Stream) waitForTFRunMetadata(run RunEvent) (RunMetadata, error) {
@@ -162,7 +164,7 @@ func (s *Stream) waitForTFRunMetadata(run RunEvent) (RunMetadata, error) {
 			Str("runID", run.GetRunID()).
 			Msg("Run Metadata not retrieved from KV and attempts have been exhausted, giving up.")
 
-		return nil, errors.New("Run Metadata not found, giving up")
+		return nil, errors.New("run metadata not found, giving up")
 	}
 
 	return md, nil
