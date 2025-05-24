@@ -46,7 +46,12 @@ func (s *Stream) HealthCheck() error {
 				log.Warn().Str("stream", s.Config.Name).
 					Int("consumers", s.State.Consumers).
 					Uint64("msgs", s.State.Msgs).
-					Str("cluster_leader", s.Cluster.Leader).
+					Str("cluster_leader", func() string {
+						if s.Cluster != nil {
+							return s.Cluster.Leader
+						}
+						return "none"
+					}()).
 					Msg("Healthcheck status.")
 				return fmt.Errorf("%s stream has no consumers", s.Config.Name)
 			}
@@ -54,7 +59,12 @@ func (s *Stream) HealthCheck() error {
 			log.Trace().Str("stream", s.Config.Name).
 				Int("consumers", s.State.Consumers).
 				Uint64("msgs", s.State.Msgs).
-				Str("cluster_leader", s.Cluster.Leader).
+				Str("cluster_leader", func() string {
+					if s.Cluster != nil {
+						return s.Cluster.Leader
+					}
+					return "none"
+				}()).
 				Msg("Healthcheck status.")
 		}
 
@@ -122,7 +132,9 @@ func migrateStream(js nats.JetStreamContext, name string, targetCfg *nats.Stream
 	if err != nil {
 		return err
 	}
-	defer js.DeleteStream(migName)
+	defer func() {
+		_ = js.DeleteStream(migName)
+	}()
 
 	// wait for migration stream to catch up
 	err = waitForStreamSources(js, migName)

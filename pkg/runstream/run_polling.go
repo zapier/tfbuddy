@@ -300,5 +300,5 @@ func configureTFRunPollingTaskStream(js nats.JetStreamContext) {
 		Replicas:    1,
 	}
 
-	addOrUpdateStream(js, sCfg)
+	_ = addOrUpdateStream(js, sCfg)
 }
