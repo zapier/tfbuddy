@@ -24,27 +24,34 @@ type TFRunEvent struct {
 	NewStatus    string
 	Metadata     RunMetadata
 	Carrier      propagation.MapCarrier `json:"Carrier"`
-	context      context.Context
+
+	context context.Context
 }
 
 func (e *TFRunEvent) GetRunID() string {
 	return e.RunID
 }
+
 func (e *TFRunEvent) GetContext() context.Context {
 	return e.context
 }
+
 func (e *TFRunEvent) SetContext(ctx context.Context) {
 	e.context = ctx
 }
+
 func (e *TFRunEvent) SetCarrier(carrier map[string]string) {
 	e.Carrier = carrier
 }
+
 func (e *TFRunEvent) GetNewStatus() string {
 	return e.NewStatus
 }
+
 func (e *TFRunEvent) GetMetadata() RunMetadata {
 	return e.Metadata
 }
+
 func (e *TFRunEvent) SetMetadata(meta RunMetadata) {
 	e.Metadata = meta
 }
@@ -174,7 +181,8 @@ func decodeTFRunEvent(b []byte) (RunEvent, error) {
 	run := &TFRunEvent{}
 	run.Metadata = &TFRunMetadata{}
 	err := json.Unmarshal(b, &run)
-	run.context = otel.GetTextMapPropagator().Extract(context.Background(), run.Carrier)
+	extractedCtx := otel.GetTextMapPropagator().Extract(context.Background(), run.Carrier)
+	run.context = extractedCtx
 	return run, err
 }
 

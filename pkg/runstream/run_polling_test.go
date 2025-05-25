@@ -761,3 +761,311 @@ func Test_configureTFRunPollingTaskStream_Integration(t *testing.T) {
 		t.Errorf("Expected stream name %s, got %s", RunPollingStreamNameV0, info.Config.Name)
 	}
 }
+
+func TestTFRunPollingTask_EncodeDecode(t *testing.T) {
+	s := &Stream{}
+	metadata := &TFRunMetadata{
+		RunID:        "polling-marshal",
+		Organization: "test-org",
+		Workspace:    "test-workspace",
+	}
+
+	task := &TFRunPollingTask{
+		RunMetadata: metadata,
+		LastStatus:  "planning",
+		NextPoll:    time.Now().Add(time.Hour),
+		Processing:  true,
+		LastUpdate:  time.Now(),
+		Revision:    42,
+		Carrier:     map[string]string{"trace": "456"},
+	}
+
+	ctx := context.Background()
+	data, err := encodeTFRunPollingTask(ctx, task)
+	if err != nil {
+		t.Fatalf("Failed to encode TFRunPollingTask: %v", err)
+	}
+
+	decoded, err := s.decodeTFRunPollingTask(data)
+	if err != nil {
+		t.Fatalf("Failed to decode TFRunPollingTask: %v", err)
+	}
+
+	if decoded.GetLastStatus() != task.LastStatus {
+		t.Errorf("LastStatus mismatch: got %v, want %v", decoded.GetLastStatus(), task.LastStatus)
+	}
+
+	// Check that context was set from carrier
+	if decoded.GetContext() == nil {
+		t.Error("Expected context to be set from carrier")
+	}
+}
+
+func TestStream_NewTFRunPollingTask_DelayEdgeCases(t *testing.T) {
+	s := &Stream{}
+	metadata := &TFRunMetadata{
+		RunID:        "delay-test",
+		Organization: "test-org",
+		Workspace:    "test-workspace",
+	}
+
+	tests := []struct {
+		name      string
+		delay     time.Duration
+		wantDelay time.Duration
+	}{
+		{
+			name:      "negative delay uses default",
+			delay:     -1 * time.Hour,
+			wantDelay: TaskPollingDelayDefault,
+		},
+		{
+			name:      "zero delay uses default",
+			delay:     0,
+			wantDelay: TaskPollingDelayDefault,
+		},
+		{
+			name:      "very small delay uses default",
+			delay:     1 * time.Nanosecond,
+			wantDelay: TaskPollingDelayDefault,
+		},
+		{
+			name:      "maximum duration",
+			delay:     time.Duration(1<<63 - 1), // max int64
+			wantDelay: time.Duration(1<<63 - 1),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			startTime := time.Now()
+			task := s.NewTFRunPollingTask(metadata, tt.delay).(*TFRunPollingTask)
+
+			expectedNextPoll := startTime.Add(tt.wantDelay)
+			timeDiff := task.NextPoll.Sub(expectedNextPoll).Abs()
+
+			// Allow 1 second tolerance for timing
+			if timeDiff > time.Second {
+				t.Errorf("NextPoll time difference too large: %v", timeDiff)
+			}
+		})
+	}
+}
+
+func Test_encodeTFRunPollingTask_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name    string
+		task    *TFRunPollingTask
+		ctx     context.Context
+		wantErr bool
+	}{
+		{
+			name:    "nil task metadata",
+			task:    &TFRunPollingTask{RunMetadata: nil},
+			ctx:     context.Background(),
+			wantErr: false,
+		},
+		{
+			name: "task with zero time values",
+			task: &TFRunPollingTask{
+				RunMetadata: &TFRunMetadata{RunID: "zero-time"},
+				NextPoll:    time.Time{},
+				LastUpdate:  time.Time{},
+			},
+			ctx:     context.Background(),
+			wantErr: false,
+		},
+		{
+			name: "task with max revision",
+			task: &TFRunPollingTask{
+				RunMetadata: &TFRunMetadata{RunID: "max-revision"},
+				Revision:    ^uint64(0), // max uint64
+			},
+			ctx:     context.Background(),
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data, err := encodeTFRunPollingTask(tt.ctx, tt.task)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("encodeTFRunPollingTask() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if !tt.wantErr && len(data) > 0 {
+				// Verify structure
+				var decoded map[string]interface{}
+				if err := json.Unmarshal(data, &decoded); err != nil {
+					t.Errorf("Failed to unmarshal encoded data: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestStream_decodeTFRunPollingTask_ErrorCases(t *testing.T) {
+	s := &Stream{}
+
+	tests := []struct {
+		name    string
+		data    []byte
+		wantErr bool
+	}{
+		{
+			name:    "JSON with wrong types",
+			data:    []byte(`{"LastStatus": 123, "Processing": "yes", "Revision": "42"}`),
+			wantErr: true,
+		},
+		{
+			name:    "JSON with invalid time format",
+			data:    []byte(`{"NextPoll": "not-a-time", "LastUpdate": "also-not-a-time"}`),
+			wantErr: true,
+		},
+		{
+			name:    "Valid but minimal JSON",
+			data:    []byte(`{"LastStatus": "new"}`),
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := s.decodeTFRunPollingTask(tt.data)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("decodeTFRunPollingTask() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestTFRunPollingTask_StateTransitions(t *testing.T) {
+	task := &TFRunPollingTask{
+		RunMetadata: &TFRunMetadata{RunID: "state-test"},
+		LastStatus:  "new",
+		Processing:  false,
+	}
+
+	// Test state transitions
+	transitions := []struct {
+		newStatus     string
+		newProcessing bool
+	}{
+		{"planning", true},
+		{"planned", false},
+		{"applying", true},
+		{"applied", false},
+		{"errored", false},
+	}
+
+	for _, trans := range transitions {
+		task.SetLastStatus(trans.newStatus)
+		task.Processing = trans.newProcessing
+
+		if task.GetLastStatus() != trans.newStatus {
+			t.Errorf("Expected status %s, got %s", trans.newStatus, task.GetLastStatus())
+		}
+		if task.Processing != trans.newProcessing {
+			t.Errorf("Expected Processing %v, got %v", trans.newProcessing, task.Processing)
+		}
+	}
+}
+
+func BenchmarkEncodeTFRunPollingTask(b *testing.B) {
+	task := &TFRunPollingTask{
+		RunMetadata: &TFRunMetadata{
+			RunID:        "bench-polling",
+			Organization: "bench-org",
+			Workspace:    "bench-workspace",
+		},
+		LastStatus: "planning",
+		Processing: true,
+		NextPoll:   time.Now().Add(time.Minute),
+		LastUpdate: time.Now(),
+		Revision:   100,
+	}
+	ctx := context.Background()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := encodeTFRunPollingTask(ctx, task)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func TestTFRunPollingTask_ImplementsRunPollingTask(t *testing.T) {
+	var _ RunPollingTask = (*TFRunPollingTask)(nil)
+}
+
+func Test_pollingKVKey_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name  string
+		runID string
+		want  string
+	}{
+		{
+			name:  "runID with special characters",
+			runID: "run-!@#$%^&*()",
+			want:  "run-!@#$%^&*()",
+		},
+		{
+			name:  "runID with spaces",
+			runID: "run with spaces",
+			want:  "run with spaces",
+		},
+		{
+			name:  "very long runID",
+			runID: string(make([]byte, 1000)),
+			want:  string(make([]byte, 1000)),
+		},
+		{
+			name:  "runID with unicode",
+			runID: "run-😀-中文",
+			want:  "run-😀-中文",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			task := &TFRunPollingTask{
+				RunMetadata: &TFRunMetadata{RunID: tt.runID},
+			}
+			if got := pollingKVKey(task); got != tt.want {
+				t.Errorf("pollingKVKey() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_pollingStreamKey_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name  string
+		runID string
+		want  string
+	}{
+		{
+			name:  "runID with dots",
+			runID: "run.with.dots",
+			want:  "RUN_POLLING.run.with.dots",
+		},
+		{
+			name:  "runID that looks like a subject",
+			runID: "RUN_POLLING.fake",
+			want:  "RUN_POLLING.RUN_POLLING.fake",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			task := &TFRunPollingTask{
+				RunMetadata: &TFRunMetadata{RunID: tt.runID},
+			}
+			if got := pollingStreamKey(task); got != tt.want {
+				t.Errorf("pollingStreamKey() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

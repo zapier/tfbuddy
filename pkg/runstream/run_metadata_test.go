@@ -537,3 +537,232 @@ func Test_configureTFRunMetadataKVStore_Integration(t *testing.T) {
 		t.Errorf("Expected bucket name %s, got %s", RunMetadataKvBucket, kv.Bucket())
 	}
 }
+
+func TestTFRunMetadata_CompleteJSONMarshaling(t *testing.T) {
+	metadata := &TFRunMetadata{
+		RunID:                                "complete-run",
+		Organization:                         "complete-org",
+		Workspace:                            "complete-workspace",
+		Source:                               "api",
+		Action:                               "apply",
+		CommitSHA:                            "abc123def456",
+		MergeRequestProjectNameWithNamespace: "group/subgroup/project",
+		MergeRequestIID:                      99,
+		DiscussionID:                         "disc-123",
+		RootNoteID:                           456789,
+		VcsProvider:                          "gitlab",
+		AutoMerge:                            true,
+	}
+
+	data, err := json.Marshal(metadata)
+	if err != nil {
+		t.Fatalf("Failed to marshal complete metadata: %v", err)
+	}
+
+	var decoded TFRunMetadata
+	err = json.Unmarshal(data, &decoded)
+	if err != nil {
+		t.Fatalf("Failed to unmarshal complete metadata: %v", err)
+	}
+
+	// Verify all fields
+	if decoded.RunID != metadata.RunID {
+		t.Errorf("RunID mismatch: got %v, want %v", decoded.RunID, metadata.RunID)
+	}
+	if decoded.Organization != metadata.Organization {
+		t.Errorf("Organization mismatch: got %v, want %v", decoded.Organization, metadata.Organization)
+	}
+	if decoded.Workspace != metadata.Workspace {
+		t.Errorf("Workspace mismatch: got %v, want %v", decoded.Workspace, metadata.Workspace)
+	}
+	if decoded.Source != metadata.Source {
+		t.Errorf("Source mismatch: got %v, want %v", decoded.Source, metadata.Source)
+	}
+	if decoded.Action != metadata.Action {
+		t.Errorf("Action mismatch: got %v, want %v", decoded.Action, metadata.Action)
+	}
+	if decoded.CommitSHA != metadata.CommitSHA {
+		t.Errorf("CommitSHA mismatch: got %v, want %v", decoded.CommitSHA, metadata.CommitSHA)
+	}
+	if decoded.MergeRequestProjectNameWithNamespace != metadata.MergeRequestProjectNameWithNamespace {
+		t.Errorf("MergeRequestProjectNameWithNamespace mismatch: got %v, want %v",
+			decoded.MergeRequestProjectNameWithNamespace, metadata.MergeRequestProjectNameWithNamespace)
+	}
+	if decoded.MergeRequestIID != metadata.MergeRequestIID {
+		t.Errorf("MergeRequestIID mismatch: got %v, want %v", decoded.MergeRequestIID, metadata.MergeRequestIID)
+	}
+	if decoded.DiscussionID != metadata.DiscussionID {
+		t.Errorf("DiscussionID mismatch: got %v, want %v", decoded.DiscussionID, metadata.DiscussionID)
+	}
+	if decoded.RootNoteID != metadata.RootNoteID {
+		t.Errorf("RootNoteID mismatch: got %v, want %v", decoded.RootNoteID, metadata.RootNoteID)
+	}
+	if decoded.VcsProvider != metadata.VcsProvider {
+		t.Errorf("VcsProvider mismatch: got %v, want %v", decoded.VcsProvider, metadata.VcsProvider)
+	}
+	if decoded.AutoMerge != metadata.AutoMerge {
+		t.Errorf("AutoMerge mismatch: got %v, want %v", decoded.AutoMerge, metadata.AutoMerge)
+	}
+}
+
+func Test_encodeTFRunMetadata_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name     string
+		metadata RunMetadata
+		wantErr  bool
+	}{
+		{
+			name:     "nil metadata",
+			metadata: (*TFRunMetadata)(nil),
+			wantErr:  false,
+		},
+		{
+			name: "metadata with unicode characters",
+			metadata: &TFRunMetadata{
+				RunID:        "run-with-unicode-😀",
+				Organization: "org-with-中文",
+				Workspace:    "workspace-with-émojis-🚀",
+			},
+			wantErr: false,
+		},
+		{
+			name: "metadata with very long strings",
+			metadata: &TFRunMetadata{
+				RunID:        string(make([]byte, 1000)),
+				Organization: string(make([]byte, 1000)),
+				Workspace:    string(make([]byte, 1000)),
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data, err := encodeTFRunMetadata(tt.metadata)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("encodeTFRunMetadata() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if !tt.wantErr && tt.metadata != nil && len(data) > 0 {
+				// Verify we can decode it back
+				decoded, err := decodeTFRunMetadata(data)
+				if err != nil {
+					t.Errorf("Failed to decode encoded metadata: %v", err)
+				}
+				if decoded == nil {
+					t.Error("Decoded metadata is nil")
+				}
+			}
+		})
+	}
+}
+
+func Test_decodeTFRunMetadata_InvalidInputs(t *testing.T) {
+	tests := []struct {
+		name    string
+		data    []byte
+		wantErr bool
+	}{
+		{
+			name:    "JSON with wrong types",
+			data:    []byte(`{"RunID": 123, "Organization": true, "Workspace": null}`),
+			wantErr: true,
+		},
+		{
+			name:    "Truncated JSON",
+			data:    []byte(`{"RunID": "test", "Organization": "org", "Workspace": "w`),
+			wantErr: true,
+		},
+		{
+			name:    "JSON with unknown fields",
+			data:    []byte(`{"RunID": "test", "UnknownField": "value"}`),
+			wantErr: false, // Should still decode successfully, ignoring unknown fields
+		},
+		{
+			name:    "Nested JSON object",
+			data:    []byte(`{"RunID": {"nested": "object"}, "Organization": "org"}`),
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := decodeTFRunMetadata(tt.data)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("decodeTFRunMetadata() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func BenchmarkEncodeTFRunMetadata(b *testing.B) {
+	metadata := &TFRunMetadata{
+		RunID:                                "bench-run",
+		Organization:                         "bench-org",
+		Workspace:                            "bench-workspace",
+		Action:                               "plan",
+		CommitSHA:                            "abc123",
+		MergeRequestProjectNameWithNamespace: "group/project",
+		MergeRequestIID:                      42,
+		VcsProvider:                          "gitlab",
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := encodeTFRunMetadata(metadata)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkDecodeTFRunMetadata(b *testing.B) {
+	metadata := &TFRunMetadata{
+		RunID:        "bench-run",
+		Organization: "bench-org",
+		Workspace:    "bench-workspace",
+		Action:       "plan",
+	}
+	data, _ := json.Marshal(metadata)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := decodeTFRunMetadata(data)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func TestTFRunMetadata_ImplementsRunMetadata(t *testing.T) {
+	var _ RunMetadata = (*TFRunMetadata)(nil)
+}
+
+func TestTFRunMetadata_ActionConstants(t *testing.T) {
+	tests := []struct {
+		name   string
+		action string
+		want   string
+	}{
+		{
+			name:   "apply action constant",
+			action: ApplyAction,
+			want:   "apply",
+		},
+		{
+			name:   "plan action constant",
+			action: PlanAction,
+			want:   "plan",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			metadata := &TFRunMetadata{Action: tt.action}
+			if got := metadata.GetAction(); got != tt.want {
+				t.Errorf("GetAction() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

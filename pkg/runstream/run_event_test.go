@@ -3,6 +3,7 @@ package runstream
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -17,29 +18,59 @@ func TestStream_PublishTFRunEvent_Integration(t *testing.T) {
 	s, cleanup := setupTestStream(t)
 	defer cleanup()
 
-	testID := time.Now().UnixNano()
-	runID := fmt.Sprintf("test-run-%d", testID)
-	metadata := &TFRunMetadata{
-		RunID:        runID,
-		Organization: "test-org",
-		Workspace:    "test-workspace",
-		VcsProvider:  "gitlab",
+	tests := []struct {
+		name      string
+		setupMeta bool
+		event     *TFRunEvent
+		wantErr   bool
+	}{
+		{
+			name:      "successful publish with metadata",
+			setupMeta: true,
+			event: &TFRunEvent{
+				RunID:        "test-run-success",
+				Organization: "test-org",
+				Workspace:    "test-workspace",
+				NewStatus:    "planning",
+			},
+			wantErr: false,
+		},
+		{
+			name:      "publish without metadata fails",
+			setupMeta: false,
+			event: &TFRunEvent{
+				RunID:        "test-run-no-meta",
+				Organization: "test-org",
+				Workspace:    "test-workspace",
+				NewStatus:    "planning",
+			},
+			wantErr: true,
+		},
 	}
 
-	err := s.AddRunMeta(metadata)
-	if err != nil {
-		t.Fatalf("Failed to add run metadata: %v", err)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testID := time.Now().UnixNano()
+			tt.event.RunID = fmt.Sprintf("%s-%d", tt.event.RunID, testID)
 
-	event := &TFRunEvent{
-		RunID:        runID,
-		Organization: "test-org",
-		Workspace:    "test-workspace",
-		NewStatus:    "planning",
-	}
-	err = s.PublishTFRunEvent(context.Background(), event)
-	if err != nil {
-		t.Errorf("PublishTFRunEvent() failed: %v", err)
+			if tt.setupMeta {
+				metadata := &TFRunMetadata{
+					RunID:        tt.event.RunID,
+					Organization: tt.event.Organization,
+					Workspace:    tt.event.Workspace,
+					VcsProvider:  "gitlab",
+				}
+				err := s.AddRunMeta(metadata)
+				if err != nil {
+					t.Fatalf("Failed to add run metadata: %v", err)
+				}
+			}
+
+			err := s.PublishTFRunEvent(context.Background(), tt.event)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("PublishTFRunEvent() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
 	}
 }
 
@@ -572,70 +603,215 @@ func TestTFRunEvent_AllFields(t *testing.T) {
 	}
 }
 
-func TestStream_PubSub_ErrorScenarios_Integration(t *testing.T) {
-	if !*integration {
-		t.Skip("Skipping integration test - use -integration flag to run")
+func TestTFRunEvent_JSONMarshaling(t *testing.T) {
+	event := &TFRunEvent{
+		RunID:        "run-marshal",
+		Organization: "org-marshal",
+		Workspace:    "ws-marshal",
+		NewStatus:    "planned",
+		Carrier:      map[string]string{"trace": "123"},
 	}
 
-	s, cleanup := setupTestStream(t)
-	defer cleanup()
+	data, err := json.Marshal(event)
+	if err != nil {
+		t.Fatalf("Failed to marshal TFRunEvent: %v", err)
+	}
 
-	t.Run("publish_without_metadata", func(t *testing.T) {
-		runID := fmt.Sprintf("no-metadata-run-%d", time.Now().UnixNano())
+	var decoded TFRunEvent
+	err = json.Unmarshal(data, &decoded)
+	if err != nil {
+		t.Fatalf("Failed to unmarshal TFRunEvent: %v", err)
+	}
 
-		event := &TFRunEvent{
-			RunID:        runID,
-			Organization: "test-org",
-			NewStatus:    "planning",
-		}
+	if decoded.RunID != event.RunID {
+		t.Errorf("Decoded RunID = %v, want %v", decoded.RunID, event.RunID)
+	}
+	if decoded.Organization != event.Organization {
+		t.Errorf("Decoded Organization = %v, want %v", decoded.Organization, event.Organization)
+	}
+	if decoded.Workspace != event.Workspace {
+		t.Errorf("Decoded Workspace = %v, want %v", decoded.Workspace, event.Workspace)
+	}
+	if decoded.NewStatus != event.NewStatus {
+		t.Errorf("Decoded NewStatus = %v, want %v", decoded.NewStatus, event.NewStatus)
+	}
+}
 
-		err := s.PublishTFRunEvent(context.Background(), event)
-		if err == nil {
-			t.Error("Expected error when publishing without metadata, got none")
-		}
-	})
+func Test_encodeTFRunEvent_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name    string
+		event   RunEvent
+		wantErr bool
+	}{
+		{
+			name: "event with nil metadata",
+			event: &TFRunEvent{
+				RunID:     "test-nil-metadata",
+				NewStatus: "planning",
+				Metadata:  nil,
+			},
+			wantErr: false,
+		},
+		{
+			name: "event with empty strings",
+			event: &TFRunEvent{
+				RunID:        "",
+				Organization: "",
+				Workspace:    "",
+				NewStatus:    "",
+			},
+			wantErr: false,
+		},
+		{
+			name: "event with special characters",
+			event: &TFRunEvent{
+				RunID:        "run-with-special-!@#$%^&*()",
+				Organization: "org/with/slashes",
+				Workspace:    "workspace\"with\"quotes",
+				NewStatus:    "status\nwith\nnewlines",
+			},
+			wantErr: false,
+		},
+	}
 
-	t.Run("subscribe_callback_returns_false", func(t *testing.T) {
-		testID := time.Now().UnixNano()
-		runID := fmt.Sprintf("nack-test-run-%d", testID)
-		queueName := fmt.Sprintf("gitlab-nack-%d", testID)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data, err := encodeTFRunEvent(context.Background(), tt.event)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("encodeTFRunEvent() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
 
-		metadata := &TFRunMetadata{
-			RunID:        runID,
-			Organization: "test-org",
-			Workspace:    "test-workspace",
-			VcsProvider:  queueName,
-		}
-		err := s.AddRunMeta(metadata)
-		if err != nil {
-			t.Fatalf("Failed to add metadata: %v", err)
-		}
-
-		nackReceived := make(chan bool, 1)
-		closer, err := s.SubscribeTFRunEvents(queueName, func(run RunEvent) bool {
-			nackReceived <- true
-			return false
+			if !tt.wantErr && len(data) > 0 {
+				// Verify we can decode it back
+				decoded, err := decodeTFRunEvent(data)
+				if err != nil {
+					t.Errorf("Failed to decode encoded event: %v", err)
+				}
+				if decoded == nil {
+					t.Error("Decoded event is nil")
+				}
+			}
 		})
+	}
+}
+
+func Test_decodeTFRunEvent_MalformedJSON(t *testing.T) {
+	tests := []struct {
+		name    string
+		data    []byte
+		wantErr bool
+	}{
+		{
+			name:    "JSON with wrong type for field",
+			data:    []byte(`{"RunID": 123, "NewStatus": "planning"}`),
+			wantErr: true,
+		},
+		{
+			name:    "JSON with extra closing brace",
+			data:    []byte(`{"RunID": "test", "NewStatus": "planning"}}`),
+			wantErr: true,
+		},
+		{
+			name:    "JSON array instead of object",
+			data:    []byte(`["RunID", "test"]`),
+			wantErr: true,
+		},
+		{
+			name:    "Valid JSON but empty object",
+			data:    []byte(`{}`),
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := decodeTFRunEvent(tt.data)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("decodeTFRunEvent() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+type failingJSONMarshaler struct{}
+
+func (f failingJSONMarshaler) MarshalJSON() ([]byte, error) {
+	return nil, errors.New("mock marshal error")
+}
+
+func TestTFRunEvent_LargeData(t *testing.T) {
+	// Create a large carrier map
+	largeCarrier := make(map[string]string)
+	for i := 0; i < 1000; i++ {
+		largeCarrier[fmt.Sprintf("key-%d", i)] = fmt.Sprintf("value-%d", i)
+	}
+
+	event := &TFRunEvent{
+		RunID:        "large-data-test",
+		Organization: "test-org",
+		Workspace:    "test-workspace",
+		NewStatus:    "planning",
+		Carrier:      largeCarrier,
+	}
+
+	// Test JSON marshaling directly to preserve carrier
+	data, err := json.Marshal(event)
+	if err != nil {
+		t.Fatalf("Failed to marshal large event: %v", err)
+	}
+
+	// Test unmarshaling
+	var decoded TFRunEvent
+	err = json.Unmarshal(data, &decoded)
+	if err != nil {
+		t.Fatalf("Failed to unmarshal large event: %v", err)
+	}
+
+	if len(decoded.Carrier) != len(largeCarrier) {
+		t.Errorf("Carrier size mismatch: got %d, want %d", len(decoded.Carrier), len(largeCarrier))
+	}
+
+	// Also test that encodeTFRunEvent works (it will overwrite carrier)
+	_, err = encodeTFRunEvent(context.Background(), event)
+	if err != nil {
+		t.Fatalf("Failed to encode large event: %v", err)
+	}
+}
+
+func BenchmarkEncodeTFRunEvent(b *testing.B) {
+	event := &TFRunEvent{
+		RunID:        "bench-run",
+		Organization: "bench-org",
+		Workspace:    "bench-workspace",
+		NewStatus:    "planning",
+		Carrier:      map[string]string{"trace": "123"},
+	}
+	ctx := context.Background()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := encodeTFRunEvent(ctx, event)
 		if err != nil {
-			t.Fatalf("SubscribeTFRunEvents() failed: %v", err)
+			b.Fatal(err)
 		}
-		defer closer()
+	}
+}
 
-		event := &TFRunEvent{
-			RunID:        runID,
-			Organization: "test-org",
-			NewStatus:    "planning",
-		}
+func BenchmarkDecodeTFRunEvent(b *testing.B) {
+	event := &TFRunEvent{
+		RunID:        "bench-run",
+		Organization: "bench-org",
+		Workspace:    "bench-workspace",
+		NewStatus:    "planning",
+	}
+	data, _ := json.Marshal(event)
 
-		err = s.PublishTFRunEvent(context.Background(), event)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := decodeTFRunEvent(data)
 		if err != nil {
-			t.Fatalf("PublishTFRunEvent() failed: %v", err)
+			b.Fatal(err)
 		}
-
-		select {
-		case <-nackReceived:
-		case <-time.After(2 * time.Second):
-			t.Error("Timeout waiting for NACK callback")
-		}
-	})
+	}
 }

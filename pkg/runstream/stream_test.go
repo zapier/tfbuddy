@@ -8,7 +8,7 @@ import (
 	"github.com/nats-io/nats.go"
 )
 
-func TestNewStream(t *testing.T) {
+func TestNewStream_Integration(t *testing.T) {
 	if !*integration {
 		t.Skip("Skipping integration test - use -integration flag to run")
 	}
@@ -440,5 +440,127 @@ func Test_configureTFRunEventsStream_Integration(t *testing.T) {
 	_, err := js.StreamInfo("RUN_EVENTS")
 	if err != nil {
 		t.Errorf("configureTFRunEventsStream() failed to create stream: %v", err)
+	}
+}
+
+func Test_needsMigration_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name   string
+		oldCfg *nats.StreamConfig
+		newCfg *nats.StreamConfig
+		want   bool
+	}{
+		{
+			name:   "empty retention policies",
+			oldCfg: &nats.StreamConfig{},
+			newCfg: &nats.StreamConfig{},
+			want:   false,
+		},
+		{
+			name:   "all retention types to workqueue",
+			oldCfg: &nats.StreamConfig{Retention: nats.InterestPolicy},
+			newCfg: &nats.StreamConfig{Retention: nats.WorkQueuePolicy},
+			want:   true,
+		},
+		{
+			name:   "workqueue to interest",
+			oldCfg: &nats.StreamConfig{Retention: nats.WorkQueuePolicy},
+			newCfg: &nats.StreamConfig{Retention: nats.InterestPolicy},
+			want:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Ensure we don't panic with nil configs
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("needsMigration() panicked with: %v", r)
+				}
+			}()
+
+			if got := needsMigration(tt.oldCfg, tt.newCfg); got != tt.want {
+				t.Errorf("needsMigration() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestStreamConstants(t *testing.T) {
+	// Verify constants are properly defined
+	if RunMetadataKvBucket == "" {
+		t.Error("RunMetadataKvBucket constant is empty")
+	}
+
+	// Verify they don't contain invalid characters for NATS
+	invalidChars := []string{" ", "\t", "\n", "\r"}
+	for _, char := range invalidChars {
+		if containsString(RunMetadataKvBucket, char) {
+			t.Errorf("RunMetadataKvBucket contains invalid character: %q", char)
+		}
+	}
+}
+
+func TestStream_FieldInitialization(t *testing.T) {
+	// This tests that the Stream struct fields are properly accessible
+	s := &Stream{
+		js:         nil,
+		metadataKV: nil,
+		pollingKV:  nil,
+	}
+
+	// Ensure fields are accessible
+	if s.js != nil {
+		t.Error("Expected js to be nil")
+	}
+	if s.metadataKV != nil {
+		t.Error("Expected metadataKV to be nil")
+	}
+	if s.pollingKV != nil {
+		t.Error("Expected pollingKV to be nil")
+	}
+}
+
+func TestStream_ImplementsStreamClient(t *testing.T) {
+	// This ensures Stream implements StreamClient interface
+	var _ StreamClient = (*Stream)(nil)
+}
+
+func containsString(s, substr string) bool {
+	return len(substr) > 0 && len(s) >= len(substr) &&
+		(s == substr || len(s) > len(substr) && contains(s, substr))
+}
+
+func contains(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
+func TestTFRunEvent_ImplementsRunEvent(t *testing.T) {
+	var _ RunEvent = (*TFRunEvent)(nil)
+}
+
+func TestActionConstants(t *testing.T) {
+	if ApplyAction != "apply" {
+		t.Errorf("ApplyAction = %v, want 'apply'", ApplyAction)
+	}
+	if PlanAction != "plan" {
+		t.Errorf("PlanAction = %v, want 'plan'", PlanAction)
+	}
+}
+
+func TestActionConstantsDistinct(t *testing.T) {
+	actions := []string{ApplyAction, PlanAction}
+	seen := make(map[string]bool)
+
+	for _, action := range actions {
+		if seen[action] {
+			t.Errorf("Duplicate action constant: %s", action)
+		}
+		seen[action] = true
 	}
 }

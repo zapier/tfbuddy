@@ -32,8 +32,9 @@ type TFRunPollingTask struct {
 
 	// Revision is the NATS KV entry revision
 	Revision uint64
-	ctx      context.Context
-	Carrier  propagation.MapCarrier `json:"Carrier"`
+
+	ctx     context.Context
+	Carrier propagation.MapCarrier `json:"Carrier"`
 }
 
 func (s *Stream) NewTFRunPollingTask(meta RunMetadata, delay time.Duration) RunPollingTask {
@@ -72,15 +73,19 @@ func (task *TFRunPollingTask) GetRunID() string {
 func (task *TFRunPollingTask) GetContext() context.Context {
 	return task.ctx
 }
+
 func (task *TFRunPollingTask) SetCarrier(carrier map[string]string) {
 	task.Carrier = carrier
 }
+
 func (task *TFRunPollingTask) GetLastStatus() string {
 	return task.LastStatus
 }
+
 func (task *TFRunPollingTask) GetRunMetaData() RunMetadata {
 	return task.RunMetadata
 }
+
 func (task *TFRunPollingTask) SetLastStatus(status string) {
 	task.LastStatus = status
 }
@@ -89,11 +94,13 @@ func (task *TFRunPollingTask) update(ctx context.Context) error {
 	defer span.End()
 
 	task.LastUpdate = time.Now()
+
 	span.SetAttributes(
 		attribute.String("runID", task.GetRunID()),
 	)
 
 	b, _ := encodeTFRunPollingTask(ctx, task)
+
 	rev, err := task.stream.pollingKV.Update(pollingKVKey(task), b, task.Revision)
 	if err != nil {
 		// TODO: are there are errors we need to handle?
@@ -224,7 +231,9 @@ func (s *Stream) decodeTFRunPollingTaskKVEntry(entry nats.KeyValueEntry) (*TFRun
 		log.Error().Err(err).Msg("unexpected error while decoding TF Run Polling Task KV entry")
 	}
 
-	run.ctx = otel.GetTextMapPropagator().Extract(context.Background(), run.Carrier)
+	// Set context
+	extractedCtx := otel.GetTextMapPropagator().Extract(context.Background(), run.Carrier)
+	run.ctx = extractedCtx
 
 	// backwards compat
 	// TODO: remove once upgraded
@@ -248,7 +257,8 @@ func (s *Stream) decodeTFRunPollingTask(b []byte) (*TFRunPollingTask, error) {
 	run.stream = s
 
 	ctx := context.Background()
-	run.ctx = otel.GetTextMapPropagator().Extract(ctx, run.Carrier)
+	extractedCtx := otel.GetTextMapPropagator().Extract(ctx, run.Carrier)
+	run.ctx = extractedCtx
 
 	return run, err
 }
