@@ -141,7 +141,7 @@ func (t *TFCClient) LockUnlockWorkspace(ctx context.Context, workspaceID string,
 
 // AddTags Adds a tag to a named terraform workspace. The function returns an error if there's an error generated while trying to add the tags.
 // The tags take the format of prefix dash value, which is just a convention and not required by terraform cloud for naming format.
-// The tag, however, will be lowercased by terraform cloud, and in any retrieval operations.
+// The tag, however, will be lowercased by terraform cloud and in any retrieval operations.
 func (t *TFCClient) AddTags(ctx context.Context, workspace string, prefix string, value string) error {
 	ctx, span := otel.Tracer("TFC").Start(ctx, "AddTags", trace.WithAttributes(
 		attribute.String("workspace", workspace),
@@ -165,20 +165,22 @@ func (t *TFCClient) AddTags(ctx context.Context, workspace string, prefix string
 
 }
 
-// RemoveTagsByQuery removes all tags matching a query from a terraform cloud workspace.  It returns an error if one is returned fom searching or removing tags.// Note: the query will match anywhere in the tag, so common substrings should be avoided.
+// RemoveTagsByQuery removes all tags matching a query from a terraform cloud workspace.
+// It returns an error if one is returned from searching or removing tags.
+// Note: the query will match anywhere in the tag, so common substrings should be avoided.
 func (t *TFCClient) RemoveTagsByQuery(ctx context.Context, workspace string, query string) error {
 	ctx, span := otel.Tracer("TFC").Start(ctx, "RemoveTagsByQuery", trace.WithAttributes(
 		attribute.String("workspace", workspace),
 	))
 	defer span.End()
 
-	taglist, err := t.GetTagsByQuery(ctx, workspace, query)
+	tags, err := t.GetTagsByQuery(ctx, workspace, query)
 	if err != nil {
 		log.Error().Err(err)
 		return err
 	}
 	var removeTags []*tfe.Tag
-	for _, tag := range taglist {
+	for _, tag := range tags {
 		retag := tfe.Tag{Name: tag}
 		removeTags = append(removeTags, &retag)
 	}
@@ -202,7 +204,8 @@ func (t *TFCClient) RemoveTagsByQuery(ctx context.Context, workspace string, que
 }
 
 // GetTagsByQuery returns a list of values of tags on a terraform workspace matching the query string.
-// It operates on strings reporesenting the value of the tag and internally converts it to and from the upstreams tag struct as needed.  Attempting to query tags based on their tag ID will not match the tag.
+// It operates on strings representing the value of the tag and internally converts it to and from the upstream tag struct as needed.
+// Attempting to query tags based on their tag ID will not match the tag.
 func (t *TFCClient) GetTagsByQuery(ctx context.Context, workspace string, query string) ([]string, error) {
 	ctx, span := otel.Tracer("TFC").Start(ctx, "GetTagsByQuery", trace.WithAttributes(
 		attribute.String("workspace", workspace),

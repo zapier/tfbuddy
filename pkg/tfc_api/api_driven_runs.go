@@ -12,9 +12,9 @@ import (
 )
 
 type ApiRunOptions struct {
-	// IsApply = true if this run is will auto apply
+	// IsApply = true if this run will auto apply
 	IsApply bool
-	// Path is the path to directory where repo source has been cloned
+	// Path is the path to the directory where a repo source has been cloned
 	Path string
 	// Message is the Terraform Cloud run title.
 	Message string
@@ -51,8 +51,8 @@ func (c *TFCClient) CreateRunFromSource(ctx context.Context, opts *ApiRunOptions
 	// TODO: Clean this up maybe check for valid Versions from TFCloud
 	var tfVersion *string = nil
 	var tfPlanOnly *bool = nil
-	var tfAllowEmptyApply *bool = tfe.Bool(false)
-	tfTarget := []string{}
+	var tfAllowEmptyApply = tfe.Bool(false)
+	var tfTarget []string
 
 	if opts.TFVersion != "" && !opts.IsApply {
 		log.Debug().Str("version", opts.TFVersion).Msg("setting tf version")
