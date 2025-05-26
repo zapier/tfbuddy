@@ -60,10 +60,9 @@ func MonitorRunStatus() {
 				urlParts := strings.SplitAfter(s.TargetURL, "/")
 				runID := urlParts[len(urlParts)-1]
 
-				description := s.Description
+				description := ""
 				switch s.Status {
 				case "pending":
-					description = ""
 					commentBody += fmt.Sprintf(MR_RUN_DETAILS_FORMAT, workspace, s.Status, s.TargetURL, s.TargetURL, description)
 					st := s
 					wg.Add(1)
@@ -88,8 +87,12 @@ func postCommentBody(ctx context.Context, commentBody string) {
 		mrIID, err := strconv.Atoi(os.Getenv("CI_MERGE_REQUEST_IID"))
 		if err != nil {
 			log.Printf("erroring posting comment: %v", err)
+			return
 		}
-		glClient.CreateMergeRequestComment(ctx, mrIID, projectID, fmt.Sprintf(MR_COMMENT_FORMAT, commentBody))
+		err = glClient.CreateMergeRequestComment(ctx, mrIID, projectID, fmt.Sprintf(MR_COMMENT_FORMAT, commentBody))
+		if err != nil {
+			log.Printf("error creating merge request comment: %v", err)
+		}
 	}
 }
 

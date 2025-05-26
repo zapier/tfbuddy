@@ -30,7 +30,10 @@ func StartScheduledRun(token, workspace string) {
 
 	if ok, cancel := shouldScheduleNewRun(current); ok {
 		if cancel {
-			client.Runs.Cancel(ctx, current.ID, tfe.RunCancelOptions{Comment: tfe.String("auto cancel hung run")})
+			err := client.Runs.Cancel(ctx, current.ID, tfe.RunCancelOptions{Comment: tfe.String("auto cancel hung run")})
+			if err != nil {
+				log.Error().Err(err).Msg("failed to cancel run")
+			}
 		}
 		// queue another run
 		ws := getWorkspace(ctx, client, workspace)
