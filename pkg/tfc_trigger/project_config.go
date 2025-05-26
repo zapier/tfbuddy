@@ -61,11 +61,6 @@ func (cfg *ProjectConfig) workspaceForDir(dir string) *TFCWorkspace {
 func (cfg *ProjectConfig) workspacesForTriggerDir(dir string) []*TFCWorkspace {
 	result := []*TFCWorkspace{}
 	for _, ws := range cfg.Workspaces {
-		wsDir := ws.Dir
-		if !strings.HasSuffix(wsDir, "/") {
-			wsDir += "/"
-		}
-
 		for _, td := range ws.TriggerDirs {
 			if match, err := doublestar.Match(td, dir); match {
 				result = append(result, ws)

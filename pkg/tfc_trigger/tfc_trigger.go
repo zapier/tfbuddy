@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -200,7 +199,7 @@ var (
 )
 
 func FindLockingMR(ctx context.Context, tags []string, thisMR string) string {
-	ctx, span := otel.Tracer("TFC").Start(ctx, "FindLockingMR")
+	_, span := otel.Tracer("TFC").Start(ctx, "FindLockingMR")
 	defer span.End()
 
 	for _, tag := range tags {
@@ -361,7 +360,7 @@ func (t *TFCTrigger) cloneGitRepo(ctx context.Context, mr vcs.MR) (vcs.GitRepo, 
 	defer span.End()
 
 	safeProj := strings.ReplaceAll(t.GetProjectNameWithNamespace(), "/", "-")
-	cloneDir, err := ioutil.TempDir("", fmt.Sprintf("%s-%d-*", safeProj, t.GetMergeRequestIID()))
+	cloneDir, err := os.MkdirTemp("", fmt.Sprintf("%s-%d-*", safeProj, t.GetMergeRequestIID()))
 	if err != nil {
 		return nil, fmt.Errorf("could not create tmp directory. %w", err)
 	}
@@ -393,7 +392,9 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 		if err != nil {
 			return nil, err
 		}
-		defer os.Remove(repo.GetLocalDirectory())
+		defer func() {
+			_ = os.RemoveAll(repo.GetLocalDirectory())
+		}()
 
 		modifiedWSMap, err := t.getModifiedWorkspaceBetweenMergeBaseTargetBranch(ctx, mr, repo)
 		if err != nil {
@@ -434,7 +435,9 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 
 	} else if t.GetTriggerSource() == CommentTrigger {
 		log.Error().Err(ErrNoChangesDetected)
-		t.postUpdate(ctx, ErrNoChangesDetected.Error())
+		if err := t.postUpdate(ctx, ErrNoChangesDetected.Error()); err != nil {
+			log.Error().Err(err).Msg("failed to post update message")
+		}
 		return nil, nil
 
 	} else {
@@ -464,19 +467,19 @@ func (t *TFCTrigger) TriggerCleanupEvent(ctx context.Context) error {
 			cfgWS.Organization,
 			cfgWS.Name)
 		if err != nil {
-			t.handleError(ctx, err, "error getting workspace")
+			_ = t.handleError(ctx, err, "error getting workspace")
 		}
 		tags, err := t.tfc.GetTagsByQuery(ctx,
 			ws.ID,
 			tag,
 		)
 		if err != nil {
-			t.handleError(ctx, err, "error getting tags")
+			_ = t.handleError(ctx, err, "error getting tags")
 		}
 		if len(tags) != 0 {
 			err = t.tfc.RemoveTagsByQuery(ctx, ws.ID, tag)
 			if err != nil {
-				t.handleError(ctx, err, "Error removing locking tag from workspace")
+				_ = t.handleError(ctx, err, "Error removing locking tag from workspace")
 				continue
 			}
 			wsNames = append(wsNames, cfgWS.Name)

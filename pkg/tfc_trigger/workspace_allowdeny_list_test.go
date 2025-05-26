@@ -1,7 +1,6 @@
 package tfc_trigger
 
 import (
-	"os"
 	"strings"
 	"testing"
 
@@ -88,12 +87,10 @@ func Test_isWorkspaceAllowed(t *testing.T) {
 			want: false,
 		},
 	}
-	defer os.Unsetenv("TFBUDDY_WORKSPACE_ALLOW_LIST")
-	defer os.Unsetenv("TFBUDDY_WORKSPACE_DENY_LIST")
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			os.Setenv("TFBUDDY_WORKSPACE_ALLOW_LIST", strings.Join(tt.args.allowList, ","))
-			os.Setenv("TFBUDDY_WORKSPACE_DENY_LIST", strings.Join(tt.args.denyList, ","))
+			t.Setenv("TFBUDDY_WORKSPACE_ALLOW_LIST", strings.Join(tt.args.allowList, ","))
+			t.Setenv("TFBUDDY_WORKSPACE_DENY_LIST", strings.Join(tt.args.denyList, ","))
 			assert.Equalf(t, tt.want, isWorkspaceAllowed(tt.args.workspace, tt.args.org), "isWorkspaceAllowed(%v)", tt.args.workspace)
 		})
 	}
