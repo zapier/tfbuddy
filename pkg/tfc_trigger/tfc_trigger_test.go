@@ -3,7 +3,6 @@ package tfc_trigger_test
 import (
 	"context"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
@@ -583,225 +582,117 @@ func TestTFCEvents_MultiWorkspaceApplyModifiedBothSrcDstBranches(t *testing.T) {
 
 }
 
-func TestAutoMerge_False_Merge_Before_Apply(t *testing.T) {
-	ws := &tfc_trigger.ProjectConfig{
-		Workspaces: []*tfc_trigger.TFCWorkspace{{
-			Name:         "service-tfbuddy",
-			Organization: "zapier-test",
-			Mode:         "merge-before-apply",
-			AutoMerge:    true,
-		}}}
-
-	mockCtrl := gomock.NewController(t)
-	defer mockCtrl.Finish()
-	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: ws}, t)
-
-	testSuite.MockGitRepo.EXPECT().GetModifiedFileNamesBetweenCommits(testSuite.MetaData.CommonSHA, "main").Return([]string{}, nil)
-	testSuite.MockApiClient.EXPECT().CreateRunFromSource(gomock.Any(), gomock.Any()).Return(&tfe.Run{
-		ID: "101",
-		Workspace: &tfe.Workspace{Name: "service-tfbuddy",
-			Organization: &tfe.Organization{Name: "zapier-test"},
+func TestAutoMerge(t *testing.T) {
+	tests := []struct {
+		name               string
+		workspaceMode      string
+		workspaceAutoMerge bool
+		globalAutoMerge    string
+		expectedAutoMerge  bool
+		expectedLogMessage string
+	}{
+		{
+			name:               "false_merge_before_apply",
+			workspaceMode:      "merge-before-apply",
+			workspaceAutoMerge: true,
+			globalAutoMerge:    "",
+			expectedAutoMerge:  false,
+			expectedLogMessage: "auto-merge cannot be enabled because the 'apply-before-merge' mode is not in use",
 		},
-		ConfigurationVersion: &tfe.ConfigurationVersion{Speculative: false}}, nil)
-
-	testSuite.MockStreamClient.EXPECT().AddRunMeta(&runstream.TFRunMetadata{
-		RunID:                                "101",
-		Organization:                         "zapier-test",
-		Workspace:                            "service-tfbuddy",
-		Source:                               "merge_request",
-		Action:                               "apply",
-		CommitSHA:                            "abcd12233",
-		MergeRequestProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
-		MergeRequestIID:                      testSuite.MetaData.MRIID,
-		DiscussionID:                         "201",
-		RootNoteID:                           301,
-		VcsProvider:                          "",
-		AutoMerge:                            false,
-	})
-
-	testSuite.InitTestSuite()
-	testLogger := zltest.New(t)
-	log.Logger = log.Logger.Output(testLogger)
-
-	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
-		Action:                   tfc_trigger.ApplyAction,
-		Branch:                   "test-branch",
-		CommitSHA:                "abcd12233",
-		ProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
-		MergeRequestIID:          testSuite.MetaData.MRIID,
-		TriggerSource:            tfc_trigger.CommentTrigger,
-	})
-	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
-	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
-	triggeredWS, err := trigger.TriggerTFCEvents(ctx)
-	if err != nil {
-		t.Fatal(err)
-		return
-	}
-	lastEntry := testLogger.LastEntry()
-	if lastEntry == nil {
-		t.Fatal("expected log message not nil")
-		return
-	}
-	lastEntry.ExpMsg("auto-merge cannot be enabled because the 'apply-before-merge' mode is not in use")
-
-	if len(triggeredWS.Errored) != 0 {
-		t.Fatal("expected no failed workspaces")
-	}
-	if len(triggeredWS.Executed) == 0 {
-		t.Fatal("expected successful triggers")
-	}
-	if triggeredWS.Executed[0] != "service-tfbuddy" {
-		t.Fatal("expected workspace", triggeredWS.Errored[0].Name)
-	}
-}
-
-func TestAutoMerge_True_Apply_Before_Merge(t *testing.T) {
-	ws := &tfc_trigger.ProjectConfig{
-		Workspaces: []*tfc_trigger.TFCWorkspace{{
-			Name:         "service-tfbuddy",
-			Organization: "zapier-test",
-			Mode:         "apply-before-merge",
-			AutoMerge:    true,
-		}}}
-
-	mockCtrl := gomock.NewController(t)
-	defer mockCtrl.Finish()
-	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: ws}, t)
-
-	testSuite.MockGitRepo.EXPECT().GetModifiedFileNamesBetweenCommits(testSuite.MetaData.CommonSHA, "main").Return([]string{}, nil)
-	testSuite.MockApiClient.EXPECT().CreateRunFromSource(gomock.Any(), gomock.Any()).Return(&tfe.Run{
-		ID: "101",
-		Workspace: &tfe.Workspace{Name: "service-tfbuddy",
-			Organization: &tfe.Organization{Name: "zapier-test"},
+		{
+			name:               "true_apply_before_merge",
+			workspaceMode:      "apply-before-merge",
+			workspaceAutoMerge: true,
+			globalAutoMerge:    "",
+			expectedAutoMerge:  true,
+			expectedLogMessage: "created TFC run",
 		},
-		ConfigurationVersion: &tfe.ConfigurationVersion{Speculative: false}}, nil)
-
-	testSuite.MockStreamClient.EXPECT().AddRunMeta(&runstream.TFRunMetadata{
-		RunID:                                "101",
-		Organization:                         "zapier-test",
-		Workspace:                            "service-tfbuddy",
-		Source:                               "merge_request",
-		Action:                               "apply",
-		CommitSHA:                            "abcd12233",
-		MergeRequestProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
-		MergeRequestIID:                      testSuite.MetaData.MRIID,
-		DiscussionID:                         "201",
-		RootNoteID:                           301,
-		VcsProvider:                          "",
-		AutoMerge:                            true,
-	})
-
-	testSuite.InitTestSuite()
-	testLogger := zltest.New(t)
-	log.Logger = log.Logger.Output(testLogger)
-
-	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
-		Action:                   tfc_trigger.ApplyAction,
-		Branch:                   "test-branch",
-		CommitSHA:                "abcd12233",
-		ProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
-		MergeRequestIID:          testSuite.MetaData.MRIID,
-		TriggerSource:            tfc_trigger.CommentTrigger,
-	})
-	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
-	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
-	triggeredWS, err := trigger.TriggerTFCEvents(ctx)
-	if err != nil {
-		t.Fatal(err)
-		return
-	}
-	lastEntry := testLogger.LastEntry()
-	if lastEntry == nil {
-		t.Fatal("expected log message not nil")
-		return
-	}
-	lastEntry.ExpMsg("created TFC run")
-
-	if len(triggeredWS.Errored) != 0 {
-		t.Fatal("expected no failed workspaces")
-	}
-	if len(triggeredWS.Executed) == 0 {
-		t.Fatal("expected successful triggers")
-	}
-	if triggeredWS.Executed[0] != "service-tfbuddy" {
-		t.Fatal("expected workspace", triggeredWS.Errored[0].Name)
-	}
-}
-
-func TestAutoMerge_Globally_Disabled(t *testing.T) {
-	originalVal := os.Getenv(vcs.TF_BUDDY_AUTO_MERGE)
-	os.Setenv(vcs.TF_BUDDY_AUTO_MERGE, "false")
-	defer func() { os.Setenv(vcs.TF_BUDDY_AUTO_MERGE, originalVal) }()
-
-	ws := &tfc_trigger.ProjectConfig{
-		Workspaces: []*tfc_trigger.TFCWorkspace{{
-			Name:         "service-tfbuddy",
-			Organization: "zapier-test",
-			Mode:         "apply-before-merge",
-			AutoMerge:    true,
-		}}}
-
-	mockCtrl := gomock.NewController(t)
-	defer mockCtrl.Finish()
-	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: ws}, t)
-
-	testSuite.MockGitRepo.EXPECT().GetModifiedFileNamesBetweenCommits(testSuite.MetaData.CommonSHA, "main").Return([]string{}, nil)
-	testSuite.MockApiClient.EXPECT().CreateRunFromSource(gomock.Any(), gomock.Any()).Return(&tfe.Run{
-		ID: "101",
-		Workspace: &tfe.Workspace{Name: "service-tfbuddy",
-			Organization: &tfe.Organization{Name: "zapier-test"},
+		{
+			name:               "globally_disabled",
+			workspaceMode:      "apply-before-merge",
+			workspaceAutoMerge: true,
+			globalAutoMerge:    "false",
+			expectedAutoMerge:  false,
+			expectedLogMessage: "auto-merge cannot be enabled since the feature is globally disabled",
 		},
-		ConfigurationVersion: &tfe.ConfigurationVersion{Speculative: false}}, nil)
-
-	testSuite.MockStreamClient.EXPECT().AddRunMeta(&runstream.TFRunMetadata{
-		RunID:                                "101",
-		Organization:                         "zapier-test",
-		Workspace:                            "service-tfbuddy",
-		Source:                               "merge_request",
-		Action:                               "apply",
-		CommitSHA:                            "abcd12233",
-		MergeRequestProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
-		MergeRequestIID:                      testSuite.MetaData.MRIID,
-		DiscussionID:                         "201",
-		RootNoteID:                           301,
-		VcsProvider:                          "",
-		AutoMerge:                            false,
-	})
-
-	testSuite.InitTestSuite()
-	testLogger := zltest.New(t)
-	log.Logger = log.Logger.Output(testLogger)
-
-	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
-		Action:                   tfc_trigger.ApplyAction,
-		Branch:                   "test-branch",
-		CommitSHA:                "abcd12233",
-		ProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
-		MergeRequestIID:          testSuite.MetaData.MRIID,
-		TriggerSource:            tfc_trigger.CommentTrigger,
-	})
-	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
-	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
-	triggeredWS, err := trigger.TriggerTFCEvents(ctx)
-	if err != nil {
-		t.Fatal(err)
-		return
 	}
-	lastEntry := testLogger.LastEntry()
-	if lastEntry == nil {
-		t.Fatal("expected log message not nil")
-		return
-	}
-	lastEntry.ExpMsg("auto-merge cannot be enabled since the feature is globally disabled")
 
-	if len(triggeredWS.Errored) != 0 {
-		t.Fatal("expected no failed workspaces")
-	}
-	if len(triggeredWS.Executed) == 0 {
-		t.Fatal("expected successful triggers")
-	}
-	if triggeredWS.Executed[0] != "service-tfbuddy" {
-		t.Fatal("expected workspace", triggeredWS.Errored[0].Name)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.globalAutoMerge != "" {
+				t.Setenv(vcs.TF_BUDDY_AUTO_MERGE, tt.globalAutoMerge)
+			}
+
+			ws := &tfc_trigger.ProjectConfig{
+				Workspaces: []*tfc_trigger.TFCWorkspace{{
+					Name:         "service-tfbuddy",
+					Organization: "zapier-test",
+					Mode:         tt.workspaceMode,
+					AutoMerge:    tt.workspaceAutoMerge,
+				}}}
+
+			mockCtrl := gomock.NewController(t)
+			defer mockCtrl.Finish()
+			testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: ws}, t)
+
+			testSuite.MockGitRepo.EXPECT().GetModifiedFileNamesBetweenCommits(testSuite.MetaData.CommonSHA, "main").Return([]string{}, nil)
+			testSuite.MockApiClient.EXPECT().CreateRunFromSource(gomock.Any(), gomock.Any()).Return(&tfe.Run{
+				ID: "101",
+				Workspace: &tfe.Workspace{Name: "service-tfbuddy",
+					Organization: &tfe.Organization{Name: "zapier-test"},
+				},
+				ConfigurationVersion: &tfe.ConfigurationVersion{Speculative: false}}, nil)
+
+			testSuite.MockStreamClient.EXPECT().AddRunMeta(&runstream.TFRunMetadata{
+				RunID:                                "101",
+				Organization:                         "zapier-test",
+				Workspace:                            "service-tfbuddy",
+				Source:                               "merge_request",
+				Action:                               "apply",
+				CommitSHA:                            "abcd12233",
+				MergeRequestProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
+				MergeRequestIID:                      testSuite.MetaData.MRIID,
+				DiscussionID:                         "201",
+				RootNoteID:                           301,
+				VcsProvider:                          "",
+				AutoMerge:                            tt.expectedAutoMerge,
+			})
+
+			testSuite.InitTestSuite()
+			testLogger := zltest.New(t)
+			log.Logger = log.Logger.Output(testLogger)
+
+			tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
+				Action:                   tfc_trigger.ApplyAction,
+				Branch:                   "test-branch",
+				CommitSHA:                "abcd12233",
+				ProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
+				MergeRequestIID:          testSuite.MetaData.MRIID,
+				TriggerSource:            tfc_trigger.CommentTrigger,
+			})
+			trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+			ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
+			triggeredWS, err := trigger.TriggerTFCEvents(ctx)
+			if err != nil {
+				t.Fatal(err)
+				return
+			}
+			lastEntry := testLogger.LastEntry()
+			if lastEntry == nil {
+				t.Fatal("expected log message not nil")
+				return
+			}
+			lastEntry.ExpMsg(tt.expectedLogMessage)
+
+			if len(triggeredWS.Errored) != 0 {
+				t.Fatal("expected no failed workspaces")
+			}
+			if len(triggeredWS.Executed) == 0 {
+				t.Fatal("expected successful triggers")
+			}
+			if triggeredWS.Executed[0] != "service-tfbuddy" {
+				t.Fatal("expected workspace", triggeredWS.Executed[0])
+			}
+		})
 	}
 }

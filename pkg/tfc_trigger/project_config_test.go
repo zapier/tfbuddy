@@ -1,12 +1,13 @@
 package tfc_trigger
 
 import (
-	"os"
+	"fmt"
 	"reflect"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"gopkg.in/yaml.v2"
 
 	"github.com/kr/pretty"
 )
@@ -222,7 +223,7 @@ func TestProjectConfig_workspacesForTriggerDir(t *testing.T) {
 			args: args{
 				dir: "docs/",
 			},
-			want: make([]*TFCWorkspace, 0),
+			want: []*TFCWorkspace{},
 		},
 	}
 	for _, tt := range tests {
@@ -457,16 +458,22 @@ func Test_loadProjectConfig(t *testing.T) {
 		b []byte
 	}
 	tests := []struct {
-		name       string
-		args       args
-		want       *ProjectConfig
-		wantErr    bool
-		preTestFn  func()
-		postTestFn func()
+		name     string
+		args     args
+		want     *ProjectConfig
+		wantErr  bool
+		setupEnv func()
 	}{
 		{
 			name: "basic",
-			args: args{b: []byte(tfbuddyYamlNoTriggerDirs)},
+			args: args{b: []byte(buildTfbuddyYaml([]map[string]interface{}{
+				{
+					"name":         "service-tfbuddy-dev",
+					"organization": "foo-corp",
+					"dir":          "terraform/dev/",
+					"mode":         "apply-before-merge",
+				},
+			}))},
 			want: &ProjectConfig{Workspaces: []*TFCWorkspace{
 				{
 					Name:         "service-tfbuddy-dev",
@@ -503,11 +510,8 @@ func Test_loadProjectConfig(t *testing.T) {
 		{
 			name: "no-organization-w-default",
 			args: args{b: []byte(tfbuddyYamlNoOrg)},
-			preTestFn: func() {
-				os.Setenv(DefaultTfcOrganizationEnvName, "foo-corp")
-			},
-			postTestFn: func() {
-				os.Unsetenv(DefaultTfcOrganizationEnvName)
+			setupEnv: func() {
+				t.Setenv(DefaultTfcOrganizationEnvName, "foo-corp")
 			},
 			want: &ProjectConfig{Workspaces: []*TFCWorkspace{
 				{
@@ -599,8 +603,8 @@ func Test_loadProjectConfig(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.preTestFn != nil {
-				tt.preTestFn()
+			if tt.setupEnv != nil {
+				tt.setupEnv()
 			}
 			got, err := loadProjectConfig(tt.args.b)
 			if (err != nil) != tt.wantErr {
@@ -609,9 +613,6 @@ func Test_loadProjectConfig(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("loadProjectConfig() got = %v, want %v", pretty.Sprint(got), pretty.Sprint(tt.want))
-			}
-			if tt.postTestFn != nil {
-				tt.postTestFn()
 			}
 		})
 	}
@@ -623,6 +624,20 @@ func testLoadConfig(t *testing.T, yaml string) *ProjectConfig {
 		t.Errorf("could not load ProjectConfig for test: %v", err)
 	}
 	return pc
+}
+
+// buildTfbuddyYaml creates YAML configuration for testing
+func buildTfbuddyYaml(workspaces []map[string]interface{}) string {
+	config := map[string]interface{}{
+		"workspaces": workspaces,
+	}
+
+	yamlBytes, err := yaml.Marshal(config)
+	if err != nil {
+		panic(fmt.Sprintf("failed to marshal YAML: %v", err))
+	}
+
+	return string(yamlBytes)
 }
 
 const tfbuddyYamlNoTriggerDirs = `
