@@ -3,114 +3,274 @@ package tfc_hooks
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/go-tfe"
-	"github.com/zapier/tfbuddy/pkg/tfc_api"
+	"github.com/labstack/echo/v4"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/zapier/tfbuddy/pkg/mocks"
+	"github.com/zapier/tfbuddy/pkg/runstream"
+	"go.uber.org/mock/gomock"
 )
 
-//
-//func Test_processNotification(t *testing.T) {
-//	testTFCApiClient := &TestApiClient{t: t}
-//	testHandler := NewNotificationHandler(testTFCApiClient)
-//
-//	type args struct {
-//		n *NotificationPayload
-//	}
-//	tests := []struct {
-//		name    string
-//		args    args
-//		runData string
-//		want    Action
-//	}{
-//		{
-//			name:    "Verification",
-//			args:    args{testParsePayload(t, NotificationVerificationPayload)},
-//			runData: runData,
-//			want: Action{
-//				Type: NotificationActionNone,
-//				Data: nil,
-//			},
-//		},
-//		{
-//			name:    "Created",
-//			args:    args{testParsePayload(t, NotificationRunCreatedUIPayload)},
-//			runData: runData,
-//			want: Action{
-//				Type: NotificationActionMergeRequestComment,
-//				Data: map[string]string{
-//					"CommentBody":           "asdfasdfdas",
-//					"GitlabProjectID":       "",
-//					"GitlabMergeRequestIID": "",
-//				},
-//			},
-//		},
-//		{
-//			name:    "Planning",
-//			args:    args{testParsePayload(t, NotificationRunPlanningPayload)},
-//			runData: runData,
-//			want: Action{
-//				Type: NotificationActionMergeRequestComment,
-//				Data: map[string]string{
-//					"CommentBody":           "asdfasdfdas",
-//					"GitlabProjectID":       "",
-//					"GitlabMergeRequestIID": "",
-//				},
-//			},
-//		},
-//	}
-//	for _, tt := range tests {
-//		t.Run(tt.name, func(t *testing.T) {
-//			testTFCApiClient.RunData = []byte(tt.runData)
-//			if got := testHandler.processNotification(tt.args.n); !reflect.DeepEqual(got, tt.want) {
-//				t.Errorf("processNotification() = %v, want %v", got, tt.want)
-//			}
-//		})
-//	}
-//}
+func TestNewNotificationHandler(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
 
-type TestApiClient struct {
-	RunData       []byte
-	WorkspaceData []byte
-	t             *testing.T
+	mockAPI := mocks.NewMockApiClient(ctrl)
+	mockStream := mocks.NewMockStreamClient(ctrl)
+
+	mockStream.EXPECT().SubscribeTFRunPollingTasks(gomock.Any()).Return(func() {}, nil)
+
+	handler := NewNotificationHandler(mockAPI, mockStream)
+	require.NotNil(t, handler)
+	assert.Equal(t, mockAPI, handler.api)
+	assert.Equal(t, mockStream, handler.stream)
 }
 
-func (api *TestApiClient) GetWorkspaceByName(ctx context.Context, org, name string) (*tfe.Workspace, error) {
-	//TODO implement me
-	panic("implement me")
+func TestNewNotificationHandler_SubscriptionError(t *testing.T) {
+	// This test would cause the program to exit due to log.Fatal()
+	// In a real scenario, we'd need to refactor to return errors instead of calling log.Fatal
+	t.Skip("Test skipped because log.Fatal() calls os.Exit()")
 }
 
-func (api *TestApiClient) CreateRunFromSource(opts tfc_api.ApiRunOptions) (*tfe.Run, error) {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (api *TestApiClient) GetRun(id string) (*tfe.Run, error) {
-	run := &tfe.Run{}
-	err := json.Unmarshal(api.RunData, run)
-	if err != nil {
-		api.t.Errorf("Test setup failure - could not unmarshal TFE Run data: %v", err)
-	}
-	return run, nil
-}
-
-func (api *TestApiClient) GetWorkspaceById(ctx context.Context, id string) (*tfe.Workspace, error) {
-	workspace := &tfe.Workspace{}
-	err := json.Unmarshal(api.WorkspaceData, workspace)
-	if err != nil {
-		api.t.Errorf("Test setup failure - could not unmarshal TFE Workspace data: %v", err)
-	}
-	return workspace, nil
-}
-
-func testParsePayload(t *testing.T, payStr string) *NotificationPayload {
-	pay := NotificationPayload{}
-	err := json.Unmarshal([]byte(payStr), &pay)
-	if err != nil {
-		t.Fatalf("Test setup error, failed to parse test payload: %v", err)
+func TestNotificationHandler_Handler(t *testing.T) {
+	tests := []struct {
+		name           string
+		payload        string
+		setupMocks     func(*mocks.MockApiClient, *mocks.MockStreamClient)
+		expectedStatus int
+	}{
+		{
+			name:    "Valid notification",
+			payload: NotificationRunCreatedUIPayload,
+			setupMocks: func(mockAPI *mocks.MockApiClient, mockStream *mocks.MockStreamClient) {
+				mockStream.EXPECT().SubscribeTFRunPollingTasks(gomock.Any()).Return(func() {}, nil)
+				mockAPI.EXPECT().GetRun(gomock.Any(), "run-Vy7sSoyhizTafW8f").Return(&tfe.Run{ID: "run-Vy7sSoyhizTafW8f"}, nil)
+				mockStream.EXPECT().PublishTFRunEvent(gomock.Any(), gomock.Any()).Return(nil)
+			},
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:    "Invalid JSON payload",
+			payload: "invalid json",
+			setupMocks: func(mockAPI *mocks.MockApiClient, mockStream *mocks.MockStreamClient) {
+				mockStream.EXPECT().SubscribeTFRunPollingTasks(gomock.Any()).Return(func() {}, nil)
+			},
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:    "Verification payload",
+			payload: NotificationVerificationPayload,
+			setupMocks: func(mockAPI *mocks.MockApiClient, mockStream *mocks.MockStreamClient) {
+				mockStream.EXPECT().SubscribeTFRunPollingTasks(gomock.Any()).Return(func() {}, nil)
+			},
+			expectedStatus: http.StatusOK,
+		},
 	}
 
-	return &pay
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockAPI := mocks.NewMockApiClient(ctrl)
+			mockStream := mocks.NewMockStreamClient(ctrl)
+
+			tt.setupMocks(mockAPI, mockStream)
+
+			handler := NewNotificationHandler(mockAPI, mockStream)
+
+			e := echo.New()
+			req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(tt.payload))
+			req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			err := handler.Handler()(c)
+
+			if tt.expectedStatus == http.StatusOK {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expectedStatus, rec.Code)
+			} else {
+				assert.Error(t, err)
+			}
+		})
+	}
+}
+
+func TestNotificationHandler_processNotification(t *testing.T) {
+	tests := []struct {
+		name       string
+		payload    *NotificationPayload
+		setupMocks func(*mocks.MockApiClient, *mocks.MockStreamClient)
+	}{
+		{
+			name:    "Empty RunId",
+			payload: &NotificationPayload{RunId: ""},
+			setupMocks: func(mockAPI *mocks.MockApiClient, mockStream *mocks.MockStreamClient) {
+				mockStream.EXPECT().SubscribeTFRunPollingTasks(gomock.Any()).Return(func() {}, nil)
+			},
+		},
+		{
+			name: "Successful processing",
+			payload: &NotificationPayload{
+				RunId:            "run-test",
+				OrganizationName: "test-org",
+				WorkspaceName:    "test-workspace",
+				Notifications: []struct {
+					Message      string        `json:"message"`
+					Trigger      string        `json:"trigger"`
+					RunStatus    tfe.RunStatus `json:"run_status"`
+					RunUpdatedAt time.Time     `json:"run_updated_at"`
+					RunUpdatedBy string        `json:"run_updated_by"`
+				}{{RunStatus: tfe.RunPlanning}},
+			},
+			setupMocks: func(mockAPI *mocks.MockApiClient, mockStream *mocks.MockStreamClient) {
+				mockStream.EXPECT().SubscribeTFRunPollingTasks(gomock.Any()).Return(func() {}, nil)
+				mockAPI.EXPECT().GetRun(gomock.Any(), "run-test").Return(&tfe.Run{ID: "run-test"}, nil)
+				mockStream.EXPECT().PublishTFRunEvent(gomock.Any(), &runstream.TFRunEvent{
+					Organization: "test-org",
+					Workspace:    "test-workspace",
+					RunID:        "run-test",
+					NewStatus:    string(tfe.RunPlanning),
+				}).Return(nil)
+			},
+		},
+		{
+			name: "Empty notifications array",
+			payload: &NotificationPayload{
+				RunId:            "run-test",
+				OrganizationName: "test-org",
+				WorkspaceName:    "test-workspace",
+				Notifications: []struct {
+					Message      string        `json:"message"`
+					Trigger      string        `json:"trigger"`
+					RunStatus    tfe.RunStatus `json:"run_status"`
+					RunUpdatedAt time.Time     `json:"run_updated_at"`
+					RunUpdatedBy string        `json:"run_updated_by"`
+				}{},
+			},
+			setupMocks: func(mockAPI *mocks.MockApiClient, mockStream *mocks.MockStreamClient) {
+				mockStream.EXPECT().SubscribeTFRunPollingTasks(gomock.Any()).Return(func() {}, nil)
+				// No other expectations as processNotification should return early
+			},
+		},
+		{
+			name: "API error",
+			payload: &NotificationPayload{
+				RunId:            "run-test",
+				OrganizationName: "test-org",
+				WorkspaceName:    "test-workspace",
+				Notifications: []struct {
+					Message      string        `json:"message"`
+					Trigger      string        `json:"trigger"`
+					RunStatus    tfe.RunStatus `json:"run_status"`
+					RunUpdatedAt time.Time     `json:"run_updated_at"`
+					RunUpdatedBy string        `json:"run_updated_by"`
+				}{{RunStatus: tfe.RunErrored}},
+			},
+			setupMocks: func(mockAPI *mocks.MockApiClient, mockStream *mocks.MockStreamClient) {
+				mockStream.EXPECT().SubscribeTFRunPollingTasks(gomock.Any()).Return(func() {}, nil)
+				mockAPI.EXPECT().GetRun(gomock.Any(), "run-test").Return(nil, errors.New("API error"))
+				mockStream.EXPECT().PublishTFRunEvent(gomock.Any(), gomock.Any()).Return(nil)
+			},
+		},
+		{
+			name: "Stream publish error",
+			payload: &NotificationPayload{
+				RunId:            "run-test",
+				OrganizationName: "test-org",
+				WorkspaceName:    "test-workspace",
+				Notifications: []struct {
+					Message      string        `json:"message"`
+					Trigger      string        `json:"trigger"`
+					RunStatus    tfe.RunStatus `json:"run_status"`
+					RunUpdatedAt time.Time     `json:"run_updated_at"`
+					RunUpdatedBy string        `json:"run_updated_by"`
+				}{{RunStatus: tfe.RunApplied}},
+			},
+			setupMocks: func(mockAPI *mocks.MockApiClient, mockStream *mocks.MockStreamClient) {
+				mockStream.EXPECT().SubscribeTFRunPollingTasks(gomock.Any()).Return(func() {}, nil)
+				mockAPI.EXPECT().GetRun(gomock.Any(), "run-test").Return(&tfe.Run{ID: "run-test"}, nil)
+				mockStream.EXPECT().PublishTFRunEvent(gomock.Any(), gomock.Any()).Return(errors.New("stream error"))
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockAPI := mocks.NewMockApiClient(ctrl)
+			mockStream := mocks.NewMockStreamClient(ctrl)
+
+			tt.setupMocks(mockAPI, mockStream)
+
+			handler := NewNotificationHandler(mockAPI, mockStream)
+
+			handler.processNotification(context.Background(), tt.payload)
+		})
+	}
+}
+
+func TestNotificationPayload_UnmarshalJSON(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload string
+		wantErr bool
+	}{
+		{
+			name:    "Valid verification payload",
+			payload: NotificationVerificationPayload,
+			wantErr: false,
+		},
+		{
+			name:    "Valid run created payload",
+			payload: NotificationRunCreatedUIPayload,
+			wantErr: false,
+		},
+		{
+			name:    "Valid run planning payload",
+			payload: NotificationRunPlanningPayload,
+			wantErr: false,
+		},
+		{
+			name:    "Valid run errored payload",
+			payload: NotificationRunErroredPayload,
+			wantErr: false,
+		},
+		{
+			name:    "Valid run planned payload",
+			payload: NotificationRunPlannedPayload,
+			wantErr: false,
+		},
+		{
+			name:    "Invalid JSON",
+			payload: "invalid json",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var payload NotificationPayload
+			err := json.Unmarshal([]byte(tt.payload), &payload)
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, 1, payload.PayloadVersion)
+			}
+		})
+	}
 }
 
 const NotificationVerificationPayload = `{
@@ -179,7 +339,7 @@ const NotificationRunPlanningPayload = `{
     ]
 }`
 
-const notificationRunPlannedPayload = `{
+const NotificationRunPlannedPayload = `{
     "payload_version": 1,
     "notification_configuration_id": "nc-YfWgs5thoiEteRJj",
     "run_url": "https://app.terraform.io/app/zapier/service-tfbuddy-dev/runs/run-Vy7sSoyhizTafW8f",
@@ -221,62 +381,4 @@ const NotificationRunErroredPayload = `{
             "run_updated_by": null
         }
     ]
-}`
-
-const runData = `{
-    "data": {
-        "id": "run-CZcmD7eagjhyX0vN",
-        "type": "runs",
-        "attributes": {
-            "actions": {
-                "is-cancelable": true,
-                "is-confirmable": false,
-                "is-discardable": false,
-                "is-force-cancelable": false
-            },
-            "canceled-at": null,
-            "created-at": "2021-05-24T07:38:04.171Z",
-            "has-changes": false,
-            "auto-apply": false,
-            "is-destroy": false,
-            "message": "Custom message",
-            "plan-only": false,
-            "source": "tfe-api",
-            "status-timestamps": {
-                "plan-queueable-at": "2021-05-24T07:38:04+00:00"
-            },
-            "status": "pending",
-            "trigger-reason": "manual",
-            "target-addrs": null,
-            "permissions": {
-                "can-apply": true,
-                "can-cancel": true,
-                "can-comment": true,
-                "can-discard": true,
-                "can-force-execute": true,
-                "can-force-cancel": true,
-                "can-override-policy-check": true
-            },
-            "refresh": false,
-            "refresh-only": false,
-            "replace-addrs": null,
-            "variables": []
-        },
-        "relationships": {
-            "apply": {},
-            "comments": {},
-            "configuration-version": {},
-            "cost-estimate": {},
-            "created-by": {},
-            "input-state-version": {},
-            "plan": {},
-            "run-events": {},
-            "policy-checks": {},
-            "workspace": {},
-            "workspace-run-alerts": {}
-        }
-    },
-    "links": {
-        "self": "/api/v2/runs/run-bWSq4YeYpfrW4mx7"
-    }
 }`

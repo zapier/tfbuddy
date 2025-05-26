@@ -3,7 +3,6 @@ package tfc_hooks
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"time"
 
@@ -121,16 +120,23 @@ func (h *NotificationHandler) processNotification(ctx context.Context, n *Notifi
 	if n.RunId == "" {
 		return
 	}
+
+	// Check for empty notifications early to avoid unnecessary API calls
+	if len(n.Notifications) == 0 {
+		log.Warn().Msg("notification payload has no notifications")
+		return
+	}
+
 	run, err := h.api.GetRun(ctx, n.RunId)
 	if err != nil {
 		span.RecordError(err)
-		log.Error().Err(err)
+		log.Error().Err(err).Msg("failed to get run")
 	}
-	runJson, _ := json.Marshal(run)
-	log.Debug().Str("run", string(runJson))
-	fmt.Println(string(runJson))
+	if run != nil {
+		runJson, _ := json.Marshal(run)
+		log.Debug().Str("run", string(runJson))
+	}
 
-	// notifying
 	labels := prometheus.Labels{
 		"status":       string(n.Notifications[0].RunStatus),
 		"organization": n.OrganizationName,

@@ -27,6 +27,16 @@ func (p *NotificationHandler) pollingStreamCallback(task runstream.RunPollingTas
 		Msg("processing run polling task.")
 
 	if string(run.Status) != task.GetLastStatus() {
+		// Safety check for nil workspace or organization
+		if run.Workspace == nil {
+			log.Error().Str("runID", task.GetRunID()).Msg("run has nil workspace")
+			return false
+		}
+		if run.Workspace.Organization == nil {
+			log.Error().Str("runID", task.GetRunID()).Msg("run workspace has nil organization")
+			return false
+		}
+
 		// Publish new RunEvent
 		err = p.stream.PublishTFRunEvent(ctx, &runstream.TFRunEvent{
 			Organization: run.Workspace.Organization.Name,
