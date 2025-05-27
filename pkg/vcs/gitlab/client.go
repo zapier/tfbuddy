@@ -232,7 +232,7 @@ type GitlabMRNote struct {
 }
 
 func (gn *GitlabMRNote) GetNoteID() int64 {
-	return int64(gn.Note.ID)
+	return int64(gn.ID)
 }
 
 func (c *GitlabClient) CreateMergeRequestDiscussion(ctx context.Context, mrIID int, project, comment string) (vcs.MRDiscussionNotes, error) {
@@ -367,22 +367,22 @@ func (gm *GitlabMR) HasConflicts() bool {
 	return gm.MergeRequest.HasConflicts
 }
 func (gm *GitlabMR) GetSourceBranch() string {
-	return gm.MergeRequest.SourceBranch
+	return gm.SourceBranch
 }
 func (gm *GitlabMR) GetInternalID() int {
-	return gm.MergeRequest.IID
+	return gm.IID
 }
 func (gm *GitlabMR) GetWebURL() string {
-	return gm.MergeRequest.WebURL
+	return gm.WebURL
 }
 func (gm *GitlabMR) GetAuthor() vcs.MRAuthor {
 	return &GitlabMRAuthor{gm.Author}
 }
 func (gm *GitlabMR) GetTitle() string {
-	return gm.MergeRequest.Title
+	return gm.Title
 }
 func (gm *GitlabMR) GetTargetBranch() string {
-	return gm.MergeRequest.TargetBranch
+	return gm.TargetBranch
 }
 
 type GitlabMRAuthor struct {

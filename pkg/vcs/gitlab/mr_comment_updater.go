@@ -44,14 +44,16 @@ func (p *RunStatusUpdater) postRunStatusComment(ctx context.Context, run *tfe.Ru
 	}
 
 	if commentBody != "" {
-		p.postComment(ctx, fmt.Sprintf(
+		if err := p.postComment(ctx, fmt.Sprintf(
 			"Status: `%s`<br>%s",
 			run.Status,
 			commentBody),
 			rmd.GetMRProjectNameWithNamespace(),
 			rmd.GetMRInternalID(),
 			rmd.GetDiscussionID(),
-		)
+		); err != nil {
+			log.Error().Err(err).Msg("could not post comment")
+		}
 	}
 
 	if resolveDiscussion {
@@ -72,7 +74,7 @@ func (p *RunStatusUpdater) postComment(ctx context.Context, commentBody, project
 	ctx, span := otel.Tracer("TFC").Start(ctx, "postComment")
 	defer span.End()
 
-	content := fmt.Sprintf(MR_COMMENT_FORMAT, commentBody)
+	content := fmt.Sprintf(MRCommentFormat, commentBody)
 
 	if discussionID != "" {
 		_, err := p.client.AddMergeRequestDiscussionReply(ctx, mrIID, projectID, discussionID, content)
@@ -91,7 +93,7 @@ func (p *RunStatusUpdater) postComment(ctx context.Context, commentBody, project
 	}
 }
 
-const MR_COMMENT_FORMAT = `
+const MRCommentFormat = `
 ### Terraform Cloud
 %s
 `
