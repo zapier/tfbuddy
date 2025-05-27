@@ -14,7 +14,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// ----------------------------------------------------------------------------
 const GithubJetstreamTopic = "github"
 
 func getGithubJetstreamName() string {
@@ -25,7 +24,6 @@ func getGithubJetstreamSubject(evtType string) string {
 	return fmt.Sprintf("%s.%s.%s", hooks_stream.HooksStreamName, GithubJetstreamTopic, evtType)
 }
 
-// ----------------------------------------------------------------------------
 const PullRequestEventType = "PullRequestEvent"
 
 type PullRequestEventMsg struct {
@@ -61,7 +59,6 @@ func (e *PullRequestEventMsg) EncodeEventData(ctx context.Context) []byte {
 	return b
 }
 
-// ----------------------------------------------------------------------------
 const IssueCommentEvent = "IssueCommentEvent"
 
 type GithubIssueCommentEventMsg struct {
@@ -101,5 +98,3 @@ func (e *GithubIssueCommentEventMsg) EncodeEventData(ctx context.Context) []byte
 	}
 	return b
 }
-
-// ----------------------------------------------------------------------------

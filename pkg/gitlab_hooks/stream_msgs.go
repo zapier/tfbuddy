@@ -31,8 +31,6 @@ func (e *GitlabHookEvent) GetPlatform() string {
 	return "gitlab"
 }
 
-// ----------------------------------------------
-
 type NoteEventMsg struct {
 	GitlabHookEvent
 
@@ -82,8 +80,6 @@ func (e *NoteEventMsg) GetAttributes() vcs.MRAttributes {
 func (e *NoteEventMsg) GetLastCommit() vcs.Commit {
 	return e.Payload.GetLastCommit()
 }
-
-// ----------------------------------------------
 
 func mrEventsStreamSubject() string {
 	return fmt.Sprintf("%s.%s.%s", hooks_stream.HooksStreamName, GitlabHooksSubject, MergeRequestEventsSubject)

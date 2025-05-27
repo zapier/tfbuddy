@@ -7,7 +7,6 @@ import (
 	"github.com/zapier/tfbuddy/pkg/vcs"
 )
 
-// ----------------------------------------------------------------------------
 // ensure type complies with interface
 var _ vcs.MRDiscussion = (*GithubPRIssueComment)(nil)
 
@@ -25,8 +24,6 @@ func (c *GithubPRIssueComment) GetDiscussionID() string {
 func (c *GithubPRIssueComment) GetMRNotes() []vcs.MRNote {
 	return nil
 }
-
-// ----------------------------------------------------------------------------
 
 // ensure type complies with interface
 var _ vcs.MR = (*GithubPR)(nil)
@@ -61,7 +58,6 @@ func (gm *GithubPR) IsApproved() bool {
 	return *gm.MergeableState != "blocked"
 }
 
-// ----------------------------------------------------------------------------
 // ensure type complies with interface
 var _ vcs.MRAuthor = (*GithubPRAuthor)(nil)
 
@@ -73,7 +69,6 @@ func (ga *GithubPRAuthor) GetUsername() string {
 	return ga.GetLogin()
 }
 
-// ----------------------------------------------------------------------------
 // ensure type complies with interface
 var _ vcs.MRDiscussion = (*IssueComment)(nil)
 
@@ -98,7 +93,6 @@ func (c *IssueComment) GetMRNotes() []vcs.MRNote {
 	return []vcs.MRNote{}
 }
 
-// ----------------------------------------------------------------------------
 // ensure type complies with interface
 var _ vcs.MRApproved = (*PRApproved)(nil)
 
