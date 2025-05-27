@@ -67,7 +67,7 @@ func (c *Client) GetMergeRequestApprovals(ctx context.Context, id int, project s
 func (c *Client) MergeMR(ctx context.Context, mrIID int, project string) error {
 	projectParts, err := splitFullName(project)
 	if err != nil {
-		utils.CreatePermanentError(err)
+		return utils.CreatePermanentError(err)
 	}
 	_, _, err = c.client.PullRequests.Merge(c.ctx, projectParts[0], projectParts[1], mrIID, "", nil)
 
@@ -179,7 +179,7 @@ func (c *Client) GetMergeRequest(ctx context.Context, prID int, fullName string)
 }
 
 func (c *Client) GetRepoFile(ctx context.Context, fullName string, file string, ref string) ([]byte, error) {
-	ctx, span := otel.Tracer("TFC").Start(ctx, "GetRepoFile")
+	_, span := otel.Tracer("TFC").Start(ctx, "GetRepoFile")
 	defer span.End()
 
 	if ref == "" {
@@ -384,7 +384,7 @@ func (c *Client) PostIssueComment(ctx context.Context, prId int, fullName string
 
 // PostPullRequestComment adds a review comment to an existing PullRequest
 func (c *Client) PostPullRequestComment(ctx context.Context, owner, repo string, prId int, body string) error {
-	ctx, span := otel.Tracer("TFC").Start(ctx, "PostPullRequestComment")
+	_, span := otel.Tracer("TFC").Start(ctx, "PostPullRequestComment")
 	defer span.End()
 
 	// TODO: this is broken

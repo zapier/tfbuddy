@@ -16,6 +16,9 @@ type GithubPRIssueComment struct {
 }
 
 func (c *GithubPRIssueComment) GetDiscussionID() string {
+	if c.IssueComment == nil || c.ID == nil {
+		return ""
+	}
 	return fmt.Sprintf("%d", *c.ID)
 }
 
@@ -34,16 +37,16 @@ type GithubPR struct {
 
 func (gm *GithubPR) HasConflicts() bool {
 	// https://docs.github.com/en/graphql/reference/enums#mergeablestate
-	return !gm.PullRequest.GetMergeable() // TODO: does this really represent HasConflicts?
+	return !gm.GetMergeable() // TODO: does this really represent HasConflicts?
 }
 func (gm *GithubPR) GetSourceBranch() string {
 	return gm.PullRequest.GetHead().GetRef()
 }
 func (gm *GithubPR) GetInternalID() int {
-	return *gm.PullRequest.Number // TODO: which ID to use
+	return *gm.Number // TODO: which ID to use
 }
 func (gm *GithubPR) GetWebURL() string {
-	return gm.PullRequest.GetHTMLURL()
+	return gm.GetHTMLURL()
 }
 func (gm *GithubPR) GetAuthor() vcs.MRAuthor {
 	return &GithubPRAuthor{gm.GetUser()}
@@ -67,7 +70,7 @@ type GithubPRAuthor struct {
 }
 
 func (ga *GithubPRAuthor) GetUsername() string {
-	return ga.User.GetLogin()
+	return ga.GetLogin()
 }
 
 // ----------------------------------------------------------------------------
@@ -79,9 +82,15 @@ type IssueComment struct {
 }
 
 func (c *IssueComment) GetNoteID() int64 {
+	if c.IssueComment == nil || c.ID == nil {
+		return 0
+	}
 	return *c.ID
 }
 func (c *IssueComment) GetDiscussionID() string {
+	if c.IssueComment == nil || c.ID == nil {
+		return ""
+	}
 	return fmt.Sprintf("%d", *c.ID)
 }
 

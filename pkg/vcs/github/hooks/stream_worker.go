@@ -52,7 +52,9 @@ func (h *GithubHooksHandler) processIssueComment(ctx context.Context, msg *Githu
 	opts, err := comment_actions.ParseCommentCommand(*event.Comment.Body)
 	if err != nil {
 		if err == comment_actions.ErrOtherTFTool {
-			h.postPullRequestComment(ctx, event, "Use 'tfc' to interact with TFBuddy")
+			if postErr := h.postPullRequestComment(ctx, event, "Use 'tfc' to interact with TFBuddy"); postErr != nil {
+				log.Error().Err(postErr).Msg("failed to post comment")
+			}
 		}
 		if err == comment_actions.ErrNotTFCCommand || err == comment_actions.ErrOtherTFTool {
 			githubWebHookIgnored.WithLabelValues(
@@ -93,12 +95,16 @@ func (h *GithubHooksHandler) processIssueComment(ctx context.Context, msg *Githu
 	case "apply":
 		log.Info().Msg("Got TFC apply command")
 		if !pullReq.IsApproved() {
-			h.postPullRequestComment(ctx, event, ":no_entry: Apply failed. Pull Request requires approval.")
+			if postErr := h.postPullRequestComment(ctx, event, ":no_entry: Apply failed. Pull Request requires approval."); postErr != nil {
+				log.Error().Err(postErr).Msg("failed to post comment")
+			}
 			return nil
 		}
 
 		if pullReq.HasConflicts() {
-			h.postPullRequestComment(ctx, event, ":no_entry: Apply failed. Pull Request has conflicts that need to be resolved.")
+			if postErr := h.postPullRequestComment(ctx, event, ":no_entry: Apply failed. Pull Request has conflicts that need to be resolved."); postErr != nil {
+				log.Error().Err(postErr).Msg("failed to post comment")
+			}
 			return nil
 		}
 	case "lock":
@@ -113,7 +119,9 @@ func (h *GithubHooksHandler) processIssueComment(ctx context.Context, msg *Githu
 	executedWorkspaces, tfError := trigger.TriggerTFCEvents(ctx)
 	if tfError == nil && len(executedWorkspaces.Errored) > 0 {
 		for _, failedWS := range executedWorkspaces.Errored {
-			h.postPullRequestComment(ctx, event, fmt.Sprintf(":no_entry: %s could not be run because: %s", failedWS.Name, failedWS.Error))
+			if postErr := h.postPullRequestComment(ctx, event, fmt.Sprintf(":no_entry: %s could not be run because: %s", failedWS.Name, failedWS.Error)); postErr != nil {
+				log.Error().Err(postErr).Msg("failed to post comment")
+			}
 		}
 		return nil
 	}

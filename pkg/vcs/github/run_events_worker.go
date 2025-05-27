@@ -70,7 +70,7 @@ func (w *RunEventsWorker) postRunStatusComment(ctx context.Context, run *tfe.Run
 	commentBody, _, _ := comment_formatter.FormatRunStatusCommentBody(w.tfc, run, rmd)
 
 	if commentBody != "" {
-		w.client.CreateMergeRequestComment(
+		if err := w.client.CreateMergeRequestComment(
 			ctx,
 			rmd.GetMRInternalID(),
 			rmd.GetMRProjectNameWithNamespace(),
@@ -78,7 +78,9 @@ func (w *RunEventsWorker) postRunStatusComment(ctx context.Context, run *tfe.Run
 				"Status: `%s`<br>%s",
 				run.Status,
 				commentBody),
-		)
+		); err != nil {
+			log.Error().Err(err).Msg("failed to create merge request comment")
+		}
 
 	}
 	if run.Status == tfe.RunApplied {
@@ -101,5 +103,7 @@ func (w *RunEventsWorker) mergePRIfPossible(ctx context.Context, rmd runstream.R
 	if !rmd.GetAutoMerge() {
 		return
 	}
-	w.client.MergeMR(ctx, rmd.GetMRInternalID(), rmd.GetMRProjectNameWithNamespace())
+	if err := w.client.MergeMR(ctx, rmd.GetMRInternalID(), rmd.GetMRProjectNameWithNamespace()); err != nil {
+		log.Error().Err(err).Msg("failed to merge MR")
+	}
 }
