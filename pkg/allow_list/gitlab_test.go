@@ -1,7 +1,6 @@
 package allow_list
 
 import (
-	"os"
 	"testing"
 )
 
@@ -55,13 +54,72 @@ func TestIsGitlabProjectAllowed(t *testing.T) {
 			},
 			want: false,
 		},
+		{
+			name: "specific project allowed",
+			args: args{
+				projectWithNamespace: "groupies/specific-project",
+				allowEnv:             "groupies/specific-project,other_groupies",
+			},
+			want: true,
+		},
+		{
+			name: "project not in specific list",
+			args: args{
+				projectWithNamespace: "groupies/other-project",
+				allowEnv:             "groupies/specific-project,other_groupies/project",
+			},
+			want: false,
+		},
+		{
+			name: "partial match allowed with prefix",
+			args: args{
+				projectWithNamespace: "groupiesprefix/project",
+				allowEnv:             "groupies,other_groupies",
+			},
+			want: true,
+		},
+		{
+			name: "spaces in allow list",
+			args: args{
+				projectWithNamespace: "groupies/project",
+				allowEnv:             "groupies, other_groupies",
+			},
+			want: true,
+		},
+		{
+			name: "trailing spaces",
+			args: args{
+				projectWithNamespace: "other_groupies/project",
+				allowEnv:             "groupies,other_groupies ",
+			},
+			want: true,
+		},
+		{
+			name: "case sensitivity",
+			args: args{
+				projectWithNamespace: "Groupies/Project",
+				allowEnv:             "groupies",
+			},
+			want: false,
+		},
 	}
-	defer os.Unsetenv(GitlabProjectAllowListEnv)
+
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			os.Setenv(GitlabProjectAllowListEnv, tt.args.allowEnv)
+		t.Run(tt.name+"_primary", func(t *testing.T) {
+			t.Setenv(legacyAllowListEnv, "")
+			t.Setenv(GitlabProjectAllowListEnv, tt.args.allowEnv)
+
 			if got := IsGitlabProjectAllowed(tt.args.projectWithNamespace); got != tt.want {
-				t.Errorf("IsGitlabProjectAllowed() = %v, want %v", got, tt.want)
+				t.Errorf("IsGitlabProjectAllowed() with primary env = %v, want %v", got, tt.want)
+			}
+		})
+
+		t.Run(tt.name+"_legacy", func(t *testing.T) {
+			t.Setenv(GitlabProjectAllowListEnv, "")
+			t.Setenv(legacyAllowListEnv, tt.args.allowEnv)
+
+			if got := IsGitlabProjectAllowed(tt.args.projectWithNamespace); got != tt.want {
+				t.Errorf("IsGitlabProjectAllowed() with legacy env = %v, want %v", got, tt.want)
 			}
 		})
 	}
