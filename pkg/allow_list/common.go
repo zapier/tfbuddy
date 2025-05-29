@@ -15,9 +15,13 @@ func getAllowList(envVar string) []string {
 		allowList := make([]string, 0)
 		for _, p := range allowedParts {
 			prefix := strings.TrimSpace(p)
-			log.Info().Str("prefix", prefix).Msg("adding repo prefix to allow list")
-			allowList = append(allowList, prefix)
-
+			if prefix != "" {
+				log.Info().Str("prefix", prefix).Msg("adding repo prefix to allow list")
+				allowList = append(allowList, prefix)
+			}
+		}
+		if len(allowList) == 0 {
+			return nil
 		}
 		return allowList
 	}
