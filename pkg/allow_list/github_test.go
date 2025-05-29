@@ -5,17 +5,18 @@ import (
 )
 
 func TestIsGithubRepoAllowed(t *testing.T) {
+	type args struct {
+		fullName string
+		allowEnv string
+	}
 	tests := []struct {
 		name string
-		args struct {
-			fullName string
-			allowEnv string
-		}
+		args args
 		want bool
 	}{
 		{
 			name: "org/repo_allowed",
-			args: {
+			args: args{
 				fullName: "org/repo",
 				allowEnv: "org,other_org",
 			},
