@@ -1,6 +1,6 @@
 # TFBuddy - Terraform Cloud workflow engine
 
-## What is TFBuddy
+## What is TFBuddy?
 
 TFBuddy is an application designed to simplify executing Terraform in your pull requests. It supports GitHub, GitLab, and Terraform Cloud Workspaces currently. TFBuddy has been in use at Zapier, in production since March 2022, and is still under active development.
 
