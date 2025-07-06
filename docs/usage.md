@@ -3,10 +3,11 @@
 ## Installation
 
 ### Dependencies
+
 1. Kubernetes Cluster
-1. Gitlab / Github token
-1. Terraform Cloud token
-1. [NATS](https://nats.io/) (installed by TFBuddy helm chart)
+2. Gitlab / Github token
+3. Terraform Cloud token
+4. [NATS](https://nats.io/) (installed by TFBuddy helm chart)
 
 ### Helm
 
@@ -14,7 +15,7 @@
 helm repo add tfbuddy https://zapier.github.io/tfbuddy/
 ```
 
-**For use with Github**
+**For use with GitHub**
 
 ```console
 export TFC_TOKEN="" \
@@ -43,6 +44,7 @@ The default helm values can be found [here](https://github.com/zapier/tfbuddy/bl
 ### Configuration
 
 Set the necessary environment variables for your setup.
+
 ```yaml
 env:
   TFBUDDY_LOG_LEVEL: info
@@ -55,6 +57,7 @@ env:
 ```
 
 For sensitive environment variables use `secrets.envs` which can contain a list of key/value pairs
+
 ```yaml
 secrets:
   create: true
@@ -66,6 +69,7 @@ secrets:
 ```
 
 An ingress resource is provided for setting external access.
+
 ```yaml
 ingress:
   create: true
@@ -84,11 +88,11 @@ For `nats` helm specific configurations go [here](https://github.com/nats-io/k8s
 
 ##### .tfbuddy.yaml
 
-To use TF Buddy in a given repo, place a file named `.tfbuddy.yaml` in its root, with contents similar to this:
+To use TFBuddy in a given repo, place a file named `.tfbuddy.yaml` in its root, with contents similar to this:
 
 ```yaml
 workspaces:
-    # The actual name of the TFC workspace you want to control with TF Buddy
+  # The actual name of the TFC workspace you want to control with TFBuddy
   - name: team_name_prod
     # The main directory (relative to this file) to monitor for changes
     dir: terraform/production/
@@ -102,15 +106,16 @@ workspaces:
       - terraform/staging/**/*.tf
       - terraform/staging/{foo,bar}/**
       - terraform/staging/**/[^0-9]*
-    # Merge MR once all workspaces have been applied. This is enabled by default, and can be disabled globally by setting TFBUDDY_ALLOW_AUTO_MERGE to false
+    # Merge PR/MR once all workspaces have been applied. This is enabled by default, and can be disabled globally by setting TFBUDDY_ALLOW_AUTO_MERGE to false
     autoMerge: true
 ```
 
-TF Buddy uses [doublestar](https://github.com/bmatcuk/doublestar#about) for its path matching. In the example above, the following directories/files would be watched:
+TFBuddy uses [doublestar](https://github.com/bmatcuk/doublestar#about) for its path matching. In the example above, the
+following directories/files would be watched:
 
 * `terraform/$ENV` - anything that is a direct child of `terraform/production` or `terraform/staging`
 * `terraform/production/**` - anything that has `terraform/production` as an ancestor
 * `terraform/staging/**/*.tf` - any Terraform files that have `terraform/staging` as an ancestor
 * `terraform/staging/{foo,bar}/**` - anything that has `terraform/staging/foo` or `terraform/staging/bar` as an ancestor
-* `terraform/staging/**/[^0-9]*` - anything that has `terraform/staging` as an ancestor and does _not_ start with an integer
-
+* `terraform/staging/**/[^0-9]*` - anything that has `terraform/staging` as an ancestor and does _not_ start with an
+  integer

@@ -1,4 +1,4 @@
-site_name: TF Buddy
+site_name: TFBuddy
 nav:
   - Home: index.md
   - Usage: usage.md

@@ -34,7 +34,7 @@ The [contributing](https://tfbuddy.readthedocs.io/en/stable/contributing/) has e
 
 ## Documentation
 
-To learn more about TF Buddy [go to the complete documentation](https://tfbuddy.readthedocs.io/).
+To learn more about TFBuddy [go to the complete documentation](https://tfbuddy.readthedocs.io/).
 
 ---
 
