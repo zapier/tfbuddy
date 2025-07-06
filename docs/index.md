@@ -2,16 +2,13 @@
 
 ## What is TFBuddy
 
-TFBuddy is an application designed to simplify executing Terraform in your pull requests. It supports GitHub, GitLab,
-and Terraform Cloud Workspaces currently. TFBuddy has been in use at Zapier, in production since March 2022, and is
-still under active development.
+TFBuddy is an application designed to simplify executing Terraform in your pull requests. It supports GitHub, GitLab, and Terraform Cloud Workspaces currently. TFBuddy has been in use at Zapier, in production since March 2022, and is still under active development.
 
 ## Why TFBuddy?
 
 1. Apply before merging your pull requests
 2. Cleaner breakdown of what's going to change in your pull request
-3. Keep your TFC workspaces in API-driven / CLI-driven mode so you can still use the `terraform` CLI for maintenance
-   actions not easily achieved via GitOps.
+3. Keep your TFC workspaces in API-driven / CLI-driven mode so you can still use the `terraform` CLI for maintenance actions not easily achieved via GitOps.
 
 ## Documentation
 

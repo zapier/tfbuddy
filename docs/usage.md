@@ -110,12 +110,10 @@ workspaces:
     autoMerge: true
 ```
 
-TFBuddy uses [doublestar](https://github.com/bmatcuk/doublestar#about) for its path matching. In the example above, the
-following directories/files would be watched:
+TFBuddy uses [doublestar](https://github.com/bmatcuk/doublestar#about) for its path matching. In the example above, the following directories/files would be watched:
 
 * `terraform/$ENV` - anything that is a direct child of `terraform/production` or `terraform/staging`
 * `terraform/production/**` - anything that has `terraform/production` as an ancestor
 * `terraform/staging/**/*.tf` - any Terraform files that have `terraform/staging` as an ancestor
 * `terraform/staging/{foo,bar}/**` - anything that has `terraform/staging/foo` or `terraform/staging/bar` as an ancestor
-* `terraform/staging/**/[^0-9]*` - anything that has `terraform/staging` as an ancestor and does _not_ start with an
-  integer
+* `terraform/staging/**/[^0-9]*` - anything that has `terraform/staging` as an ancestor and does _not_ start with an integer
