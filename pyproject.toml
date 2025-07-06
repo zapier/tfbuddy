@@ -1,15 +1,21 @@
-[tool.poetry]
+[project]
 name = "docs"
 version = "0.1.0"
-description = "TF Buddy mkdocs"
-authors = ["Zapier <opensource@zapier.com>"]
+description = "TFBuddy mkdocs"
+authors = [{name = "Zapier", email = "opensource@zapier.com"}]
 license = "Mozilla Public License 2.0"
 
-[tool.poetry.dependencies]
-python = "^3.10"
-mkdocs = "^1.4.2"
+requires-python = '>=3.13,<4.0'
+dependencies = [
+    'mkdocs (>=1.6.1,<2.0.0)',
+    'pyyaml (>=6.0.2,<7.0.0)'
+]
 
-[tool.poetry.dev-dependencies]
+[tool.poetry]
+requires-poetry = '>=2.0,<3.0'
+
+[tool.poetry.requires-plugins]
+poetry-plugin-export = ">=1.9"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

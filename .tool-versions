@@ -2,3 +2,5 @@
 earthly 0.6.30
 golang 1.24.3
 kustomize 4.5.7
+python 3.13.5
+poetry 2.1.3
