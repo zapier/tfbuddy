@@ -1,8 +1,8 @@
 module github.com/zapier/tfbuddy
 
-go 1.24
+go 1.25
 
-toolchain go1.24.3
+toolchain go1.25.3
 
 require (
 	github.com/bmatcuk/doublestar/v4 v4.8.1
