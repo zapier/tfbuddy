@@ -31,7 +31,7 @@ release:
     BUILD +release-helm
 
 go-deps:
-    FROM golang:${GOLANG_VERSION}-bullseye
+    FROM golang:${GOLANG_VERSION}-trixie
 
     WORKDIR /src
     COPY go.mod go.sum /src
