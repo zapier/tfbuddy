@@ -46,10 +46,12 @@ func (w *GitlabEventWorker) processMergeRequestEvent(msg *MergeRequestEventMsg) 
 	trigger := tfc_trigger.NewTFCTrigger(w.gl, w.tfc, w.runstream, cfg)
 	switch event.ObjectAttributes.Action {
 	case "open", "reopen":
+		log.Debug().Str("project", projectName).Int("mergeRequestID", event.ObjectAttributes.IID).Msg("triggering TFC events for merge request")
 		_, err := trigger.TriggerTFCEvents(ctx)
 		return projectName, err
 
 	case "update":
+		log.Debug().Str("project", projectName).Int("mergeRequestID", event.ObjectAttributes.IID).Msg("triggering TFC events for merge request")
 		if event.ObjectAttributes.OldRev != "" && event.ObjectAttributes.OldRev != event.ObjectAttributes.LastCommit.ID {
 			_, err := trigger.TriggerTFCEvents(ctx)
 			return projectName, err
@@ -60,7 +62,7 @@ func (w *GitlabEventWorker) processMergeRequestEvent(msg *MergeRequestEventMsg) 
 	default:
 		labels["reason"] = "unhandled-action"
 		gitlabWebHookIgnored.With(labels).Inc()
-		log.Debug().Str("action", event.ObjectAttributes.Action).Msg("ignoring unknown MR action")
+		log.Debug().Str("project", projectName).Int("mergeRequestID", event.ObjectAttributes.IID).Str("action", event.ObjectAttributes.Action).Msg("ignoring unknown MR action")
 	}
 
 	return projectName, nil

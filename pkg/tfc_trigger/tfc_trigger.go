@@ -350,7 +350,7 @@ func (t *TFCTrigger) getTriggeredWorkspacesForRequest(ctx context.Context, mr vc
 	if err != nil {
 		return nil, fmt.Errorf("failed to get a list of modified files. %w", err)
 	}
-	log.Debug().Strs("modifiedFiles", mrModifiedFiles).Msg("modified files")
+	log.Debug().Str("project", t.GetProjectNameWithNamespace()).Int("mergeRequestID", mr.GetInternalID()).Strs("modifiedFiles", mrModifiedFiles).Msg("modified files")
 	return t.getTriggeredWorkspaces(ctx, mrModifiedFiles)
 
 }

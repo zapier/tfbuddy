@@ -67,11 +67,12 @@ func (c *Client) GetMergeRequestApprovals(ctx context.Context, id int, project s
 func (c *Client) MergeMR(ctx context.Context, mrIID int, project string) error {
 	projectParts, err := splitFullName(project)
 	if err != nil {
-		utils.CreatePermanentError(err)
+		return utils.CreatePermanentError(err)
 	}
-	_, _, err = c.client.PullRequests.Merge(c.ctx, projectParts[0], projectParts[1], mrIID, "", nil)
-
-	return err
+	return backoff.Retry(func() error {
+		_, resp, err := c.client.PullRequests.Merge(c.ctx, projectParts[0], projectParts[1], mrIID, "", nil)
+		return utils.CreatePermanentHTTPError(resp.StatusCode, err)
+	}, createBackOffWithRetries())
 }
 
 // Go over all comments on a PR, trying to grab any old TFC run urls and deleting the bodies
@@ -84,14 +85,20 @@ func (c *Client) GetOldRunUrls(ctx context.Context, prID int, fullName string, r
 	if err != nil {
 		return "", utils.CreatePermanentError(err)
 	}
-	comments, _, err := c.client.Issues.ListComments(c.ctx, projectParts[0], projectParts[1], prID, &gogithub.IssueListCommentsOptions{})
+	comments, err := backoff.RetryWithData(func() ([]*gogithub.IssueComment, error) {
+		comments, resp, err := c.client.Issues.ListComments(c.ctx, projectParts[0], projectParts[1], prID, &gogithub.IssueListCommentsOptions{})
+		return comments, utils.CreatePermanentHTTPError(resp.StatusCode, err)
+	}, createBackOffWithRetries())
 	if err != nil {
-		return "", utils.CreatePermanentError(err)
+		return "", err
 	}
 
-	currentUser, _, err := c.client.Users.Get(context.Background(), "")
+	currentUser, err := backoff.RetryWithData(func() (*gogithub.User, error) {
+		u, resp, err := c.client.Users.Get(context.Background(), "")
+		return u, utils.CreatePermanentHTTPError(resp.StatusCode, err)
+	}, createBackOffWithRetries())
 	if err != nil {
-		return "", utils.CreatePermanentError(err)
+		return "", err
 	}
 
 	var oldRunUrls []string
@@ -134,9 +141,11 @@ func (c *Client) GetOldRunUrls(ctx context.Context, prID int, fullName string, r
 
 			if os.Getenv("TFBUDDY_DELETE_OLD_COMMENTS") != "" && comment.GetID() != int64(rootCommentID) {
 				log.Debug().Msgf("Deleting comment %d", comment.GetID())
-				_, err := c.client.Issues.DeleteComment(c.ctx, projectParts[0], projectParts[1], comment.GetID())
-				if err != nil {
-					return "", utils.CreatePermanentError(err)
+				if err := backoff.Retry(func() error {
+					resp, err := c.client.Issues.DeleteComment(c.ctx, projectParts[0], projectParts[1], comment.GetID())
+					return utils.CreatePermanentHTTPError(resp.StatusCode, err)
+				}, createBackOffWithRetries()); err != nil {
+					return "", err
 				}
 			}
 		}
@@ -190,9 +199,9 @@ func (c *Client) GetRepoFile(ctx context.Context, fullName string, file string, 
 		return nil, err
 	}
 	return backoff.RetryWithData(func() ([]byte, error) {
-		fileContent, _, _, err := c.client.Repositories.GetContents(c.ctx, parts[0], parts[1], file, &gogithub.RepositoryContentGetOptions{Ref: ref})
+		fileContent, _, resp, err := c.client.Repositories.GetContents(c.ctx, parts[0], parts[1], file, &gogithub.RepositoryContentGetOptions{Ref: ref})
 		if err != nil {
-			return nil, utils.CreatePermanentError(err)
+			return nil, utils.CreatePermanentHTTPError(resp.StatusCode, err)
 		}
 
 		contents, err := fileContent.GetContent()
@@ -223,9 +232,9 @@ func (c *Client) GetMergeRequestModifiedFiles(ctx context.Context, prID int, ful
 			if err != nil {
 				return nil, utils.CreatePermanentError(err)
 			}
-			files, _, err := c.client.PullRequests.ListFiles(c.ctx, parts[0], parts[1], prID, &opts)
+			files, resp, err := c.client.PullRequests.ListFiles(c.ctx, parts[0], parts[1], prID, &opts)
 			if err != nil {
-				return nil, utils.CreatePermanentError(err)
+				return nil, utils.CreatePermanentHTTPError(resp.StatusCode, err)
 			}
 			modifiedFiles := make([]string, len(files))
 			for i, file := range files {
@@ -248,9 +257,12 @@ func (c *Client) CloneMergeRequest(ctx context.Context, project string, mr vcs.M
 		return nil, err
 	}
 
-	repo, _, err := c.client.Repositories.Get(ctx, parts[0], parts[1])
+	repo, err := backoff.RetryWithData(func() (*gogithub.Repository, error) {
+		r, resp, err := c.client.Repositories.Get(ctx, parts[0], parts[1])
+		return r, utils.CreatePermanentHTTPError(resp.StatusCode, err)
+	}, createBackOffWithRetries())
 	if err != nil {
-		return nil, utils.CreatePermanentError(err)
+		return nil, err
 	}
 	log.Debug().Msg(*repo.CloneURL)
 	ref := plumbing.NewBranchReferenceName(mr.GetSourceBranch())
@@ -338,8 +350,8 @@ func (c *Client) GetIssue(ctx context.Context, owner *gogithub.User, repo string
 		return nil, utils.CreatePermanentError(err)
 	}
 	return backoff.RetryWithData(func() (*gogithub.Issue, error) {
-		iss, _, err := c.client.Issues.Get(ctx, owName, repo, issueId)
-		return iss, utils.CreatePermanentError(err)
+		iss, resp, err := c.client.Issues.Get(ctx, owName, repo, issueId)
+		return iss, utils.CreatePermanentHTTPError(resp.StatusCode, err)
 	}, createBackOffWithRetries())
 }
 
@@ -352,8 +364,8 @@ func (c *Client) GetPullRequest(ctx context.Context, fullName string, prID int) 
 		return nil, err
 	}
 	return backoff.RetryWithData(func() (*GithubPR, error) {
-		pr, _, err := c.client.PullRequests.Get(ctx, parts[0], parts[1], prID)
-		return &GithubPR{pr}, utils.CreatePermanentError(err)
+		pr, resp, err := c.client.PullRequests.Get(ctx, parts[0], parts[1], prID)
+		return &GithubPR{pr}, utils.CreatePermanentHTTPError(resp.StatusCode, err)
 	}, createBackOffWithRetries())
 }
 
@@ -370,12 +382,12 @@ func (c *Client) PostIssueComment(ctx context.Context, prId int, fullName string
 		comment := &gogithub.IssueComment{
 			Body: String(body),
 		}
-		iss, _, err := c.client.Issues.CreateComment(ctx, projectParts[0], projectParts[1], prId, comment)
+		iss, resp, err := c.client.Issues.CreateComment(ctx, projectParts[0], projectParts[1], prId, comment)
 		if err != nil {
 			log.Error().Err(err).Msg("github client: could not post issue comment")
 		}
 
-		return iss, utils.CreatePermanentError(err)
+		return iss, utils.CreatePermanentHTTPError(resp.StatusCode, err)
 	}, createBackOffWithRetries())
 }
 
@@ -390,11 +402,11 @@ func (c *Client) PostPullRequestComment(ctx context.Context, owner, repo string,
 			//InReplyTo:           nil,
 			Body: String(body),
 		}
-		_, _, err := c.client.PullRequests.CreateComment(c.ctx, owner, repo, int(prId), comment)
+		_, resp, err := c.client.PullRequests.CreateComment(c.ctx, owner, repo, int(prId), comment)
 		if err != nil {
 			log.Error().Err(err).Msg("could not post pull request comment")
 		}
-		return utils.CreatePermanentError(err)
+		return utils.CreatePermanentHTTPError(resp.StatusCode, err)
 	}, createBackOffWithRetries())
 }
 

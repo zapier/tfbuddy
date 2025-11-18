@@ -25,7 +25,7 @@ func (p *RunStatusUpdater) postRunStatusComment(ctx context.Context, run *tfe.Ru
 	if run.Status == tfe.RunErrored || run.Status == tfe.RunCanceled || run.Status == tfe.RunDiscarded || run.Status == tfe.RunPlannedAndFinished {
 		oldUrls, err = p.client.GetOldRunUrls(ctx, rmd.GetMRInternalID(), rmd.GetMRProjectNameWithNamespace(), int(rmd.GetRootNoteID()))
 		if err != nil {
-			log.Error().Err(err).Msg("could not retrieve old run urls")
+			log.Error().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Err(err).Msg("could not retrieve old run urls")
 		}
 		if oldUrls != "" {
 			topLevelNoteBody = fmt.Sprintf("%s\n%s", oldUrls, topLevelNoteBody)
@@ -40,7 +40,7 @@ func (p *RunStatusUpdater) postRunStatusComment(ctx context.Context, run *tfe.Ru
 		rmd.GetDiscussionID(),
 		topLevelNoteBody,
 	); err != nil {
-		log.Error().Err(err).Msg("could not update MR thread")
+		log.Error().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Str("discussionID", rmd.GetDiscussionID()).Err(err).Msg("could not update MR thread")
 	}
 
 	if commentBody != "" {
@@ -63,7 +63,7 @@ func (p *RunStatusUpdater) postRunStatusComment(ctx context.Context, run *tfe.Ru
 			rmd.GetDiscussionID(),
 		)
 		if err != nil {
-			log.Error().Err(err).Msg("Could not mark MR discussion thread as resolved.")
+			log.Error().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Str("discussionID", rmd.GetDiscussionID()).Err(err).Msg("Could not mark MR discussion thread as resolved.")
 		}
 	}
 }
@@ -77,14 +77,14 @@ func (p *RunStatusUpdater) postComment(ctx context.Context, commentBody, project
 	if discussionID != "" {
 		_, err := p.client.AddMergeRequestDiscussionReply(ctx, mrIID, projectID, discussionID, content)
 		if err != nil {
-			log.Error().Err(err).Msg("error posting Gitlab discussion reply")
+			log.Error().Str("project", projectID).Int("mergeRequestID", mrIID).Str("discussionID", discussionID).Err(err).Msg("error posting Gitlab discussion reply")
 			return err
 		}
 		return nil
 	} else {
 		err := p.client.CreateMergeRequestComment(ctx, mrIID, projectID, content)
 		if err != nil {
-			log.Error().Err(err).Msg("error posting Gitlab comment to MR")
+			log.Error().Str("project", projectID).Int("mergeRequestID", mrIID).Err(err).Msg("error posting Gitlab comment to MR")
 			return err
 		}
 		return nil

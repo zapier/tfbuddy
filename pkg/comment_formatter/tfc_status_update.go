@@ -2,6 +2,8 @@ package comment_formatter
 
 import (
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 
 	"github.com/hashicorp/go-tfe"
@@ -99,16 +101,28 @@ func FormatRunStatusCommentBody(tfc tfc_api.ApiClient, run *tfe.Run, rmd runstre
 		}
 
 	case tfe.RunPolicySoftFailed:
-		// no extra info
-		extraInfo = "The plan has soft failed policy checks, please open TFC URL to approve."
-
+		// Policy checks executed and soft-failed; approval required in TFC UI
+		log.Trace().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Msg("policy soft failed")
+		failOnSoftEnv := os.Getenv("TFBUDDY_FAIL_CI_ON_SENTINEL_SOFT_FAIL")
+		failOnSoft, err := strconv.ParseBool(failOnSoftEnv)
+		if err != nil {
+			log.Error().Err(err).Str("env_var", "TFBUDDY_FAIL_CI_ON_SENTINEL_SOFT_FAIL").Msg("could not parse env var, defaulting to false")
+			failOnSoft = false
+		}
+		if failOnSoft {
+			extraInfo = "Policy Checks: Soft Failed. Review plan and make changes to pass policy checks."
+		} else {
+			extraInfo = "Policy Checks: Soft Failed — approval required in Terraform Cloud before apply can proceed."
+		}
 	case tfe.RunPolicyChecked:
+		// Policy checks completed successfully
+		extraInfo = "Policy Checks: Passed."
 		if !run.AutoApply {
-			extraInfo = "Plan requires confirmation through the Terraform Cloud console. Click Run URL link to open & confirm."
+			extraInfo += " Plan requires confirmation through the Terraform Cloud console. Click Run URL link to open & confirm."
 		}
 
 	default:
-		log.Debug().Str("run_status", string(run.Status)).Msg("No action defined for status.")
+		log.Debug().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Str("run_status", string(run.Status)).Msg("No action defined for status.")
 		return
 	}
 

@@ -24,10 +24,12 @@ spec:
             - name: TFBUDDY_NATS_SERVICE_URL
               value: nats://nats:4222
             - name: TFBUDDY_OTEL_ENABLED
-              value: "true"
+              value: "false"
             - name: TFBUDDY_OTEL_COLLECTOR_PORT
               value: "4317"
             - name: TFBUDDY_ALLOW_AUTO_MERGE
+              value: "true"
+            - name: TFBUDDY_FAIL_CI_ON_SENTINEL_SOFT_FAIL
               value: "true"
             - name: TFBUDDY_OTEL_COLLECTOR_HOST
               valueFrom:

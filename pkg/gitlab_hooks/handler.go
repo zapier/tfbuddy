@@ -2,6 +2,7 @@ package gitlab_hooks
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 
@@ -98,12 +99,11 @@ func (h *GitlabHooksHandler) handler(c echo.Context) error {
 		ctx, span := otel.Tracer("GitlabHandler").Start(c.Request().Context(), "Gitlab - MergeRequestHook")
 		defer span.End()
 
-		log.Info().Msg("processing GitLab Merge Request event")
-
 		event, err := getGitlabEventBody[gogitlab.MergeEvent](c)
 		if checkError(ctx, err, "could not decode merge request event") {
 			break
 		}
+		log.Info().Str("project", event.Project.PathWithNamespace).Str("action", event.ObjectAttributes.Action).Int("mergeRequestID", event.ObjectAttributes.IID).Msg("processing GitLab Merge Request event")
 
 		span.SetAttributes(
 			attribute.String("project", event.Project.PathWithNamespace),
@@ -118,22 +118,21 @@ func (h *GitlabHooksHandler) handler(c echo.Context) error {
 
 		proj = event.Project.PathWithNamespace
 		_, err = h.mrStream.Publish(ctx, msg)
-		checkError(ctx, err, "could not publish merge request event to stream")
+		checkError(ctx, err, fmt.Sprintf("could not publish merge request event to stream for project: %s, merge request ID: %d", proj, event.ObjectAttributes.IID))
 
 	case gogitlab.EventTypeNote:
 		ctx, span := otel.Tracer("GitlabHandler").Start(c.Request().Context(), "Gitlab - EventTypeNote")
 		defer span.End()
 
-		log.Info().Msg("processing GitLab Note/Comment event")
-
 		event, err := getNoteEventBody(c)
 		if checkError(ctx, err, "could not decode Note/Comment event") {
 			break
 		}
+		log.Info().Str("project", event.Payload.GetProject().GetPathWithNamespace()).Int("mergeRequestID", event.Payload.GetMR().GetInternalID()).Str("discussionID", event.Payload.GetDiscussionID()).Msg("processing GitLab Note/Comment event")
 
 		proj = event.Payload.GetProject().GetPathWithNamespace()
 		_, err = h.notesStream.Publish(ctx, event)
-		checkError(ctx, err, "could not publish note event to stream")
+		checkError(ctx, err, fmt.Sprintf("could not publish note event to stream for project: %s, merge request ID: %d, discussion ID: %s", proj, event.Payload.GetMR().GetInternalID(), event.Payload.GetDiscussionID()))
 
 	default:
 		log.Info().Msgf("Ignoring Gitlab Event type: %s", eventType)
