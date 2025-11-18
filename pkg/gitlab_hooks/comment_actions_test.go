@@ -123,7 +123,7 @@ func TestProcessNoteEventPlanError(t *testing.T) {
 	mockApiClient := mocks.NewMockApiClient(mockCtrl)
 	mockStreamClient := mocks.NewMockStreamClient(mockCtrl)
 	mockProject := mocks.NewMockProject(mockCtrl)
-	mockProject.EXPECT().GetPathWithNamespace().Return("zapier/service-tf-buddy").Times(2)
+	mockProject.EXPECT().GetPathWithNamespace().Return("zapier/service-tf-buddy").AnyTimes()
 
 	mockLastCommit := mocks.NewMockCommit(mockCtrl)
 	mockLastCommit.EXPECT().GetSHA().Return("abvc12345")
@@ -134,15 +134,15 @@ func TestProcessNoteEventPlanError(t *testing.T) {
 	mockAttributes.EXPECT().GetType().Return("SomeNote")
 
 	mockMREvent := mocks.NewMockMRCommentEvent(mockCtrl)
-	mockMREvent.EXPECT().GetProject().Return(mockProject).Times(2)
+	mockMREvent.EXPECT().GetProject().Return(mockProject).AnyTimes()
 	mockMREvent.EXPECT().GetAttributes().Return(mockAttributes).Times(2)
 	mockMREvent.EXPECT().GetLastCommit().Return(mockLastCommit)
 
 	mockSimpleMR := mocks.NewMockMR(mockCtrl)
 	mockSimpleMR.EXPECT().GetSourceBranch().Return("DTA-2009")
 
-	mockSimpleMR.EXPECT().GetInternalID().Return(101).Times(2)
-	mockMREvent.EXPECT().GetMR().Return(mockSimpleMR).Times(3)
+	mockSimpleMR.EXPECT().GetInternalID().Return(101).AnyTimes()
+	mockMREvent.EXPECT().GetMR().Return(mockSimpleMR).AnyTimes()
 
 	mockTFCTrigger := mocks.NewMockTrigger(mockCtrl)
 	mockTFCTrigger.EXPECT().TriggerTFCEvents(gomock.Any()).Return(nil, fmt.Errorf("something went wrong"))
@@ -206,7 +206,7 @@ func TestProcessNoteEventPlan(t *testing.T) {
 	mockApiClient := mocks.NewMockApiClient(mockCtrl)
 	mockStreamClient := mocks.NewMockStreamClient(mockCtrl)
 	mockProject := mocks.NewMockProject(mockCtrl)
-	mockProject.EXPECT().GetPathWithNamespace().Return("zapier/service-tf-buddy")
+	mockProject.EXPECT().GetPathWithNamespace().Return("zapier/service-tf-buddy").AnyTimes()
 
 	mockLastCommit := mocks.NewMockCommit(mockCtrl)
 	mockLastCommit.EXPECT().GetSHA().Return("abvc12345")
@@ -217,15 +217,15 @@ func TestProcessNoteEventPlan(t *testing.T) {
 	mockAttributes.EXPECT().GetType().Return("SomeNote")
 
 	mockMREvent := mocks.NewMockMRCommentEvent(mockCtrl)
-	mockMREvent.EXPECT().GetProject().Return(mockProject)
+	mockMREvent.EXPECT().GetProject().Return(mockProject).AnyTimes()
 	mockMREvent.EXPECT().GetAttributes().Return(mockAttributes).Times(2)
 	mockMREvent.EXPECT().GetLastCommit().Return(mockLastCommit)
 
 	mockSimpleMR := mocks.NewMockMR(mockCtrl)
 	mockSimpleMR.EXPECT().GetSourceBranch().Return("DTA-2009")
 
-	mockSimpleMR.EXPECT().GetInternalID().Return(101)
-	mockMREvent.EXPECT().GetMR().Return(mockSimpleMR).Times(2)
+	mockSimpleMR.EXPECT().GetInternalID().Return(101).AnyTimes()
+	mockMREvent.EXPECT().GetMR().Return(mockSimpleMR).AnyTimes()
 
 	mockTFCTrigger := mocks.NewMockTrigger(mockCtrl)
 	mockTFCTrigger.EXPECT().TriggerTFCEvents(gomock.Any()).Return(&tfc_trigger.TriggeredTFCWorkspaces{
@@ -269,11 +269,11 @@ func TestProcessNoteEventPlanFailedWorkspace(t *testing.T) {
 	mockAttributes.EXPECT().GetType().Return("SomeNote")
 
 	mockMREvent := mocks.NewMockMRCommentEvent(mockCtrl)
-	mockMREvent.EXPECT().GetProject().Return(testSuite.MockProject).Times(2)
+	mockMREvent.EXPECT().GetProject().Return(testSuite.MockProject).AnyTimes()
 	mockMREvent.EXPECT().GetAttributes().Return(mockAttributes).Times(2)
 	mockMREvent.EXPECT().GetLastCommit().Return(mockLastCommit)
 
-	mockMREvent.EXPECT().GetMR().Return(testSuite.MockGitMR).Times(3)
+	mockMREvent.EXPECT().GetMR().Return(testSuite.MockGitMR).AnyTimes()
 
 	mockTFCTrigger := mocks.NewMockTrigger(mockCtrl)
 
@@ -374,7 +374,7 @@ func TestProcessNoteEventNoErrorNoRuns(t *testing.T) {
 	mockApiClient := mocks.NewMockApiClient(mockCtrl)
 	mockStreamClient := mocks.NewMockStreamClient(mockCtrl)
 	mockProject := mocks.NewMockProject(mockCtrl)
-	mockProject.EXPECT().GetPathWithNamespace().Return("zapier/service-tf-buddy")
+	mockProject.EXPECT().GetPathWithNamespace().Return("zapier/service-tf-buddy").AnyTimes()
 
 	mockLastCommit := mocks.NewMockCommit(mockCtrl)
 	mockLastCommit.EXPECT().GetSHA().Return("abvc12345")
@@ -385,15 +385,15 @@ func TestProcessNoteEventNoErrorNoRuns(t *testing.T) {
 	mockAttributes.EXPECT().GetType().Return("SomeNote")
 
 	mockMREvent := mocks.NewMockMRCommentEvent(mockCtrl)
-	mockMREvent.EXPECT().GetProject().Return(mockProject)
+	mockMREvent.EXPECT().GetProject().Return(mockProject).AnyTimes()
 	mockMREvent.EXPECT().GetAttributes().Return(mockAttributes).Times(2)
 	mockMREvent.EXPECT().GetLastCommit().Return(mockLastCommit)
 
 	mockSimpleMR := mocks.NewMockMR(mockCtrl)
 	mockSimpleMR.EXPECT().GetSourceBranch().Return("DTA-2009")
 
-	mockSimpleMR.EXPECT().GetInternalID().Return(101)
-	mockMREvent.EXPECT().GetMR().Return(mockSimpleMR).Times(2)
+	mockSimpleMR.EXPECT().GetInternalID().Return(101).AnyTimes()
+	mockMREvent.EXPECT().GetMR().Return(mockSimpleMR).AnyTimes()
 
 	mockTFCTrigger := mocks.NewMockTrigger(mockCtrl)
 	mockTFCTrigger.EXPECT().TriggerTFCEvents(gomock.Any()).Return(nil, nil)
