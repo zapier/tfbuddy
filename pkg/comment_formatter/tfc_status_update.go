@@ -103,7 +103,12 @@ func FormatRunStatusCommentBody(tfc tfc_api.ApiClient, run *tfe.Run, rmd runstre
 	case tfe.RunPolicySoftFailed:
 		// Policy checks executed and soft-failed; approval required in TFC UI
 		log.Trace().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Msg("policy soft failed")
-		failOnSoft, _ := strconv.ParseBool(os.Getenv("TFBUDDY_FAIL_CI_ON_SENTINEL_SOFT_FAIL"))
+		failOnSoftEnv := os.Getenv("TFBUDDY_FAIL_CI_ON_SENTINEL_SOFT_FAIL")
+		failOnSoft, err := strconv.ParseBool(failOnSoftEnv)
+		if err != nil {
+			log.Error().Err(err).Str("env_var", "TFBUDDY_FAIL_CI_ON_SENTINEL_SOFT_FAIL").Msg("could not parse env var, defaulting to false")
+			failOnSoft = false
+		}
 		if failOnSoft {
 			extraInfo = "Policy Checks: Soft Failed. Review plan and make changes to pass policy checks."
 		} else {

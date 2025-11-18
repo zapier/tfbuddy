@@ -59,22 +59,18 @@ func init() {
 }
 
 func initTelemetry(ctx context.Context) (*telemetry.OperatorTelemetry, error) {
-	enableOtel, _ := strconv.ParseBool(os.Getenv("TFBUDDY_OTEL_ENABLED"))
-	otelHost := os.Getenv("TFBUDDY_OTEL_COLLECTOR_HOST")
-	otelPort := os.Getenv("TFBUDDY_OTEL_COLLECTOR_PORT")
-
-	opts := telemetry.Options{
+	enableOtel, err := strconv.ParseBool(os.Getenv("TFBUDDY_OTEL_ENABLED"))
+	if err != nil {
+		log.Printf("could not parse env var TFBUDDY_OTEL_ENABLED, defaulting to false: %v", err)
+		enableOtel = false
+	}
+	return telemetry.Init(ctx, "tfbuddy", telemetry.Options{
 		Enabled:   enableOtel,
-		Host:      otelHost,
-		Port:      otelPort,
+		Host:      os.Getenv("TFBUDDY_OTEL_COLLECTOR_HOST"),
+		Port:      os.Getenv("TFBUDDY_OTEL_COLLECTOR_PORT"),
 		Version:   pkg.GitTag,
 		CommitSHA: pkg.GitCommit,
-	}
-	log.Printf("enabled: %v\thost: %s\tport: %s\n", enableOtel, otelHost, otelPort)
-
-	log.Printf("OpenTelemetry Opts: %+v\n", opts)
-
-	return telemetry.Init(ctx, "tfbuddy", opts)
+	})
 }
 
 // initConfig reads in config file and ENV variables if set.
