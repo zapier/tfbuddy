@@ -9,7 +9,7 @@ import (
 	"github.com/zapier/tfbuddy/pkg/comment_actions"
 	"github.com/zapier/tfbuddy/pkg/tfc_trigger"
 	"github.com/zapier/tfbuddy/pkg/vcs"
-	"gitlab.com/gitlab-org/api/client-go"
+	gitlab "gitlab.com/gitlab-org/api/client-go"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 )
@@ -71,7 +71,7 @@ func (w *GitlabEventWorker) processNoteEvent(ctx context.Context, event vcs.MRCo
 	// TODO: this should be refactored and be agnostic to the VCS type
 	switch opts.Args.Command {
 	case "apply":
-		log.Info().Msg("Got TFC apply command")
+		log.Debug().Str("project", proj).Int("mergeRequestID", event.GetMR().GetInternalID()).Msg("Got TFC apply command")
 		if !w.checkApproval(ctx, event) {
 			w.postMessageToMergeRequest(ctx, event, ":no_entry: Apply failed. Merge Request requires approval.")
 			return proj, nil
@@ -81,11 +81,11 @@ func (w *GitlabEventWorker) processNoteEvent(ctx context.Context, event vcs.MRCo
 			return proj, nil
 		}
 	case "lock":
-		log.Info().Msg("Got TFC lock command")
+		log.Debug().Str("project", proj).Int("mergeRequestID", event.GetMR().GetInternalID()).Msg("Got TFC lock command")
 	case "plan":
-		log.Info().Msg("Got TFC plan command")
+		log.Debug().Str("project", proj).Int("mergeRequestID", event.GetMR().GetInternalID()).Msg("Got TFC plan command")
 	case "unlock":
-		log.Info().Msg("Got TFC unlock command")
+		log.Debug().Str("project", proj).Int("mergeRequestID", event.GetMR().GetInternalID()).Msg("Got TFC unlock command")
 	default:
 		return proj, nil
 	}

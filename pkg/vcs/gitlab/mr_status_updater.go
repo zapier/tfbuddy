@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
@@ -74,6 +76,7 @@ func (p *RunStatusUpdater) updateCommitStatusForRun(ctx context.Context, run *tf
 	case tfe.RunPlannedAndFinished:
 		// The completion of a run containing a plan only, or a run the produces a plan with no changes to apply.
 		// This is a final state.
+		log.Debug().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Msg("planned and finished")
 		p.updateStatus(ctx, gogitlab.Success, rmd.GetAction(), rmd)
 		if run.HasChanges {
 			p.updateStatus(ctx, gogitlab.Pending, "apply", rmd)
@@ -87,7 +90,13 @@ func (p *RunStatusUpdater) updateCommitStatusForRun(ctx context.Context, run *tf
 	case tfe.RunPolicySoftFailed:
 		// A sentinel policy has soft failed for a plan-only run. This is a final state.
 		// During the apply, the policy failure will need to be overriden.
-		p.updateStatus(ctx, gogitlab.Success, rmd.GetAction(), rmd)
+		log.Debug().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Msg("policy soft failed")
+		failOnSoft, _ := strconv.ParseBool(os.Getenv("TFBUDDY_FAIL_CI_ON_SENTINEL_SOFT_FAIL"))
+		if failOnSoft && rmd.GetAction() == runstream.PlanAction {
+			p.updateStatus(ctx, gogitlab.Failed, "plan", rmd)
+		} else {
+			p.updateStatus(ctx, gogitlab.Success, rmd.GetAction(), rmd)
+		}
 
 	case tfe.RunPolicyChecked:
 		// The sentinel policy checking phase of a run has completed.
@@ -95,7 +104,7 @@ func (p *RunStatusUpdater) updateCommitStatusForRun(ctx context.Context, run *tf
 		// no op
 
 	default:
-		log.Debug().Str("status", string(run.Status)).Msg("ignoring run status")
+		log.Debug().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Str("status", string(run.Status)).Msg("ignoring run status")
 		return
 	}
 
@@ -117,7 +126,7 @@ func (p *RunStatusUpdater) updateStatus(ctx context.Context, state gogitlab.Buil
 	// Once we have a pipeline ID returned, we know we have a valid pipeline to set commit status for
 	var pipelineID *int
 	getPipelineIDFn := func() error {
-		log.Debug().Msg("getting pipeline status")
+		log.Debug().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Msg("getting pipeline status")
 		pipelineID := p.getLatestPipelineID(ctx, rmd)
 		if pipelineID == nil {
 			return errNoPipelineStatus
@@ -127,14 +136,14 @@ func (p *RunStatusUpdater) updateStatus(ctx context.Context, state gogitlab.Buil
 
 	err := backoff.Retry(getPipelineIDFn, configureBackOff())
 	if err != nil {
-		log.Warn().Msg("could not retrieve pipeline id after multiple attempts")
+		log.Warn().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Msg("could not retrieve pipeline id after multiple attempts")
 	}
 	if pipelineID != nil {
 		log.Trace().Int("pipeline_id", *pipelineID).Msg("pipeline status")
 		status.PipelineID = pipelineID
 	}
 
-	log.Debug().Interface("new_status", status).Msg("updating Gitlab commit status")
+	log.Debug().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Interface("new_status", status).Msg("updating Gitlab commit status")
 	cs, err := p.client.SetCommitStatus(
 		ctx,
 		rmd.GetMRProjectNameWithNamespace(),
@@ -142,10 +151,10 @@ func (p *RunStatusUpdater) updateStatus(ctx context.Context, state gogitlab.Buil
 		&GitlabCommitStatusOptions{status},
 	)
 	if err != nil {
-		log.Error().Err(err).Interface("status", status).Msg("could not update status")
+		log.Error().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Err(err).Interface("status", status).Msg("could not update status")
 		return
 	}
-	log.Debug().Interface("commit_status", cs.Info()).Msg("updated Commit Status")
+	log.Debug().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Interface("commit_status", cs.Info()).Msg("updated Commit Status")
 }
 
 func statusName(ws, action string) *string {
@@ -178,7 +187,7 @@ func runUrlForTFRunMetadata(rmd runstream.RunMetadata) *string {
 func (p *RunStatusUpdater) getLatestPipelineID(ctx context.Context, rmd runstream.RunMetadata) *int {
 	pipelines, err := p.client.GetPipelinesForCommit(ctx, rmd.GetMRProjectNameWithNamespace(), rmd.GetCommitSHA())
 	if err != nil {
-		log.Error().Err(err).Msg("could not retrieve pipelines for commit")
+		log.Error().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Err(err).Msg("could not retrieve pipelines for commit")
 		return nil
 	}
 	log.Trace().Interface("pipelines", pipelines).Msg("retrieved pipelines for commit")
@@ -190,7 +199,7 @@ func (p *RunStatusUpdater) getLatestPipelineID(ctx context.Context, rmd runstrea
 		}
 		// Fallback behavior if Gitlab doesn't find any merge request pipelines
 		// Returns last pipeline ID in the pipelines list
-		log.Debug().Msg("No merge request pipeline ID found for the commit. Using latest pipeline ID as fallback...")
+		log.Debug().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Msg("No merge request pipeline ID found for the commit. Using latest pipeline ID as fallback...")
 		return ptr(pipelines[len(pipelines)-1].GetID())
 	}
 	return nil
@@ -208,7 +217,7 @@ func (p *RunStatusUpdater) mergeMRIfPossible(ctx context.Context, rmd runstream.
 	if err != nil {
 		span.RecordError(err)
 	}
-	log.Debug().AnErr("err", err).Msg("merge MR")
+	log.Debug().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).AnErr("err", err).Msg("merge MR")
 
 }
 

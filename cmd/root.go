@@ -42,12 +42,14 @@ func resolveLogLevel() zerolog.Level {
 		log.Println("could not parse log level, defaulting to 'info'")
 		lvl = zerolog.InfoLevel
 	}
+	log.Println("log level:", lvl, logLevel)
 	return lvl
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
+	logging.SetupLogOutput(resolveLogLevel())
 	cobra.CheckErr(rootCmd.Execute())
 }
 

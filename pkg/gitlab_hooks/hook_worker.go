@@ -53,7 +53,7 @@ func (w *GitlabEventWorker) processNoteEventStreamMsg(msg *NoteEventMsg) error {
 	_, noteErr = w.processNoteEvent(ctx, msg)
 
 	return utils.EmitPermanentError(noteErr, func(err error) {
-		log.Error().Msgf("got permanent error processing Note event: %s", err.Error())
+		log.Error().Str("project", msg.Payload.Project.PathWithNamespace).Int("mergeRequestID", msg.Payload.GetMR().GetInternalID()).Str("discussionID", msg.Payload.GetDiscussionID()).Msgf("got permanent error processing Note event: %s", err.Error())
 	})
 }
 
@@ -68,6 +68,6 @@ func (w *GitlabEventWorker) processMREventStreamMsg(msg *MergeRequestEventMsg) e
 	_, mrErr = w.processMergeRequestEvent(msg)
 
 	return utils.EmitPermanentError(mrErr, func(err error) {
-		log.Error().Msgf("got permanent error processing MR event: %s", err.Error())
+		log.Error().Str("project", msg.Payload.Project.PathWithNamespace).Int("mergeRequestID", msg.Payload.ObjectAttributes.IID).Msgf("got permanent error processing MR event: %s", err.Error())
 	})
 }

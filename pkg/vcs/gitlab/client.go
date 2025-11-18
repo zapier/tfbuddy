@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -334,9 +333,9 @@ func (g *GitlabClient) GetMergeRequestModifiedFiles(ctx context.Context, mrIID i
 				},
 			}
 			diffs, resp, err := g.client.MergeRequests.ListMergeRequestDiffs(
-				url.QueryEscape(projectID), mrIID, &opts,
+				projectID, mrIID, &opts,
 			)
-			if err != nil {
+			if err != nil && (resp.StatusCode != 504 && resp.StatusCode != 429) {
 				return nil, utils.CreatePermanentError(err)
 			}
 

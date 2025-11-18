@@ -13,6 +13,7 @@ type EmitHandler func(err error)
 // Otherwise it will return the passed in error.
 func EmitPermanentError(err error, handler EmitHandler) error {
 	if errors.Is(err, ErrPermanent) {
+		handler(err)
 		return nil
 	}
 	return err
