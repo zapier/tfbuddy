@@ -42,7 +42,6 @@ func resolveLogLevel() zerolog.Level {
 		log.Println("could not parse log level, defaulting to 'info'")
 		lvl = zerolog.InfoLevel
 	}
-	log.Println("log level:", lvl, logLevel)
 	return lvl
 }
 
