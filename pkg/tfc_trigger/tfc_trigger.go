@@ -441,7 +441,14 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 		log.Debug().Msg("No Terraform changes found in changeset.")
 		return nil, nil
 	}
-
+	//only set workspace metadata for a MR when the first run is triggered. This prevents the count of executed workspaces from being reset
+	wsMeta, err := t.runstream.GetWorkspaceMeta(fmt.Sprintf("%d", t.GetMergeRequestIID()), t.GetProjectNameWithNamespace())
+	if err != nil || wsMeta == nil {
+		t.runstream.AddWorkspaceMeta(&runstream.TFCWorkspacesMetadata{
+			CountTotalWorkspaces:    len(triggeredWorkspaces),
+			CountExecutedWorkspaces: 0,
+		}, fmt.Sprintf("%d", t.GetMergeRequestIID()), t.GetProjectNameWithNamespace())
+	}
 	return workspaceStatus, nil
 }
 

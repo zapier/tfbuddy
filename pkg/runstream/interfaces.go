@@ -12,6 +12,8 @@ type StreamClient interface {
 	PublishTFRunEvent(ctx context.Context, re RunEvent) error
 	AddRunMeta(rmd RunMetadata) error
 	GetRunMeta(runID string) (RunMetadata, error)
+	AddWorkspaceMeta(rmd WorkspaceMetadata, mrID, workspace string) error
+	GetWorkspaceMeta(mrID, workspace string) (*TFCWorkspacesMetadata, error)
 	NewTFRunPollingTask(meta RunMetadata, delay time.Duration) RunPollingTask
 	SubscribeTFRunPollingTasks(cb func(task RunPollingTask) bool) (closer func(), err error)
 	SubscribeTFRunEvents(queue string, cb func(run RunEvent) bool) (closer func(), err error)
