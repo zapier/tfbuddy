@@ -108,7 +108,7 @@ func TestTFCEvents_SingleWorkspacePlan(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: ws}, t)
-	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, "Starting TFC plan for Workspace: `zapier-test/service-tfbuddy`.").Return(testSuite.MockGitDisc, nil)
+	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, "Starting TFC plan for Workspace: `zapier-test/service-tfbuddy`.\n<!-- tfbuddy:ws=service-tfbuddy:action=plan -->").Return(testSuite.MockGitDisc, nil)
 	testSuite.MockApiClient.EXPECT().CreateRunFromSource(gomock.Any(), gomock.Any()).Return(&tfe.Run{
 		ID: "101",
 		Workspace: &tfe.Workspace{Name: "service-tfbuddy",
@@ -160,7 +160,7 @@ func TestTFCEvents_SingleWorkspacePlanError(t *testing.T) {
 	defer mockCtrl.Finish()
 	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: ws}, t)
 
-	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, "Starting TFC plan for Workspace: `zapier-test/service-tfbuddy`.").Return(testSuite.MockGitDisc, nil)
+	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, "Starting TFC plan for Workspace: `zapier-test/service-tfbuddy`.\n<!-- tfbuddy:ws=service-tfbuddy:action=plan -->").Return(testSuite.MockGitDisc, nil)
 
 	testSuite.MockApiClient.EXPECT().CreateRunFromSource(gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("could not create run from source"))
 
@@ -279,8 +279,8 @@ func TestTFCEvents_MultiWorkspaceApply(t *testing.T) {
 	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: ws}, t)
 	testSuite.MockGitClient.EXPECT().GetMergeRequestModifiedFiles(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS).Return([]string{"main.tf", "staging/terraform.tf"}, nil)
 
-	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, "Starting TFC apply for Workspace: `zapier-test/service-tfbuddy`.").Return(testSuite.MockGitDisc, nil)
-	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, "Starting TFC apply for Workspace: `zapier-test/service-tfbuddy-staging`.").Return(testSuite.MockGitDisc, nil)
+	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, "Starting TFC apply for Workspace: `zapier-test/service-tfbuddy`.\n<!-- tfbuddy:ws=service-tfbuddy:action=apply -->").Return(testSuite.MockGitDisc, nil)
+	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, "Starting TFC apply for Workspace: `zapier-test/service-tfbuddy-staging`.\n<!-- tfbuddy:ws=service-tfbuddy-staging:action=apply -->").Return(testSuite.MockGitDisc, nil)
 
 	testSuite.MockApiClient.EXPECT().GetWorkspaceByName(gomock.Any(), "zapier-test", gomock.Any()).DoAndReturn(func(a interface{}, c, d string) (*tfe.Workspace, error) {
 		return &tfe.Workspace{ID: c}, nil
@@ -409,8 +409,8 @@ func TestTFCEvents_MultiWorkspaceApplyError(t *testing.T) {
 	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: ws}, t)
 	testSuite.MockGitClient.EXPECT().GetMergeRequestModifiedFiles(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS).Return([]string{"main.tf", "staging/terraform.tf"}, nil)
 
-	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, "Starting TFC apply for Workspace: `zapier-test/service-tfbuddy`.").Return(testSuite.MockGitDisc, nil)
-	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, "Starting TFC apply for Workspace: `zapier-test/service-tfbuddy-staging`.").Return(testSuite.MockGitDisc, nil)
+	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, "Starting TFC apply for Workspace: `zapier-test/service-tfbuddy`.\n<!-- tfbuddy:ws=service-tfbuddy:action=apply -->").Return(testSuite.MockGitDisc, nil)
+	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, "Starting TFC apply for Workspace: `zapier-test/service-tfbuddy-staging`.\n<!-- tfbuddy:ws=service-tfbuddy-staging:action=apply -->").Return(testSuite.MockGitDisc, nil)
 
 	testSuite.MockApiClient.EXPECT().GetWorkspaceByName(gomock.Any(), "zapier-test", gomock.Any()).DoAndReturn(func(a interface{}, b, c string) (*tfe.Workspace, error) {
 		return &tfe.Workspace{ID: c}, nil

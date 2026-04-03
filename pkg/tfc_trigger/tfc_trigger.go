@@ -585,7 +585,8 @@ func (t *TFCTrigger) triggerRunForWorkspace(ctx context.Context, cfgWS *TFCWorks
 	// create a new Merge Request discussion thread where status updates will be nested
 	disc, err := t.gl.CreateMergeRequestDiscussion(ctx, mr.GetInternalID(),
 		t.GetProjectNameWithNamespace(),
-		fmt.Sprintf("Starting TFC %v for Workspace: `%s/%s`.", t.GetAction(), org, wsName),
+		fmt.Sprintf("Starting TFC %v for Workspace: `%s/%s`.\n", t.GetAction(), org, wsName)+
+			utils.FormatTFBuddyMarker(wsName, t.GetAction().String()),
 	)
 	if err != nil {
 		return fmt.Errorf("could not create MR discussion thread for TFC run status updates. %w", err)

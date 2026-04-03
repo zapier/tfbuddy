@@ -11,6 +11,7 @@ import (
 	"github.com/zapier/tfbuddy/pkg/runstream"
 	"github.com/zapier/tfbuddy/pkg/terraform_plan"
 	"github.com/zapier/tfbuddy/pkg/tfc_api"
+	"github.com/zapier/tfbuddy/pkg/utils"
 )
 
 func getProperApplyText(rmd runstream.RunMetadata, wsName string) string {
@@ -132,7 +133,7 @@ func FormatRunStatusCommentBody(tfc tfc_api.ApiClient, run *tfe.Run, rmd runstre
 		rmd.GetAction(),
 		run.Status,
 		run.ID, runUrl,
-	)
+	) + "\n" + utils.FormatTFBuddyMarker(wsName, rmd.GetAction())
 
 	return extraInfo, topLevelNoteBody, resolveDiscussion
 

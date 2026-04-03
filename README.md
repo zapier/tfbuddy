@@ -13,6 +13,8 @@ apply-before-merge workflow.
 This tool provides a server function that processes webhooks from Gitlab/Github, triggers a Run in TFC for Merge/Pull Requests
 and then passes status updates of those Runs back to the Merge/Pull Request in the form of comments.
 
+For MRs with multiple workspaces, TFBuddy tracks each workspace independently and can automatically clean up old plan/apply comments, keeping only the most recent one per workspace and action type. Set `TFBUDDY_DELETE_OLD_COMMENTS` to enable this.
+
 
 ### Architecture
 

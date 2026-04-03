@@ -55,6 +55,10 @@ env:
   # Optional: fail CI if Sentinel policy checks soft-fail on plan (default: disabled)
   # Set to "true" to mark the plan commit status as failed when policies soft-fail
   TFBUDDY_FAIL_CI_ON_SENTINEL_SOFT_FAIL: "false"
+  # Optional: enable automatic cleanup of old discussion comments per workspace and action.
+  # When set, TFBuddy deletes previous plan/apply discussions for the same workspace,
+  # keeping only the most recent one. Discussions for other workspaces or actions are preserved.
+  TFBUDDY_DELETE_OLD_COMMENTS: "true"
 ```
 
 For sensitive environment variables use `secrets.envs` which can contain a list of key/value pairs

@@ -16,6 +16,10 @@ If you're happy with the plan you can issue a apply command `tfc apply` or if yo
 
 Once the apply completes TF Buddy will update the PR indicating what was changed and if there was any errors.
 
+#### Comment Cleanup
+
+When `TFBUDDY_DELETE_OLD_COMMENTS` is set, TFBuddy automatically cleans up old discussion threads to keep MRs/PRs readable. Each comment is tagged with an invisible HTML marker identifying its workspace and action (plan or apply). When a new run completes, TFBuddy deletes older discussions that match the same workspace and action, keeping only the latest one. This is workspace-scoped: if your MR triggers runs in multiple workspaces, each workspace retains its own most recent plan and apply comment independently. Previous run URLs are collected into a collapsible "Previous TFC Urls" table on the latest comment.
+
 Example of how an error is reported
 
 ![error](img/error.png)

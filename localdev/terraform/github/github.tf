@@ -8,7 +8,7 @@ resource "github_repository" "tfbuddy_test_project" {
 
 data "github_branch" "main" {
   repository = github_repository.tfbuddy_test_project.name
-  branch     = "main"
+  branch     = "master"
 
 }
 
@@ -69,7 +69,7 @@ resource "github_repository_file" "test_change_branch_main_tf" {
 
 resource "github_repository_pull_request" "test_change" {
   base_repository = github_repository.tfbuddy_test_project.name
-  base_ref        = "main"
+  base_ref        = "master"
   head_ref        = github_branch.test_change.branch
   title           = "TFBuddy test"
   body            = "This will change everything"
