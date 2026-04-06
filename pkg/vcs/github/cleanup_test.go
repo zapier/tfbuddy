@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -206,7 +205,7 @@ func TestGH_GetOldRunUrls_ApplyAction_OnlyDeletesMatchingApply(t *testing.T) {
 }
 
 func TestGH_GetOldRunUrls_DeleteDisabled_NoDeletion(t *testing.T) {
-	os.Unsetenv("TFBUDDY_DELETE_OLD_COMMENTS")
+	t.Setenv("TFBUDDY_DELETE_OLD_COMMENTS", "false")
 
 	currentID := int64(200)
 	comments := []fakeComment{

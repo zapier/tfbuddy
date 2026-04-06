@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -104,7 +105,7 @@ func (c *Client) GetOldRunUrls(ctx context.Context, prID int, fullName string, r
 		return "", err
 	}
 
-	deleteOld := os.Getenv("TFBUDDY_DELETE_OLD_COMMENTS") != ""
+	deleteOld, _ := strconv.ParseBool(os.Getenv("TFBUDDY_DELETE_OLD_COMMENTS"))
 
 	var oldRunUrls []string
 	var oldRunBlock string

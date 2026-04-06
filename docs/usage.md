@@ -56,8 +56,9 @@ env:
   # Set to "true" to mark the plan commit status as failed when policies soft-fail
   TFBUDDY_FAIL_CI_ON_SENTINEL_SOFT_FAIL: "false"
   # Optional: enable automatic cleanup of old discussion comments per workspace and action.
-  # When set, TFBuddy deletes previous plan/apply discussions for the same workspace,
-  # keeping only the most recent one. Discussions for other workspaces or actions are preserved.
+  # When enabled ("true"), TFBuddy deletes previous plan/apply discussions for the same
+  # workspace, keeping only the most recent one. Discussions for other workspaces or
+  # actions are preserved. Set to "false" or remove to disable.
   TFBUDDY_DELETE_OLD_COMMENTS: "true"
 ```
 

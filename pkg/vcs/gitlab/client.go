@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -159,7 +160,7 @@ func (c *GitlabClient) GetOldRunUrls(ctx context.Context, mrIID int, project str
 		return "", utils.CreatePermanentError(err)
 	}
 
-	deleteOld := os.Getenv("TFBUDDY_DELETE_OLD_COMMENTS") != ""
+	deleteOld, _ := strconv.ParseBool(os.Getenv("TFBUDDY_DELETE_OLD_COMMENTS"))
 
 	var oldRunUrls []string
 	var oldRunBlock string

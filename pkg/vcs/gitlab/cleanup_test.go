@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -361,7 +360,7 @@ func TestGetOldRunUrls_NoMatchingDiscussions_DeletesNothing(t *testing.T) {
 }
 
 func TestGetOldRunUrls_DeleteDisabled_CollectsUrlsButNoDeletion(t *testing.T) {
-	os.Unsetenv("TFBUDDY_DELETE_OLD_COMMENTS")
+	t.Setenv("TFBUDDY_DELETE_OLD_COMMENTS", "false")
 
 	currentNoteID := 300
 	discussions := []fakeDiscussion{
