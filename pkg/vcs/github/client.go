@@ -117,7 +117,11 @@ func (c *Client) GetOldRunUrls(ctx context.Context, prID int, fullName string, r
 
 		body := comment.GetBody()
 		noteWS, noteAction, hasMarker := utils.ParseTFBuddyMarker(body)
+		if !hasMarker || noteWS != workspace || noteAction != action {
+			continue
+		}
 
+		// Only collect run URL info from comments that match workspace+action.
 		runUrl := utils.CaptureSubstring(body, utils.URL_RUN_PREFIX, utils.URL_RUN_SUFFIX)
 		runUrlRaw := utils.CaptureSubstring(runUrl, "[", "]")
 		runUrlSplit := strings.Split(runUrlRaw, "/")
@@ -135,12 +139,11 @@ func (c *Client) GetOldRunUrls(ctx context.Context, prID int, fullName string, r
 		}
 
 		oldRunBlockTest := utils.CaptureSubstring(body, utils.URL_RUN_GROUP_PREFIX, utils.URL_RUN_GROUP_SUFFIX)
-		oldRunBlock = "\n"
 		if oldRunBlockTest != "" {
 			oldRunBlock = oldRunBlockTest
 		}
 
-		if hasMarker && noteWS == workspace && noteAction == action && comment.GetID() != int64(rootCommentID) {
+		if comment.GetID() != int64(rootCommentID) {
 			matchingCommentIDs = append(matchingCommentIDs, comment.GetID())
 		}
 	}
@@ -158,7 +161,13 @@ func (c *Client) GetOldRunUrls(ctx context.Context, prID int, fullName string, r
 	}
 
 	if len(oldRunUrls) > 0 {
+		if oldRunBlock == "" {
+			oldRunBlock = "\n"
+		}
 		return fmt.Sprintf("%s%s%s\n%s", utils.URL_RUN_GROUP_PREFIX, oldRunBlock, strings.Join(oldRunUrls, "\n"), utils.URL_RUN_GROUP_SUFFIX), nil
+	}
+	if strings.TrimSpace(oldRunBlock) == "" {
+		return "", nil
 	}
 	return oldRunBlock, nil
 }

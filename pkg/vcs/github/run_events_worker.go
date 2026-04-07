@@ -9,7 +9,6 @@ import (
 	"github.com/zapier/tfbuddy/pkg/comment_formatter"
 	"github.com/zapier/tfbuddy/pkg/runstream"
 	"github.com/zapier/tfbuddy/pkg/tfc_api"
-	"github.com/zapier/tfbuddy/pkg/utils"
 	"github.com/zapier/tfbuddy/pkg/vcs"
 	"go.opentelemetry.io/otel"
 )
@@ -83,12 +82,10 @@ func (w *RunEventsWorker) postRunStatusComment(ctx context.Context, run *tfe.Run
 	}
 
 	if topLevelNoteBody != "" {
-		marker := utils.FormatTFBuddyMarker(run.Workspace.Name, rmd.GetAction())
 		body := topLevelNoteBody
 		if commentBody != "" {
 			body += fmt.Sprintf("\n%s", commentBody)
 		}
-		body += "\n" + marker
 		w.client.CreateMergeRequestComment(
 			ctx,
 			rmd.GetMRInternalID(),

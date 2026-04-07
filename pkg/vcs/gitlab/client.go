@@ -179,7 +179,12 @@ func (c *GitlabClient) GetOldRunUrls(ctx context.Context, mrIID int, project str
 			continue
 		}
 
-		// Collect run URL info from the root note for the "Previous TFC Urls" block.
+		noteWS, noteAction, found := utils.ParseTFBuddyMarker(rootNote.Body)
+		if !found || noteWS != workspace || noteAction != action {
+			continue
+		}
+
+		// Only collect run URL info from discussions that match workspace+action.
 		for _, note := range disc.Notes {
 			if note.Author.Username != currentUser.Username {
 				continue
@@ -206,10 +211,6 @@ func (c *GitlabClient) GetOldRunUrls(ctx context.Context, mrIID int, project str
 			}
 		}
 
-		noteWS, noteAction, found := utils.ParseTFBuddyMarker(rootNote.Body)
-		if !found || noteWS != workspace || noteAction != action {
-			continue
-		}
 		if rootNote.ID == rootNoteID {
 			continue
 		}
@@ -236,11 +237,14 @@ func (c *GitlabClient) GetOldRunUrls(ctx context.Context, mrIID int, project str
 		}
 	}
 
-	if oldRunBlock == "" {
-		oldRunBlock = "\n"
-	}
 	if len(oldRunUrls) > 0 {
+		if oldRunBlock == "" {
+			oldRunBlock = "\n"
+		}
 		return fmt.Sprintf("%s%s%s\n%s", utils.URL_RUN_GROUP_PREFIX, oldRunBlock, strings.Join(oldRunUrls, "\n"), utils.URL_RUN_GROUP_SUFFIX), nil
+	}
+	if strings.TrimSpace(oldRunBlock) == "" {
+		return "", nil
 	}
 	return oldRunBlock, nil
 }
