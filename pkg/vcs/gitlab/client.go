@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -132,15 +133,20 @@ func (c *GitlabClient) MergeMR(ctx context.Context, mrIID int, project string) e
 	}, createBackOffWithRetries())
 }
 
-// Crawl the comments on this MR for tfbuddy comments, grab any TFC urls out of them, and delete them.
-func (c *GitlabClient) GetOldRunUrls(ctx context.Context, mrIID int, project string, rootNoteID int) (string, error) {
+// GetOldRunUrls crawls MR discussion threads authored by the bot, collects
+// previous TFC run URLs into a collapsible block, and (when
+// TFBUDDY_DELETE_OLD_COMMENTS is set) deletes entire discussion threads that
+// belong to the same workspace+action combination.  Threads for other
+// workspaces or actions are left untouched.
+func (c *GitlabClient) GetOldRunUrls(ctx context.Context, mrIID int, project string, rootNoteID int, workspace string, action string) (string, error) {
 	_, span := otel.Tracer("TFC").Start(ctx, "GetOldRunURLs")
 	defer span.End()
 
-	log.Debug().Str("projectID", project).Int("mrIID", mrIID).Msg("pruning notes")
-	notes, err := backoff.RetryWithData(func() ([]*gogitlab.Note, error) {
-		notes, resp, err := c.client.Notes.ListMergeRequestNotes(project, mrIID, &gogitlab.ListMergeRequestNotesOptions{})
-		return notes, utils.CreatePermanentHTTPError(resp.StatusCode, err)
+	log.Debug().Str("projectID", project).Int("mrIID", mrIID).Str("workspace", workspace).Str("action", action).Msg("pruning notes")
+
+	discussions, err := backoff.RetryWithData(func() ([]*gogitlab.Discussion, error) {
+		discussions, resp, err := c.client.Discussions.ListMergeRequestDiscussions(project, mrIID, &gogitlab.ListMergeRequestDiscussionsOptions{})
+		return discussions, utils.CreatePermanentHTTPError(resp.StatusCode, err)
 	}, createBackOffWithRetries())
 	if err != nil {
 		return "", utils.CreatePermanentError(err)
@@ -154,25 +160,42 @@ func (c *GitlabClient) GetOldRunUrls(ctx context.Context, mrIID int, project str
 		return "", utils.CreatePermanentError(err)
 	}
 
+	deleteOld, _ := strconv.ParseBool(os.Getenv("TFBUDDY_DELETE_OLD_COMMENTS"))
+
 	var oldRunUrls []string
 	var oldRunBlock string
-	for _, note := range notes {
-		if note.Author.Username == currentUser.Username {
+
+	type discussionToDelete struct {
+		noteIDs []int
+	}
+	var toDelete []discussionToDelete
+
+	for _, disc := range discussions {
+		if len(disc.Notes) == 0 {
+			continue
+		}
+		rootNote := disc.Notes[0]
+		if rootNote.Author.Username != currentUser.Username {
+			continue
+		}
+
+		noteWS, noteAction, found := utils.ParseTFBuddyMarker(rootNote.Body)
+		if !found || noteWS != workspace || noteAction != action {
+			continue
+		}
+
+		// Only collect run URL info from discussions that match workspace+action.
+		for _, note := range disc.Notes {
+			if note.Author.Username != currentUser.Username {
+				continue
+			}
 			runUrl := utils.CaptureSubstring(note.Body, utils.URL_RUN_PREFIX, utils.URL_RUN_SUFFIX)
-			// We scrape the run URLs from the previous MR comments.
-			// Since they are hyperlinked in markdown format, we need to extract the URL
-			// without the markdown artifacts.
 			runUrlRaw := utils.CaptureSubstring(runUrl, "[", "]")
 			runUrlSplit := strings.Split(runUrlRaw, "/")
-			// The run ID is the last part of the run URL, and it looks like run-abcd12345...
 			runID := ""
 			if len(runUrlSplit) > 0 {
 				runID = runUrlSplit[len(runUrlSplit)-1]
 			} else {
-				// If the URL split slice doesn't contain anything for any reason
-				// We set the ID and URL to the run URL as a fallback (as it was originally scraped)
-				// It'll appear like this in markdown
-				// [https://app.terraform.io/...](https://app.terraform.io/...)
 				log.Warn().Msg("Unable to obtain Terraform cloud run ID. The run URL(s) on the previous comments may be malformed.")
 				runID = runUrl
 				runUrlRaw = runUrl
@@ -182,29 +205,46 @@ func (c *GitlabClient) GetOldRunUrls(ctx context.Context, mrIID int, project str
 				oldRunUrls = append(oldRunUrls, fmt.Sprintf("|[%s](%s)|%s|%s|", runID, runUrlRaw, utils.FormatStatus(runStatus), note.CreatedAt))
 			}
 
-			// Gitlab default sort is order by created by, so take the last match on this
 			oldRunBlockTest := utils.CaptureSubstring(note.Body, utils.URL_RUN_GROUP_PREFIX, utils.URL_RUN_GROUP_SUFFIX)
-			// Add a new line for the first table entry so that markdown tabling can properly begin
-			oldRunBlock = "\n"
 			if oldRunBlockTest != "" {
 				oldRunBlock = oldRunBlockTest
 			}
-			if os.Getenv("TFBUDDY_DELETE_OLD_COMMENTS") != "" && note.ID != rootNoteID {
-				log.Debug().Str("projectID", project).Int("mrIID", mrIID).Msgf("deleting note %d", note.ID)
+		}
+
+		if rootNote.ID == rootNoteID {
+			continue
+		}
+
+		var noteIDs []int
+		for i := len(disc.Notes) - 1; i >= 0; i-- {
+			noteIDs = append(noteIDs, disc.Notes[i].ID)
+		}
+		toDelete = append(toDelete, discussionToDelete{noteIDs: noteIDs})
+	}
+
+	if deleteOld {
+		for _, d := range toDelete {
+			for _, noteID := range d.noteIDs {
+				log.Debug().Str("projectID", project).Int("mrIID", mrIID).Str("workspace", workspace).Str("action", action).Msgf("deleting note %d", noteID)
 				err := backoff.Retry(func() error {
-					resp, err := c.client.Notes.DeleteMergeRequestNote(project, mrIID, note.ID)
+					resp, err := c.client.Notes.DeleteMergeRequestNote(project, mrIID, noteID)
 					return utils.CreatePermanentHTTPError(resp.StatusCode, err)
 				}, createBackOffWithRetries())
 				if err != nil {
-					return "", utils.CreatePermanentError(err)
+					log.Warn().Err(err).Int("noteID", noteID).Msg("could not delete note, skipping")
 				}
 			}
 		}
 	}
 
-	// Add new urls into block
 	if len(oldRunUrls) > 0 {
+		if oldRunBlock == "" {
+			oldRunBlock = "\n"
+		}
 		return fmt.Sprintf("%s%s%s\n%s", utils.URL_RUN_GROUP_PREFIX, oldRunBlock, strings.Join(oldRunUrls, "\n"), utils.URL_RUN_GROUP_SUFFIX), nil
+	}
+	if strings.TrimSpace(oldRunBlock) == "" {
+		return "", nil
 	}
 	return oldRunBlock, nil
 }

@@ -67,19 +67,31 @@ func (w *RunEventsWorker) postRunStatusComment(ctx context.Context, run *tfe.Run
 	ctx, span := otel.Tracer("TFC").Start(ctx, "postRunStatusComment")
 	defer span.End()
 
-	commentBody, _, _ := comment_formatter.FormatRunStatusCommentBody(w.tfc, run, rmd)
+	commentBody, topLevelNoteBody, _ := comment_formatter.FormatRunStatusCommentBody(w.tfc, run, rmd)
 
-	if commentBody != "" {
+	if topLevelNoteBody != "" {
+		if run.Status == tfe.RunErrored || run.Status == tfe.RunCanceled || run.Status == tfe.RunDiscarded || run.Status == tfe.RunPlannedAndFinished {
+			oldUrls, err := w.client.GetOldRunUrls(ctx, rmd.GetMRInternalID(), rmd.GetMRProjectNameWithNamespace(), int(rmd.GetRootNoteID()), run.Workspace.Name, rmd.GetAction())
+			if err != nil {
+				log.Error().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("prID", rmd.GetMRInternalID()).Err(err).Msg("could not retrieve old run urls")
+			}
+			if oldUrls != "" {
+				topLevelNoteBody = fmt.Sprintf("%s\n\n%s", oldUrls, topLevelNoteBody)
+			}
+		}
+	}
+
+	if topLevelNoteBody != "" {
+		body := topLevelNoteBody
+		if commentBody != "" {
+			body += fmt.Sprintf("\n%s", commentBody)
+		}
 		w.client.CreateMergeRequestComment(
 			ctx,
 			rmd.GetMRInternalID(),
 			rmd.GetMRProjectNameWithNamespace(),
-			fmt.Sprintf(
-				"Status: `%s`<br>%s",
-				run.Status,
-				commentBody),
+			body,
 		)
-
 	}
 	if run.Status == tfe.RunApplied {
 		if len(run.TargetAddrs) > 0 {

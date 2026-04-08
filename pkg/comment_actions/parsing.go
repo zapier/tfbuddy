@@ -38,6 +38,16 @@ func ParseCommentCommand(noteBody string) (*CommentOpts, error) {
 		return nil, ErrNoNotePassed
 	}
 
+	switch words[0] {
+	case "tfc":
+		// valid agent, continue parsing
+	case "terraform", "atlantis":
+		log.Debug().Str("comment", words[0]).Msg("Use tfc to interact with tfbuddy")
+		return nil, ErrOtherTFTool
+	default:
+		return nil, ErrNotTFCCommand
+	}
+
 	opts := &CommentOpts{
 		TriggerOpts: &tfc_trigger.TFCTriggerOptions{},
 	}
@@ -45,14 +55,6 @@ func ParseCommentCommand(noteBody string) (*CommentOpts, error) {
 	if err != nil {
 		log.Error().Err(err).Msg("error parsing comment as command")
 		return nil, ErrPermanent
-	}
-
-	if opts.Args.Agent == "terraform" || opts.Args.Agent == "atlantis" {
-		log.Debug().Str("comment", opts.Args.Agent).Msg("Use tfc to interact with tfbuddy")
-		return nil, ErrOtherTFTool
-	}
-	if opts.Args.Agent != "tfc" {
-		return nil, ErrNotTFCCommand
 	}
 
 	opts.TriggerOpts.Action = tfc_trigger.CheckTriggerAction(opts.Args.Command)

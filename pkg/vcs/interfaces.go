@@ -17,7 +17,7 @@ type GitClient interface {
 	AddMergeRequestDiscussionReply(ctx context.Context, mrIID int, project, discussionID, comment string) (MRNote, error)
 	SetCommitStatus(ctx context.Context, projectWithNS string, commitSHA string, status CommitStatusOptions) (CommitStatus, error)
 	GetPipelinesForCommit(ctx context.Context, projectWithNS string, commitSHA string) ([]ProjectPipeline, error)
-	GetOldRunUrls(ctx context.Context, mrIID int, project string, rootCommentID int) (string, error)
+	GetOldRunUrls(ctx context.Context, mrIID int, project string, rootCommentID int, workspace string, action string) (string, error)
 	MergeMR(ctx context.Context, mrIID int, project string) error
 }
 type GitRepo interface {

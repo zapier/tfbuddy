@@ -168,7 +168,7 @@ func (ts *TestSuite) InitTestSuite() {
 	ts.MockGitClient.EXPECT().GetMergeRequestModifiedFiles(gomock.Any(), ts.MetaData.MRIID, ts.MetaData.ProjectNameNS).Return([]string{"main.tf"}, nil).AnyTimes()
 	ts.MockGitClient.EXPECT().GetRepoFile(gomock.Any(), ts.MetaData.ProjectNameNS, ".tfbuddy.yaml", ts.MetaData.SourceBranch).Return(ts.MetaData.TFBuddyConfig, nil).AnyTimes()
 	ts.MockGitClient.EXPECT().CloneMergeRequest(gomock.Any(), ts.MetaData.ProjectNameNS, gomock.Any(), gomock.Any()).Return(ts.MockGitRepo, nil).AnyTimes()
-	ts.MockGitClient.EXPECT().CreateMergeRequestDiscussion(gomock.Any(), ts.MetaData.MRIID, ts.MetaData.ProjectNameNS, &RegexMatcher{regex: regexp.MustCompile("Starting TFC apply for Workspace: `([A-z\\-]){1,}/([A-z\\-]){1,}`.")}).Return(ts.MockGitDisc, nil).AnyTimes()
+	ts.MockGitClient.EXPECT().CreateMergeRequestDiscussion(gomock.Any(), ts.MetaData.MRIID, ts.MetaData.ProjectNameNS, &RegexMatcher{regex: regexp.MustCompile(`Starting TFC apply for Workspace: ` + "`" + `([A-Za-z0-9\-]){1,}/([A-Za-z0-9\-]){1,}` + "`" + `\.\n<!-- tfbuddy:ws=.+:action=.+ -->`)}).Return(ts.MockGitDisc, nil).AnyTimes()
 
 	ts.MockApiClient.EXPECT().GetWorkspaceByName(gomock.Any(), gomock.Any(), gomock.Any()).Return(&tfe.Workspace{ID: "service-tfbuddy"}, nil).AnyTimes()
 	ts.MockApiClient.EXPECT().GetTagsByQuery(gomock.Any(), gomock.Any(), "tfbuddylock").AnyTimes()
