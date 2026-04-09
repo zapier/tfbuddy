@@ -130,7 +130,12 @@ func hasChangesForWorkspace(ws *TFCWorkspace, modifiedFiles []string) bool {
 
 		// Check if file's directory matches any triggerDir (glob match)
 		for _, td := range ws.TriggerDirs {
-			if match, _ := doublestar.Match(td, fileDir); match {
+			match, err := doublestar.Match(td, fileDir)
+			if err != nil {
+				log.Warn().Err(err).Str("triggerDir", td).Str("fileDir", fileDir).Msg("invalid triggerDir glob pattern, treating as match to be safe")
+				return true
+			}
+			if match {
 				return true
 			}
 		}

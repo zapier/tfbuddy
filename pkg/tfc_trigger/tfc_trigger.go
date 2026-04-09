@@ -414,10 +414,10 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 				continue
 			}
 			if _, ok := modifiedWSMap[cfgWS.Name]; ok {
-				log.Info().Str("ws", cfgWS.Name).Str("dir", cfgWS.Dir).Msg("Blocking workspace: directory modified on target branch.")
+				log.Info().Str("ws", cfgWS.Name).Str("dir", cfgWS.Dir).Strs("triggerDirs", cfgWS.TriggerDirs).Msg("Blocking workspace: relevant paths modified on target branch.")
 				workspaceStatus.Errored = append(workspaceStatus.Errored, &ErroredWorkspace{
 					Name:  cfgWS.Name,
-					Error: fmt.Sprintf("Blocked: directory '%s' has been modified on the target branch since this branch diverged. Please rebase/merge the target branch to resolve this.", cfgWS.Dir),
+					Error: fmt.Sprintf("Blocked: workspace-relevant paths (dir: '%s', triggerDirs: %v) have been modified on the target branch since this branch diverged. Please rebase/merge the target branch to resolve this.", cfgWS.Dir, cfgWS.TriggerDirs),
 				})
 				continue
 			}

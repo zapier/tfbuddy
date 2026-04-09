@@ -501,7 +501,7 @@ func TestTFCEvents_WorkspaceApplyModifiedBothSrcDstBranches(t *testing.T) {
 		t.Fatal("expected log message not nil")
 		return
 	}
-	lastEntry.ExpMsg("Blocking workspace: directory modified on target branch.")
+	lastEntry.ExpMsg("Blocking workspace: relevant paths modified on target branch.")
 
 	if len(triggeredWS.Errored) == 0 {
 		t.Fatal("expected  failed workspaces")
@@ -512,7 +512,7 @@ func TestTFCEvents_WorkspaceApplyModifiedBothSrcDstBranches(t *testing.T) {
 	if triggeredWS.Errored[0].Name != mocks.TF_WORKSPACE_NAME {
 		t.Fatal("unexpected workspace", triggeredWS.Errored[0].Name)
 	}
-	if !strings.Contains(triggeredWS.Errored[0].Error, "has been modified on the target branch since this branch diverged") {
+	if !strings.Contains(triggeredWS.Errored[0].Error, "have been modified on the target branch since this branch diverged") {
 		t.Fatal("unexpected error", triggeredWS.Errored[0].Error)
 	}
 }
