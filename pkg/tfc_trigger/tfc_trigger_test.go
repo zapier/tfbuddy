@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -500,7 +501,7 @@ func TestTFCEvents_WorkspaceApplyModifiedBothSrcDstBranches(t *testing.T) {
 		t.Fatal("expected log message not nil")
 		return
 	}
-	lastEntry.ExpMsg("Ignoring workspace, because it is modified in the target branch.")
+	lastEntry.ExpMsg("Blocking workspace: directory modified on target branch.")
 
 	if len(triggeredWS.Errored) == 0 {
 		t.Fatal("expected  failed workspaces")
@@ -511,7 +512,7 @@ func TestTFCEvents_WorkspaceApplyModifiedBothSrcDstBranches(t *testing.T) {
 	if triggeredWS.Errored[0].Name != mocks.TF_WORKSPACE_NAME {
 		t.Fatal("unexpected workspace", triggeredWS.Errored[0].Name)
 	}
-	if triggeredWS.Errored[0].Error != "Ignoring workspace, because it is modified in the target branch. Please rebase/merge target branch to resolve this." {
+	if !strings.Contains(triggeredWS.Errored[0].Error, "has been modified on the target branch since this branch diverged") {
 		t.Fatal("unexpected error", triggeredWS.Errored[0].Error)
 	}
 }
@@ -803,5 +804,75 @@ func TestAutoMerge_Globally_Disabled(t *testing.T) {
 	}
 	if triggeredWS.Executed[0] != "service-tfbuddy" {
 		t.Fatal("expected workspace", triggeredWS.Errored[0].Name)
+	}
+}
+
+// TestTFCEvents_ApplyNotBlockedByDifferentServiceChanges verifies that changes
+// on the target branch in a different service directory do not block applies for
+// unrelated workspaces.
+func TestTFCEvents_ApplyNotBlockedByDifferentServiceChanges(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{
+		ProjectConfig: &tfc_trigger.ProjectConfig{
+			Workspaces: []*tfc_trigger.TFCWorkspace{{
+				Name:         "services-tracking-api-prod",
+				Organization: "zapier-test",
+				Mode:         "apply-before-merge",
+				Dir:          "services/tracking-api/production/global-us-east-1/",
+				TriggerDirs:  []string{"services/tracking-api/production"},
+			}}},
+	}, t)
+
+	// MR modifies files in the workspace dir
+	testSuite.MockGitClient.EXPECT().GetMergeRequestModifiedFiles(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS).Return([]string{"services/tracking-api/production/global-us-east-1/main.tf"}, nil).AnyTimes()
+	// Target branch has changes in a DIFFERENT service
+	testSuite.MockGitRepo.EXPECT().GetModifiedFileNamesBetweenCommits(testSuite.MetaData.CommonSHA, testSuite.MetaData.TargetBranch).Return([]string{
+		"services/promo/staging/main-us-west-2/main.tf",
+		"services/litellm/staging/global-us-east-1/variables.tf",
+		"CODEOWNERS",
+	}, nil).AnyTimes()
+
+	testSuite.MockApiClient.EXPECT().CreateRunFromSource(gomock.Any(), gomock.Any()).Return(&tfe.Run{
+		ID: "101",
+		Workspace: &tfe.Workspace{Name: "services-tracking-api-prod",
+			Organization: &tfe.Organization{Name: "zapier-test"},
+		},
+		ConfigurationVersion: &tfe.ConfigurationVersion{Speculative: true}}, nil)
+
+	mockRunPollingTask := mocks.NewMockRunPollingTask(mockCtrl)
+	mockRunPollingTask.EXPECT().Schedule(gomock.Any())
+	testSuite.MockStreamClient.EXPECT().NewTFRunPollingTask(gomock.Any(), time.Second*1).Return(mockRunPollingTask)
+
+	testSuite.InitTestSuite()
+
+	testLogger := zltest.New(t)
+	log.Logger = log.Logger.Output(testLogger)
+
+	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
+		Action:                   tfc_trigger.ApplyAction,
+		Branch:                   testSuite.MetaData.SourceBranch,
+		CommitSHA:                "abcd12233",
+		ProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
+		MergeRequestIID:          testSuite.MetaData.MRIID,
+		TriggerSource:            tfc_trigger.CommentTrigger,
+	})
+	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
+	triggeredWS, err := trigger.TriggerTFCEvents(ctx)
+	if err != nil {
+		t.Fatal(err)
+		return
+	}
+
+	if len(triggeredWS.Errored) != 0 {
+		t.Fatalf("expected no failed workspaces, got: %v", triggeredWS.Errored)
+	}
+	if len(triggeredWS.Executed) == 0 {
+		t.Fatal("expected successful triggers")
+	}
+	if triggeredWS.Executed[0] != "services-tracking-api-prod" {
+		t.Fatal("unexpected workspace", triggeredWS.Executed[0])
 	}
 }

@@ -305,8 +305,8 @@ type TriggeredTFCWorkspaces struct {
 	Executed []string
 }
 
-func (t *TFCTrigger) getModifiedWorkspaceBetweenMergeBaseTargetBranch(ctx context.Context, mr vcs.MR, repo vcs.GitRepo) (map[string]struct{}, error) {
-	ctx, span := otel.Tracer("GitlabHandler").Start(ctx, "getModifiedWorkspaceBetweenMergeBaseTargetBranch")
+func (t *TFCTrigger) getModifiedWorkspacesOnTargetBranch(ctx context.Context, mr vcs.MR, repo vcs.GitRepo, triggeredWorkspaces []*TFCWorkspace) (map[string]struct{}, error) {
+	ctx, span := otel.Tracer("GitlabHandler").Start(ctx, "getModifiedWorkspacesOnTargetBranch")
 	defer span.End()
 
 	modifiedWSMap := make(map[string]struct{}, 0)
@@ -330,14 +330,15 @@ func (t *TFCTrigger) getModifiedWorkspaceBetweenMergeBaseTargetBranch(ctx contex
 	log.Debug().Msgf("%+v files modified between merge base and target branch (%s)", targetModifiedFiles, mr.GetTargetBranch())
 	// if there's no modified files we can assume it's safe to continue
 	if len(targetModifiedFiles) > 0 {
-		// use the same logic to find triggeredWorkspaces based on files modified between when the source branch was
-		// forked and the current HEAD of the target branch
-		targetBranchWorkspaces, err := t.getTriggeredWorkspaces(ctx, targetModifiedFiles)
-		if err != nil {
-			return modifiedWSMap, fmt.Errorf("could not find modified workspaces for target branch. %w", err)
-		}
-		for _, ws := range targetBranchWorkspaces {
-			modifiedWSMap[ws.Name] = struct{}{}
+		// For each workspace the MR triggers, check if any files changed on the
+		// target branch fall within that workspace's Dir (prefix match) or match
+		// its TriggerDirs (glob match). This avoids the suffix-based matching in
+		// workspaceForDir which can produce false positives across services.
+		for _, ws := range triggeredWorkspaces {
+			if hasChangesForWorkspace(ws, targetModifiedFiles) {
+				log.Debug().Str("ws", ws.Name).Str("dir", ws.Dir).Msg("workspace has changes on target branch")
+				modifiedWSMap[ws.Name] = struct{}{}
+			}
 		}
 	}
 	return modifiedWSMap, err
@@ -395,7 +396,7 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 		}
 		defer os.Remove(repo.GetLocalDirectory())
 
-		modifiedWSMap, err := t.getModifiedWorkspaceBetweenMergeBaseTargetBranch(ctx, mr, repo)
+		modifiedWSMap, err := t.getModifiedWorkspacesOnTargetBranch(ctx, mr, repo, triggeredWorkspaces)
 		if err != nil {
 			err = t.postUpdate(ctx, ":warning: Could not identify modified workspaces on target branch. Please review the plan carefully for unrelated changes.")
 			if err != nil {
@@ -413,11 +414,10 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 				continue
 			}
 			if _, ok := modifiedWSMap[cfgWS.Name]; ok {
-				//found in modified target
-				log.Info().Str("ws", cfgWS.Name).Msg("Ignoring workspace, because it is modified in the target branch.")
+				log.Info().Str("ws", cfgWS.Name).Str("dir", cfgWS.Dir).Msg("Blocking workspace: directory modified on target branch.")
 				workspaceStatus.Errored = append(workspaceStatus.Errored, &ErroredWorkspace{
 					Name:  cfgWS.Name,
-					Error: "Ignoring workspace, because it is modified in the target branch. Please rebase/merge target branch to resolve this.",
+					Error: fmt.Sprintf("Blocked: directory '%s' has been modified on the target branch since this branch diverged. Please rebase/merge the target branch to resolve this.", cfgWS.Dir),
 				})
 				continue
 			}
