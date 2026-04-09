@@ -128,14 +128,25 @@ func hasChangesForWorkspace(ws *TFCWorkspace, modifiedFiles []string) bool {
 			}
 		}
 
-		// Check if file's directory matches any triggerDir (glob match)
+		// Check if file matches any triggerDir (glob match).
+		// Match against both the directory and the full file path so that
+		// patterns like "staging/*.tf" (file-level) and "modules/**" (directory-level)
+		// both work correctly.
 		for _, td := range ws.TriggerDirs {
-			match, err := doublestar.Match(td, fileDir)
+			dirMatch, err := doublestar.Match(td, fileDir)
 			if err != nil {
 				log.Warn().Err(err).Str("triggerDir", td).Str("fileDir", fileDir).Msg("invalid triggerDir glob pattern, treating as match to be safe")
 				return true
 			}
-			if match {
+			if dirMatch {
+				return true
+			}
+			fileMatch, err := doublestar.Match(td, mf)
+			if err != nil {
+				log.Warn().Err(err).Str("triggerDir", td).Str("file", mf).Msg("invalid triggerDir glob pattern, treating as match to be safe")
+				return true
+			}
+			if fileMatch {
 				return true
 			}
 		}

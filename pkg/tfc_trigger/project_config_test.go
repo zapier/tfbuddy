@@ -734,6 +734,36 @@ func TestHasChangesForWorkspace(t *testing.T) {
 			modifiedFiles: []string{"services/a/production/global-us-east-1/main.tf"},
 			want:          true,
 		},
+		{
+			name: "file-level glob triggerDir matches tf file",
+			ws: &TFCWorkspace{
+				Name:        "events-infra-staging",
+				Dir:         "staging/global-us-east-1/",
+				TriggerDirs: []string{"staging/*.tf"},
+			},
+			modifiedFiles: []string{"staging/main.tf"},
+			want:          true,
+		},
+		{
+			name: "file-level glob triggerDir no match for non-tf file",
+			ws: &TFCWorkspace{
+				Name:        "events-infra-staging",
+				Dir:         "staging/global-us-east-1/",
+				TriggerDirs: []string{"staging/*.tf"},
+			},
+			modifiedFiles: []string{"staging/README.md"},
+			want:          false,
+		},
+		{
+			name: "doublestar triggerDir matches nested file",
+			ws: &TFCWorkspace{
+				Name:        "test-ws",
+				Dir:         "terraform/dev/",
+				TriggerDirs: []string{"modules/**"},
+			},
+			modifiedFiles: []string{"modules/database/rds/main.tf"},
+			want:          true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
