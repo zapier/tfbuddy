@@ -231,6 +231,10 @@ func FindLockingMR(ctx context.Context, tags []string, thisMR string) string {
 //
 //	lockingMRIID="999" → "https://gitlab.com/org/repo/-/merge_requests/999"
 func buildLockingMRURL(currentMRWebURL, lockingMRIID string) string {
+	if currentMRWebURL == "" {
+		log.Warn().Str("lockingMRIID", lockingMRIID).Msg("buildLockingMRURL: currentMRWebURL is empty, returning bare MR IID")
+		return lockingMRIID
+	}
 	idx := strings.LastIndex(currentMRWebURL, "/")
 	if idx < 0 {
 		return lockingMRIID
@@ -588,7 +592,7 @@ func (t *TFCTrigger) triggerRunForWorkspace(ctx context.Context, cfgWS *TFCWorks
 			return fmt.Errorf("refusing to Apply changes to a locked workspace. Check the TFC workspace UI for lock details.")
 		} else if lockingMR != "" {
 			lockingMRURL := buildLockingMRURL(mr.GetWebURL(), lockingMR)
-			return fmt.Errorf("workspace is locked by another MR! %s", lockingMRURL)
+			return fmt.Errorf("refusing to Apply changes to a locked workspace. Lock is held by another MR: %s", lockingMRURL)
 		} else {
 			err = t.tfc.AddTags(ctx,
 				ws.ID,
