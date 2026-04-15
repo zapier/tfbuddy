@@ -100,6 +100,60 @@ func (cfg *ProjectConfig) triggeredWorkspaces(modifiedFiles []string) []*TFCWork
 	return triggered
 }
 
+// hasChangesForWorkspace checks if any of the given modified files fall within
+// a workspace's Dir (prefix match) or match its TriggerDirs (glob match).
+// This is used for divergence detection: checking whether a workspace's relevant
+// directories have changed on the target branch.
+func hasChangesForWorkspace(ws *TFCWorkspace, modifiedFiles []string) bool {
+	wsDir := ws.Dir
+	if wsDir != "" && !strings.HasSuffix(wsDir, "/") {
+		wsDir += "/"
+	}
+
+	// Root workspace (empty or "/" dir) matches files directly in the root directory
+	isRootWS := wsDir == "" || wsDir == "/"
+
+	for _, mf := range modifiedFiles {
+		fileDir := path.Dir(mf)
+
+		if isRootWS {
+			// Root workspace only matches root-level files (dir == ".")
+			if fileDir == "." {
+				return true
+			}
+		} else {
+			// Check if file is within workspace's Dir (prefix match)
+			if strings.HasPrefix(mf, wsDir) {
+				return true
+			}
+		}
+
+		// Check if file matches any triggerDir (glob match).
+		// Match against both the directory and the full file path so that
+		// patterns like "staging/*.tf" (file-level) and "modules/**" (directory-level)
+		// both work correctly.
+		for _, td := range ws.TriggerDirs {
+			dirMatch, err := doublestar.Match(td, fileDir)
+			if err != nil {
+				log.Warn().Err(err).Str("triggerDir", td).Str("fileDir", fileDir).Msg("invalid triggerDir glob pattern, treating as match to be safe")
+				return true
+			}
+			if dirMatch {
+				return true
+			}
+			fileMatch, err := doublestar.Match(td, mf)
+			if err != nil {
+				log.Warn().Err(err).Str("triggerDir", td).Str("file", mf).Msg("invalid triggerDir glob pattern, treating as match to be safe")
+				return true
+			}
+			if fileMatch {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 type TFCWorkspace struct {
 	Name         string   `yaml:"name" validate:"empty=false"`
 	Organization string   `yaml:"organization" validate:"empty=false"`

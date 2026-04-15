@@ -617,6 +617,163 @@ func Test_loadProjectConfig(t *testing.T) {
 	}
 }
 
+func TestHasChangesForWorkspace(t *testing.T) {
+	tests := []struct {
+		name          string
+		ws            *TFCWorkspace
+		modifiedFiles []string
+		want          bool
+	}{
+		{
+			name: "file in workspace dir",
+			ws: &TFCWorkspace{
+				Name: "service-a-prod",
+				Dir:  "services/a/production/global-us-east-1/",
+			},
+			modifiedFiles: []string{"services/a/production/global-us-east-1/main.tf"},
+			want:          true,
+		},
+		{
+			name: "file matching triggerDir",
+			ws: &TFCWorkspace{
+				Name:        "service-a-prod",
+				Dir:         "services/a/production/global-us-east-1/",
+				TriggerDirs: []string{"services/a/production"},
+			},
+			modifiedFiles: []string{"services/a/production/variables.tf"},
+			want:          true,
+		},
+		{
+			name: "file in different service dir - no match",
+			ws: &TFCWorkspace{
+				Name:        "service-a-prod",
+				Dir:         "services/a/production/global-us-east-1/",
+				TriggerDirs: []string{"services/a/production"},
+			},
+			modifiedFiles: []string{"services/b/production/global-us-east-1/main.tf"},
+			want:          false,
+		},
+		{
+			name: "file in different service triggerDir - no match",
+			ws: &TFCWorkspace{
+				Name:        "service-a-prod",
+				Dir:         "services/a/production/global-us-east-1/",
+				TriggerDirs: []string{"services/a/production"},
+			},
+			modifiedFiles: []string{"services/b/production/variables.tf"},
+			want:          false,
+		},
+		{
+			name: "root file - no match",
+			ws: &TFCWorkspace{
+				Name:        "service-a-prod",
+				Dir:         "services/a/production/global-us-east-1/",
+				TriggerDirs: []string{"services/a/production"},
+			},
+			modifiedFiles: []string{"CODEOWNERS"},
+			want:          false,
+		},
+		{
+			name: "multiple files - one matches dir",
+			ws: &TFCWorkspace{
+				Name:        "service-a-prod",
+				Dir:         "services/a/production/global-us-east-1/",
+				TriggerDirs: []string{"services/a/production"},
+			},
+			modifiedFiles: []string{
+				"CODEOWNERS",
+				"services/b/staging/main.tf",
+				"services/a/production/global-us-east-1/main.tf",
+			},
+			want: true,
+		},
+		{
+			name: "multiple files - one matches triggerDir",
+			ws: &TFCWorkspace{
+				Name:        "service-a-prod",
+				Dir:         "services/a/production/global-us-east-1/",
+				TriggerDirs: []string{"services/a/production"},
+			},
+			modifiedFiles: []string{
+				"CODEOWNERS",
+				"services/b/staging/main.tf",
+				"services/a/production/variables.tf",
+			},
+			want: true,
+		},
+		{
+			name: "multiple unrelated files - no match",
+			ws: &TFCWorkspace{
+				Name:        "service-a-prod",
+				Dir:         "services/a/production/global-us-east-1/",
+				TriggerDirs: []string{"services/a/production"},
+			},
+			modifiedFiles: []string{
+				"CODEOWNERS",
+				"services/b/staging/main.tf",
+				"services/c/production/variables.tf",
+			},
+			want: false,
+		},
+		{
+			name: "empty dir workspace with triggerDir match",
+			ws: &TFCWorkspace{
+				Name:        "root-ws",
+				Dir:         "",
+				TriggerDirs: []string{"modules/**"},
+			},
+			modifiedFiles: []string{"modules/shared/main.tf"},
+			want:          true,
+		},
+		{
+			name: "dir without trailing slash",
+			ws: &TFCWorkspace{
+				Name: "service-a-prod",
+				Dir:  "services/a/production/global-us-east-1",
+			},
+			modifiedFiles: []string{"services/a/production/global-us-east-1/main.tf"},
+			want:          true,
+		},
+		{
+			name: "file-level glob triggerDir matches tf file",
+			ws: &TFCWorkspace{
+				Name:        "events-infra-staging",
+				Dir:         "staging/global-us-east-1/",
+				TriggerDirs: []string{"staging/*.tf"},
+			},
+			modifiedFiles: []string{"staging/main.tf"},
+			want:          true,
+		},
+		{
+			name: "file-level glob triggerDir no match for non-tf file",
+			ws: &TFCWorkspace{
+				Name:        "events-infra-staging",
+				Dir:         "staging/global-us-east-1/",
+				TriggerDirs: []string{"staging/*.tf"},
+			},
+			modifiedFiles: []string{"staging/README.md"},
+			want:          false,
+		},
+		{
+			name: "doublestar triggerDir matches nested file",
+			ws: &TFCWorkspace{
+				Name:        "test-ws",
+				Dir:         "terraform/dev/",
+				TriggerDirs: []string{"modules/**"},
+			},
+			modifiedFiles: []string{"modules/database/rds/main.tf"},
+			want:          true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := hasChangesForWorkspace(tt.ws, tt.modifiedFiles); got != tt.want {
+				t.Errorf("hasChangesForWorkspace() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func testLoadConfig(t *testing.T, yaml string) *ProjectConfig {
 	pc, err := loadProjectConfig([]byte(yaml))
 	if err != nil {
