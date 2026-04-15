@@ -3,6 +3,7 @@ package gitlab
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"testing"
 
@@ -170,4 +171,153 @@ func TestPolicySoftFailPlanFailsPipelineWhenEnvTrue(t *testing.T) {
 
 	// Clean up env var for safety (though t.Setenv handles this)
 	os.Unsetenv("TFBUDDY_FAIL_CI_ON_SENTINEL_SOFT_FAIL")
+}
+
+func TestPostRunStatusComment_RemovesLockTagOnApplyApplied(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
+
+	wsID := "ws-abc123"
+	mrIID := testSuite.MetaData.MRIID // 101
+	expectedTag := fmt.Sprintf("tfbuddylock-%d", mrIID)
+
+	// Core assertion: tag must be removed when apply succeeds
+	testSuite.MockApiClient.EXPECT().
+		RemoveTagsByQuery(gomock.Any(), wsID, expectedTag).
+		Return(nil).
+		Times(1)
+
+	// RunApplied triggers UpdateMergeRequestDiscussionNote (topLevelNoteBody always non-empty)
+	testSuite.MockGitClient.EXPECT().
+		UpdateMergeRequestDiscussionNote(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(mocks.NewMockMRNote(mockCtrl), nil).AnyTimes()
+
+	// apply summary extraInfo → postComment → AddMergeRequestDiscussionReply
+	testSuite.MockGitClient.EXPECT().
+		AddMergeRequestDiscussionReply(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(mocks.NewMockMRNote(mockCtrl), nil).AnyTimes()
+
+	// resolveDiscussion=true for RunApplied without TargetAddrs
+	testSuite.MockGitClient.EXPECT().
+		ResolveMergeRequestDiscussion(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(nil).AnyTimes()
+
+	// GetOldRunUrls is NOT called for RunApplied
+
+	r := &RunStatusUpdater{
+		tfc:    testSuite.MockApiClient,
+		client: testSuite.MockGitClient,
+		rs:     testSuite.MockStreamClient,
+	}
+	r.postRunStatusComment(context.Background(), &tfe.Run{
+		ID:     "run-123",
+		Status: tfe.RunApplied,
+		Workspace: &tfe.Workspace{
+			ID:           wsID,
+			Name:         "service-tfbuddy",
+			Organization: &tfe.Organization{Name: "zapier-test"},
+		},
+		Apply: &tfe.Apply{},
+	}, &runstream.TFRunMetadata{
+		Action:                               runstream.ApplyAction,
+		MergeRequestIID:                      mrIID,
+		MergeRequestProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
+		DiscussionID:                         "disc-1",
+		RootNoteID:                           301,
+	})
+}
+
+func TestPostRunStatusComment_RemovesLockTagOnApplyErrored(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
+
+	wsID := "ws-abc123"
+	mrIID := testSuite.MetaData.MRIID
+	expectedTag := fmt.Sprintf("tfbuddylock-%d", mrIID)
+
+	testSuite.MockApiClient.EXPECT().
+		RemoveTagsByQuery(gomock.Any(), wsID, expectedTag).
+		Return(nil).
+		Times(1)
+
+	// For RunErrored, GetOldRunUrls is called
+	testSuite.MockGitClient.EXPECT().
+		GetOldRunUrls(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		Return("", nil).AnyTimes()
+
+	// topLevelNoteBody non-empty → UpdateMergeRequestDiscussionNote
+	testSuite.MockGitClient.EXPECT().
+		UpdateMergeRequestDiscussionNote(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(mocks.NewMockMRNote(mockCtrl), nil).AnyTimes()
+
+	// RunErrored with action=apply: extraInfo="" → no AddMergeRequestDiscussionReply
+	// resolveDiscussion=false → no ResolveMergeRequestDiscussion
+
+	r := &RunStatusUpdater{
+		tfc:    testSuite.MockApiClient,
+		client: testSuite.MockGitClient,
+		rs:     testSuite.MockStreamClient,
+	}
+	r.postRunStatusComment(context.Background(), &tfe.Run{
+		ID:     "run-456",
+		Status: tfe.RunErrored,
+		Workspace: &tfe.Workspace{
+			ID:           wsID,
+			Name:         "service-tfbuddy",
+			Organization: &tfe.Organization{Name: "zapier-test"},
+		},
+	}, &runstream.TFRunMetadata{
+		Action:                               runstream.ApplyAction,
+		MergeRequestIID:                      mrIID,
+		MergeRequestProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
+		DiscussionID:                         "disc-1",
+		RootNoteID:                           301,
+	})
+}
+
+func TestPostRunStatusComment_DoesNotRemoveLockTagForPlan(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
+
+	// RemoveTagsByQuery must NOT be called for plan actions
+	testSuite.MockApiClient.EXPECT().
+		RemoveTagsByQuery(gomock.Any(), gomock.Any(), gomock.Any()).
+		Times(0)
+
+	// For RunErrored, GetOldRunUrls is called
+	testSuite.MockGitClient.EXPECT().
+		GetOldRunUrls(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		Return("", nil).AnyTimes()
+
+	testSuite.MockGitClient.EXPECT().
+		UpdateMergeRequestDiscussionNote(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(mocks.NewMockMRNote(mockCtrl), nil).AnyTimes()
+
+	testSuite.MockGitClient.EXPECT().
+		AddMergeRequestDiscussionReply(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(mocks.NewMockMRNote(mockCtrl), nil).AnyTimes()
+
+	r := &RunStatusUpdater{
+		tfc:    testSuite.MockApiClient,
+		client: testSuite.MockGitClient,
+		rs:     testSuite.MockStreamClient,
+	}
+	r.postRunStatusComment(context.Background(), &tfe.Run{
+		ID:     "run-789",
+		Status: tfe.RunErrored,
+		Workspace: &tfe.Workspace{
+			ID:           "ws-plan",
+			Name:         "service-tfbuddy",
+			Organization: &tfe.Organization{Name: "zapier-test"},
+		},
+	}, &runstream.TFRunMetadata{
+		Action:                               runstream.PlanAction,
+		MergeRequestIID:                      testSuite.MetaData.MRIID,
+		MergeRequestProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
+		DiscussionID:                         "disc-1",
+		RootNoteID:                           301,
+	})
 }

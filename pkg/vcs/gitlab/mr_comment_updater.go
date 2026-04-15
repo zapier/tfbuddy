@@ -11,11 +11,44 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/zapier/tfbuddy/pkg/runstream"
+	"github.com/zapier/tfbuddy/pkg/tfc_trigger"
 )
+
+// releaseWorkspaceLockTag removes the TFBuddy tag-based workspace lock when an
+// apply-triggered run reaches a terminal state. This prevents stale lock tags
+// from blocking future applies after a run finishes while the MR stays open.
+func (p *RunStatusUpdater) releaseWorkspaceLockTag(ctx context.Context, run *tfe.Run, rmd runstream.RunMetadata) {
+	if rmd.GetAction() != runstream.ApplyAction {
+		return
+	}
+	switch run.Status {
+	case tfe.RunApplied, tfe.RunErrored, tfe.RunCanceled, tfe.RunDiscarded:
+		if run.Workspace == nil || run.Workspace.ID == "" {
+			log.Warn().Str("runID", run.ID).Msg("skipping workspace lock tag cleanup: run.Workspace not populated")
+			return
+		}
+		tag := fmt.Sprintf("%s-%d", tfc_trigger.TFLockTagPrefix, rmd.GetMRInternalID())
+		if err := p.tfc.RemoveTagsByQuery(ctx, run.Workspace.ID, tag); err != nil {
+			log.Error().Err(err).
+				Str("workspace", run.Workspace.Name).
+				Str("workspaceID", run.Workspace.ID).
+				Int("mrIID", rmd.GetMRInternalID()).
+				Msg("could not remove workspace lock tag after apply completion")
+		} else {
+			log.Info().
+				Str("workspace", run.Workspace.Name).
+				Int("mrIID", rmd.GetMRInternalID()).
+				Str("runStatus", string(run.Status)).
+				Msg("released workspace lock tag after apply reached terminal state")
+		}
+	}
+}
 
 func (p *RunStatusUpdater) postRunStatusComment(ctx context.Context, run *tfe.Run, rmd runstream.RunMetadata) {
 	ctx, span := otel.Tracer("TFC").Start(ctx, "postRunStatusComment")
 	defer span.End()
+
+	p.releaseWorkspaceLockTag(ctx, run, rmd)
 
 	commentBody, topLevelNoteBody, resolveDiscussion := comment_formatter.FormatRunStatusCommentBody(p.tfc, run, rmd)
 
