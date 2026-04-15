@@ -21,12 +21,9 @@ func (p *RunStatusUpdater) releaseWorkspaceLockTag(ctx context.Context, run *tfe
 	if rmd.GetAction() != runstream.ApplyAction {
 		return
 	}
+	// run.Workspace is always populated by GetRun (includes tfe.RunWorkspace).
 	switch run.Status {
 	case tfe.RunApplied, tfe.RunErrored, tfe.RunCanceled, tfe.RunDiscarded:
-		if run.Workspace == nil || run.Workspace.ID == "" {
-			log.Warn().Str("runID", run.ID).Msg("skipping workspace lock tag cleanup: run.Workspace not populated")
-			return
-		}
 		tag := fmt.Sprintf("%s-%d", tfc_trigger.TFLockTagPrefix, rmd.GetMRInternalID())
 		if err := p.tfc.RemoveTagsByQuery(ctx, run.Workspace.ID, tag); err != nil {
 			log.Error().Err(err).
