@@ -807,6 +807,157 @@ func TestAutoMerge_Globally_Disabled(t *testing.T) {
 	}
 }
 
+func TestTFCEvents_ApplyBlockedByTFCLockWithLockingMR(t *testing.T) {
+	ws := &tfc_trigger.ProjectConfig{
+		Workspaces: []*tfc_trigger.TFCWorkspace{{
+			Name:         "service-tfbuddy",
+			Organization: "zapier-test",
+			Mode:         "apply-before-merge",
+		}}}
+
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: ws}, t)
+
+	// Register BEFORE InitTestSuite — first AnyTimes() wins in FIFO order.
+	testSuite.MockApiClient.EXPECT().
+		GetWorkspaceByName(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, org, name string) (*tfe.Workspace, error) {
+			return &tfe.Workspace{ID: name, Locked: true}, nil
+		}).AnyTimes()
+	testSuite.MockApiClient.EXPECT().
+		GetTagsByQuery(gomock.Any(), gomock.Any(), "tfbuddylock").
+		Return([]string{"tfbuddylock-999"}, nil).AnyTimes()
+	testSuite.MockGitMR.EXPECT().
+		GetWebURL().
+		Return("https://gitlab.com/zapier/tfbuddy/-/merge_requests/101").AnyTimes()
+
+	testSuite.InitTestSuite()
+
+	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
+		Action:                   tfc_trigger.ApplyAction,
+		Branch:                   "test-branch",
+		CommitSHA:                "abcd12233",
+		ProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
+		MergeRequestIID:          testSuite.MetaData.MRIID,
+		TriggerSource:            tfc_trigger.CommentTrigger,
+	})
+	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
+	triggeredWS, err := trigger.TriggerTFCEvents(ctx)
+
+	if err != nil {
+		t.Fatal("expected no fatal error, got:", err)
+	}
+	if len(triggeredWS.Errored) == 0 {
+		t.Fatal("expected workspace to be in errored list")
+	}
+	wantURL := "https://gitlab.com/zapier/tfbuddy/-/merge_requests/999"
+	if !strings.Contains(triggeredWS.Errored[0].Error, wantURL) {
+		t.Fatalf("expected error to contain %q, got: %s", wantURL, triggeredWS.Errored[0].Error)
+	}
+}
+
+func TestTFCEvents_ApplyBlockedByTFCLockNoTag(t *testing.T) {
+	ws := &tfc_trigger.ProjectConfig{
+		Workspaces: []*tfc_trigger.TFCWorkspace{{
+			Name:         "service-tfbuddy",
+			Organization: "zapier-test",
+			Mode:         "apply-before-merge",
+		}}}
+
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: ws}, t)
+
+	testSuite.MockApiClient.EXPECT().
+		GetWorkspaceByName(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, org, name string) (*tfe.Workspace, error) {
+			return &tfe.Workspace{ID: name, Locked: true}, nil
+		}).AnyTimes()
+	testSuite.MockApiClient.EXPECT().
+		GetTagsByQuery(gomock.Any(), gomock.Any(), "tfbuddylock").
+		Return([]string{}, nil).AnyTimes()
+
+	testSuite.InitTestSuite()
+
+	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
+		Action:                   tfc_trigger.ApplyAction,
+		Branch:                   "test-branch",
+		CommitSHA:                "abcd12233",
+		ProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
+		MergeRequestIID:          testSuite.MetaData.MRIID,
+		TriggerSource:            tfc_trigger.CommentTrigger,
+	})
+	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
+	triggeredWS, err := trigger.TriggerTFCEvents(ctx)
+
+	if err != nil {
+		t.Fatal("expected no fatal error, got:", err)
+	}
+	if len(triggeredWS.Errored) == 0 {
+		t.Fatal("expected workspace to be in errored list")
+	}
+	wantSubstr := "refusing to Apply changes to a locked workspace"
+	if !strings.Contains(triggeredWS.Errored[0].Error, wantSubstr) {
+		t.Fatalf("expected error to contain %q, got: %s", wantSubstr, triggeredWS.Errored[0].Error)
+	}
+	if strings.Contains(triggeredWS.Errored[0].Error, "merge_requests") {
+		t.Fatalf("error should not reference merge_requests when no tag exists, got: %s", triggeredWS.Errored[0].Error)
+	}
+}
+
+func TestTFCEvents_ApplyBlockedByTagLock(t *testing.T) {
+	ws := &tfc_trigger.ProjectConfig{
+		Workspaces: []*tfc_trigger.TFCWorkspace{{
+			Name:         "service-tfbuddy",
+			Organization: "zapier-test",
+			Mode:         "apply-before-merge",
+		}}}
+
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: ws}, t)
+
+	testSuite.MockApiClient.EXPECT().
+		GetWorkspaceByName(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, org, name string) (*tfe.Workspace, error) {
+			return &tfe.Workspace{ID: name, Locked: false}, nil
+		}).AnyTimes()
+	testSuite.MockApiClient.EXPECT().
+		GetTagsByQuery(gomock.Any(), gomock.Any(), "tfbuddylock").
+		Return([]string{"tfbuddylock-999"}, nil).AnyTimes()
+	testSuite.MockGitMR.EXPECT().
+		GetWebURL().
+		Return("https://gitlab.com/zapier/tfbuddy/-/merge_requests/101").AnyTimes()
+
+	testSuite.InitTestSuite()
+
+	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
+		Action:                   tfc_trigger.ApplyAction,
+		Branch:                   "test-branch",
+		CommitSHA:                "abcd12233",
+		ProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
+		MergeRequestIID:          testSuite.MetaData.MRIID,
+		TriggerSource:            tfc_trigger.CommentTrigger,
+	})
+	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
+	triggeredWS, err := trigger.TriggerTFCEvents(ctx)
+
+	if err != nil {
+		t.Fatal("expected no fatal error, got:", err)
+	}
+	if len(triggeredWS.Errored) == 0 {
+		t.Fatal("expected workspace to be in errored list")
+	}
+	wantURL := "https://gitlab.com/zapier/tfbuddy/-/merge_requests/999"
+	if !strings.Contains(triggeredWS.Errored[0].Error, wantURL) {
+		t.Fatalf("expected error to contain %q, got: %s", wantURL, triggeredWS.Errored[0].Error)
+	}
+}
+
 // TestTFCEvents_ApplyNotBlockedByDifferentServiceChanges verifies that changes
 // on the target branch in a different service directory do not block applies for
 // unrelated workspaces.

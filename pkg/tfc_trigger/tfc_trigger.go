@@ -33,9 +33,9 @@ const (
 	InvalidAction
 )
 
-const tfPrefix = "tfbuddylock"
+const TFLockTagPrefix = "tfbuddylock"
 
-var tagRegex = regexp.MustCompile(fmt.Sprintf("%s\\-(\\d+)", tfPrefix))
+var tagRegex = regexp.MustCompile(fmt.Sprintf("%s\\-(\\d+)", TFLockTagPrefix))
 
 func (a TriggerAction) String() string {
 	switch a {
@@ -225,6 +225,19 @@ func FindLockingMR(ctx context.Context, tags []string, thisMR string) string {
 	return ""
 }
 
+// buildLockingMRURL constructs the full MR URL for a locking MR by replacing
+// the IID at the end of the current MR's URL with the locking MR's IID.
+// e.g. currentMRWebURL="https://gitlab.com/org/repo/-/merge_requests/100",
+//
+//	lockingMRIID="999" → "https://gitlab.com/org/repo/-/merge_requests/999"
+func buildLockingMRURL(currentMRWebURL, lockingMRIID string) string {
+	idx := strings.LastIndex(currentMRWebURL, "/")
+	if idx < 0 {
+		return lockingMRIID
+	}
+	return currentMRWebURL[:idx+1] + lockingMRIID
+}
+
 // handleError both logs an error and reports it back to the Merge Request via an MR comment.
 // the returned error is identical to the input parameter as a convenience
 func (t *TFCTrigger) handleError(ctx context.Context, err error, msg string) error {
@@ -249,7 +262,7 @@ func (t *TFCTrigger) getLockingMR(ctx context.Context, workspace string) string 
 	ctx, span := otel.Tracer("TFC").Start(ctx, "getLockingMR")
 	defer span.End()
 
-	tags, err := t.tfc.GetTagsByQuery(ctx, workspace, tfPrefix)
+	tags, err := t.tfc.GetTagsByQuery(ctx, workspace, TFLockTagPrefix)
 	if err != nil {
 		log.Error().Err(err)
 	}
@@ -458,7 +471,7 @@ func (t *TFCTrigger) TriggerCleanupEvent(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("ignoring cleanup trigger for project, missing .tfbuddy.yaml. %w", err)
 	}
-	tag := fmt.Sprintf("%s-%d", tfPrefix, mr.GetInternalID())
+	tag := fmt.Sprintf("%s-%d", TFLockTagPrefix, mr.GetInternalID())
 	for _, cfgWS := range cfg.Workspaces {
 		ws, err := t.tfc.GetWorkspaceByName(ctx,
 			cfgWS.Organization,
@@ -563,18 +576,23 @@ func (t *TFCTrigger) triggerRunForWorkspace(ctx context.Context, cfgWS *TFCWorks
 	} else if t.GetAction() != PlanAction {
 		return fmt.Errorf("run action was not apply or plan. %w", err)
 	}
-	// If the workspace is locked tell the user and don't queue a run
-	// Otherwise, TFC wil queue an apply, which might put them out of order
+	// If the workspace is locked tell the user and don't queue a run.
+	// Otherwise, TFC will queue an apply, which might put them out of order.
 	if isApply {
 		lockingMR := t.getLockingMR(ctx, ws.ID)
 		if ws.Locked {
-			return fmt.Errorf("refusing to Apply changes to a locked workspace. %w", err)
+			if lockingMR != "" {
+				lockingMRURL := buildLockingMRURL(mr.GetWebURL(), lockingMR)
+				return fmt.Errorf("refusing to Apply changes to a locked workspace. Lock is held by MR: %s", lockingMRURL)
+			}
+			return fmt.Errorf("refusing to Apply changes to a locked workspace. Check the TFC workspace UI for lock details.")
 		} else if lockingMR != "" {
-			return fmt.Errorf("workspace is locked by another MR! %s", lockingMR)
+			lockingMRURL := buildLockingMRURL(mr.GetWebURL(), lockingMR)
+			return fmt.Errorf("workspace is locked by another MR! %s", lockingMRURL)
 		} else {
 			err = t.tfc.AddTags(ctx,
 				ws.ID,
-				tfPrefix,
+				TFLockTagPrefix,
 				fmt.Sprintf("%d", t.GetMergeRequestIID()),
 			)
 			if err != nil {
