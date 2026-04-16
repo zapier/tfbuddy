@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -465,6 +466,7 @@ func (t *TFCTrigger) TriggerCleanupEvent(ctx context.Context) error {
 			cfgWS.Name)
 		if err != nil {
 			t.handleError(ctx, err, "error getting workspace")
+			continue
 		}
 		tags, err := t.tfc.GetTagsByQuery(ctx,
 			ws.ID,
@@ -472,6 +474,7 @@ func (t *TFCTrigger) TriggerCleanupEvent(ctx context.Context) error {
 		)
 		if err != nil {
 			t.handleError(ctx, err, "error getting tags")
+			continue
 		}
 		if len(tags) != 0 {
 			err = t.tfc.RemoveTagsByQuery(ctx, ws.ID, tag)
@@ -541,6 +544,12 @@ func (t *TFCTrigger) triggerRunForWorkspace(ctx context.Context, cfgWS *TFCWorks
 		if err != nil {
 			return fmt.Errorf("error modifying the TFC lock on the workspace. %w", err)
 		}
+		// On unlock, also remove any tfbuddylock tags for this workspace
+		if t.GetAction() == UnlockAction {
+			if removeErr := t.tfc.RemoveTagsByQuery(ctx, ws.ID, tfPrefix); removeErr != nil {
+				log.Warn().Err(removeErr).Str("workspace", wsName).Msg("failed to remove tfbuddylock tags during unlock")
+			}
+		}
 		_, err := t.gl.CreateMergeRequestDiscussion(ctx, mr.GetInternalID(),
 			t.GetProjectNameWithNamespace(),
 			fmt.Sprintf("Successfully %sed Workspace `%s/%s`", t.GetAction(), org, wsName),
@@ -570,7 +579,29 @@ func (t *TFCTrigger) triggerRunForWorkspace(ctx context.Context, cfgWS *TFCWorks
 		if ws.Locked {
 			return fmt.Errorf("refusing to Apply changes to a locked workspace. %w", err)
 		} else if lockingMR != "" {
-			return fmt.Errorf("workspace is locked by another MR! %s", lockingMR)
+			// Check if locking MR is already merged/closed (stale lock)
+			lockingMRIID, convErr := strconv.Atoi(lockingMR)
+			if convErr == nil {
+				lockingMRDetails, mrErr := t.gl.GetMergeRequest(ctx, lockingMRIID, t.GetProjectNameWithNamespace())
+				if mrErr == nil {
+					state := lockingMRDetails.GetState()
+					if state == "merged" || state == "closed" {
+						log.Warn().Str("workspace", ws.ID).Str("lockingMR", lockingMR).Str("state", state).
+							Msg("auto-cleaning stale lock from merged/closed MR")
+						tag := fmt.Sprintf("%s-%s", tfPrefix, lockingMR)
+						if removeErr := t.tfc.RemoveTagsByQuery(ctx, ws.ID, tag); removeErr != nil {
+							log.Error().Err(removeErr).Msg("failed to auto-clean stale lock tag")
+						}
+						// Fall through to acquire lock for current MR
+					} else {
+						return fmt.Errorf("workspace is locked by another MR! %s", lockingMR)
+					}
+				} else {
+					return fmt.Errorf("workspace is locked by another MR! %s", lockingMR)
+				}
+			} else {
+				return fmt.Errorf("workspace is locked by another MR! %s", lockingMR)
+			}
 		} else {
 			err = t.tfc.AddTags(ctx,
 				ws.ID,

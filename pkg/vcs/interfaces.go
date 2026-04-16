@@ -45,6 +45,7 @@ type DetailedMR interface {
 	MR
 	GetWebURL() string
 	GetTitle() string
+	GetState() string
 }
 type MR interface {
 	MRBranches
