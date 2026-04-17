@@ -541,7 +541,9 @@ func (t *TFCTrigger) triggerRunForWorkspace(ctx context.Context, cfgWS *TFCWorks
 	// the context in the repo isn't necessary
 	if t.GetAction() == LockAction || t.GetAction() == UnlockAction {
 		err = t.LockUnlockWorkspace(ws, mr, t.GetAction() == LockAction)
-		if err != nil {
+		// For unlock, treat ErrWorkspaceUnlocked as non-fatal so we still
+		// clean up stale tfbuddylock-* tags even when the TFC lock is already released.
+		if err != nil && !(t.GetAction() == UnlockAction && errors.Is(err, ErrWorkspaceUnlocked)) {
 			return fmt.Errorf("error modifying the TFC lock on the workspace. %w", err)
 		}
 		// On unlock, also remove any tfbuddylock tags for this workspace
@@ -590,9 +592,9 @@ func (t *TFCTrigger) triggerRunForWorkspace(ctx context.Context, cfgWS *TFCWorks
 							Msg("auto-cleaning stale lock from merged/closed MR")
 						tag := fmt.Sprintf("%s-%s", tfPrefix, lockingMR)
 						if removeErr := t.tfc.RemoveTagsByQuery(ctx, ws.ID, tag); removeErr != nil {
-							log.Error().Err(removeErr).Msg("failed to auto-clean stale lock tag")
+							return fmt.Errorf("failed to auto-clean stale lock tag from MR %s: %w", lockingMR, removeErr)
 						}
-						// Fall through to acquire lock for current MR
+						// Stale lock removed — fall through to acquire lock for current MR
 					} else {
 						return fmt.Errorf("workspace is locked by another MR! %s", lockingMR)
 					}
@@ -602,15 +604,15 @@ func (t *TFCTrigger) triggerRunForWorkspace(ctx context.Context, cfgWS *TFCWorks
 			} else {
 				return fmt.Errorf("workspace is locked by another MR! %s", lockingMR)
 			}
-		} else {
-			err = t.tfc.AddTags(ctx,
-				ws.ID,
-				tfPrefix,
-				fmt.Sprintf("%d", t.GetMergeRequestIID()),
-			)
-			if err != nil {
-				return fmt.Errorf("error adding tags to workspace. %w", err)
-			}
+		}
+		// Acquire the tag-based lock for the current MR
+		err = t.tfc.AddTags(ctx,
+			ws.ID,
+			tfPrefix,
+			fmt.Sprintf("%d", t.GetMergeRequestIID()),
+		)
+		if err != nil {
+			return fmt.Errorf("error adding tags to workspace. %w", err)
 		}
 	}
 	// create a new Merge Request discussion thread where status updates will be nested
