@@ -526,6 +526,20 @@ func (mr *MockDetailedMRMockRecorder) GetAuthor() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAuthor", reflect.TypeOf((*MockDetailedMR)(nil).GetAuthor))
 }
 
+// GetState mocks base method.
+func (m *MockDetailedMR) GetState() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetState")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetState indicates an expected call of GetState.
+func (mr *MockDetailedMRMockRecorder) GetState() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetState", reflect.TypeOf((*MockDetailedMR)(nil).GetState))
+}
+
 // GetInternalID mocks base method.
 func (m *MockDetailedMR) GetInternalID() int {
 	m.ctrl.T.Helper()

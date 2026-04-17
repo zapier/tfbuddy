@@ -54,6 +54,9 @@ func (gm *GithubPR) GetTitle() string {
 func (gm *GithubPR) GetTargetBranch() string {
 	return gm.PullRequest.GetBase().GetRef()
 }
+func (gm *GithubPR) GetState() string {
+	return gm.PullRequest.GetState()
+}
 func (gm *GithubPR) IsApproved() bool {
 	return *gm.MergeableState != "blocked"
 }
