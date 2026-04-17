@@ -579,6 +579,11 @@ func (t *TFCTrigger) triggerRunForWorkspace(ctx context.Context, cfgWS *TFCWorks
 	if isApply {
 		lockingMR := t.getLockingMR(ctx, ws.ID)
 		if ws.Locked {
+			// Surface the tag-based locking MR too if we have one, so the user
+			// has something actionable to investigate alongside the TFC lock.
+			if lockingMR != "" {
+				return fmt.Errorf("refusing to Apply changes to a locked workspace (also tagged by MR %s). %w", lockingMR, err)
+			}
 			return fmt.Errorf("refusing to Apply changes to a locked workspace. %w", err)
 		} else if lockingMR != "" {
 			// Check if locking MR is already merged/closed (stale lock)
@@ -592,11 +597,11 @@ func (t *TFCTrigger) triggerRunForWorkspace(ctx context.Context, cfgWS *TFCWorks
 							Msg("auto-cleaning stale lock from merged/closed MR")
 						tag := fmt.Sprintf("%s-%s", tfPrefix, lockingMR)
 						if removeErr := t.tfc.RemoveTagsByQuery(ctx, ws.ID, tag); removeErr != nil {
-							return fmt.Errorf("failed to auto-clean stale lock tag from MR %s: %w", lockingMR, removeErr)
+							return fmt.Errorf("failed to auto-clean stale lock tag from MR %s: %w", lockingMRDetails.GetWebURL(), removeErr)
 						}
 						// Stale lock removed — fall through to acquire lock for current MR
 					} else {
-						return fmt.Errorf("workspace is locked by another MR! %s", lockingMR)
+						return fmt.Errorf("workspace is locked by another MR! %s", lockingMRDetails.GetWebURL())
 					}
 				} else {
 					return fmt.Errorf("workspace is locked by another MR! %s", lockingMR)

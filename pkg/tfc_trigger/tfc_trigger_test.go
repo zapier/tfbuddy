@@ -960,6 +960,7 @@ func TestTFCEvents_StaleLock_OpenMR_Rejects(t *testing.T) {
 	// Locking MR 99 is still open — no auto-clean should happen
 	mockLockingMR := mocks.NewMockDetailedMR(mockCtrl)
 	mockLockingMR.EXPECT().GetState().Return("opened")
+	mockLockingMR.EXPECT().GetWebURL().Return("https://gitlab.com/zapier/tfbuddy/-/merge_requests/99")
 	testSuite.MockGitClient.EXPECT().GetMergeRequest(gomock.Any(), 99, testSuite.MetaData.ProjectNameNS).Return(mockLockingMR, nil)
 
 	testSuite.MockGitRepo.EXPECT().GetModifiedFileNamesBetweenCommits(testSuite.MetaData.CommonSHA, "main").Return([]string{}, nil)
@@ -984,8 +985,8 @@ func TestTFCEvents_StaleLock_OpenMR_Rejects(t *testing.T) {
 	if len(triggeredWS.Errored) != 1 {
 		t.Fatalf("expected 1 errored workspace, got: %d", len(triggeredWS.Errored))
 	}
-	if !strings.Contains(triggeredWS.Errored[0].Error, "workspace is locked by another MR! 99") {
-		t.Fatalf("expected locked-by-MR error, got: %s", triggeredWS.Errored[0].Error)
+	if !strings.Contains(triggeredWS.Errored[0].Error, "workspace is locked by another MR! https://gitlab.com/zapier/tfbuddy/-/merge_requests/99") {
+		t.Fatalf("expected locked-by-MR error with URL, got: %s", triggeredWS.Errored[0].Error)
 	}
 }
 
@@ -1008,6 +1009,7 @@ func TestTFCEvents_StaleLock_RemovalFailure_Errors(t *testing.T) {
 
 	mockLockingMR := mocks.NewMockDetailedMR(mockCtrl)
 	mockLockingMR.EXPECT().GetState().Return("merged")
+	mockLockingMR.EXPECT().GetWebURL().Return("https://gitlab.com/zapier/tfbuddy/-/merge_requests/99")
 	testSuite.MockGitClient.EXPECT().GetMergeRequest(gomock.Any(), 99, testSuite.MetaData.ProjectNameNS).Return(mockLockingMR, nil)
 
 	// Tag removal fails → apply should abort with error
@@ -1035,8 +1037,8 @@ func TestTFCEvents_StaleLock_RemovalFailure_Errors(t *testing.T) {
 	if len(triggeredWS.Errored) != 1 {
 		t.Fatalf("expected 1 errored workspace, got: %d", len(triggeredWS.Errored))
 	}
-	if !strings.Contains(triggeredWS.Errored[0].Error, "failed to auto-clean stale lock tag from MR 99") {
-		t.Fatalf("expected stale-lock cleanup error, got: %s", triggeredWS.Errored[0].Error)
+	if !strings.Contains(triggeredWS.Errored[0].Error, "failed to auto-clean stale lock tag from MR https://gitlab.com/zapier/tfbuddy/-/merge_requests/99") {
+		t.Fatalf("expected stale-lock cleanup error with URL, got: %s", triggeredWS.Errored[0].Error)
 	}
 }
 
