@@ -437,6 +437,9 @@ func (gm *GitlabMR) GetTitle() string {
 func (gm *GitlabMR) GetTargetBranch() string {
 	return gm.MergeRequest.TargetBranch
 }
+func (gm *GitlabMR) GetState() string {
+	return gm.MergeRequest.State
+}
 
 type GitlabMRAuthor struct {
 	*gogitlab.BasicUser

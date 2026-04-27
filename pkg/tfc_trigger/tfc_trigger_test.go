@@ -876,3 +876,342 @@ func TestTFCEvents_ApplyNotBlockedByDifferentServiceChanges(t *testing.T) {
 		t.Fatal("unexpected workspace", triggeredWS.Executed[0])
 	}
 }
+
+// TestTFCEvents_StaleLock_MergedMR_AutoCleans verifies that when a workspace is
+// locked by a tfbuddylock-* tag from an MR that is already merged, the stale
+// tag is auto-cleaned and the current MR is allowed to proceed (and acquires
+// its own lock tag).
+func TestTFCEvents_StaleLock_MergedMR_AutoCleans(t *testing.T) {
+	ws := &tfc_trigger.ProjectConfig{
+		Workspaces: []*tfc_trigger.TFCWorkspace{{
+			Name:         "service-tfbuddy",
+			Organization: "zapier-test",
+			Mode:         "apply-before-merge",
+		}}}
+
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: ws}, t)
+
+	// Workspace is locked by MR 99 via tag
+	testSuite.MockApiClient.EXPECT().GetTagsByQuery(gomock.Any(), gomock.Any(), "tfbuddylock").Return([]string{"tfbuddylock-99"}, nil)
+
+	// Locking MR 99 is already merged
+	mockLockingMR := mocks.NewMockDetailedMR(mockCtrl)
+	mockLockingMR.EXPECT().GetState().Return("merged")
+	testSuite.MockGitClient.EXPECT().GetMergeRequest(gomock.Any(), 99, testSuite.MetaData.ProjectNameNS).Return(mockLockingMR, nil)
+
+	// Stale tag is auto-removed, then current MR (101) acquires its lock tag
+	testSuite.MockApiClient.EXPECT().RemoveTagsByQuery(gomock.Any(), gomock.Any(), "tfbuddylock-99").Return(nil)
+	testSuite.MockApiClient.EXPECT().AddTags(gomock.Any(), gomock.Any(), "tfbuddylock", "101").Return(nil)
+
+	testSuite.MockGitRepo.EXPECT().GetModifiedFileNamesBetweenCommits(testSuite.MetaData.CommonSHA, "main").Return([]string{}, nil)
+	testSuite.MockApiClient.EXPECT().CreateRunFromSource(gomock.Any(), gomock.Any()).Return(&tfe.Run{
+		ID: "101",
+		Workspace: &tfe.Workspace{Name: "service-tfbuddy",
+			Organization: &tfe.Organization{Name: "zapier-test"},
+		},
+		ConfigurationVersion: &tfe.ConfigurationVersion{Speculative: false}}, nil)
+	testSuite.MockStreamClient.EXPECT().AddRunMeta(gomock.Any())
+
+	testSuite.InitTestSuite()
+
+	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
+		Action:                   tfc_trigger.ApplyAction,
+		Branch:                   testSuite.MetaData.SourceBranch,
+		CommitSHA:                "abcd12233",
+		ProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
+		MergeRequestIID:          testSuite.MetaData.MRIID,
+		TriggerSource:            tfc_trigger.CommentTrigger,
+	})
+	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
+	triggeredWS, err := trigger.TriggerTFCEvents(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(triggeredWS.Errored) != 0 {
+		t.Fatalf("expected no failed workspaces, got: %v", triggeredWS.Errored)
+	}
+	if len(triggeredWS.Executed) != 1 {
+		t.Fatal("expected successful apply after stale-lock auto-clean")
+	}
+
+}
+
+// TestTFCEvents_StaleLock_OpenMR_Rejects verifies that when a workspace is
+// locked by an MR that is still open, the apply is rejected (no auto-clean).
+func TestTFCEvents_StaleLock_OpenMR_Rejects(t *testing.T) {
+	ws := &tfc_trigger.ProjectConfig{
+		Workspaces: []*tfc_trigger.TFCWorkspace{{
+			Name:         "service-tfbuddy",
+			Organization: "zapier-test",
+			Mode:         "apply-before-merge",
+		}}}
+
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: ws}, t)
+
+	// Workspace is locked by MR 99 via tag
+	testSuite.MockApiClient.EXPECT().GetTagsByQuery(gomock.Any(), gomock.Any(), "tfbuddylock").Return([]string{"tfbuddylock-99"}, nil)
+
+	// Locking MR 99 is still open — no auto-clean should happen
+	mockLockingMR := mocks.NewMockDetailedMR(mockCtrl)
+	mockLockingMR.EXPECT().GetState().Return("opened")
+	mockLockingMR.EXPECT().GetWebURL().Return("https://gitlab.com/zapier/tfbuddy/-/merge_requests/99")
+	testSuite.MockGitClient.EXPECT().GetMergeRequest(gomock.Any(), 99, testSuite.MetaData.ProjectNameNS).Return(mockLockingMR, nil)
+
+	testSuite.MockGitRepo.EXPECT().GetModifiedFileNamesBetweenCommits(testSuite.MetaData.CommonSHA, "main").Return([]string{}, nil)
+
+	testSuite.InitTestSuite()
+
+	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
+		Action:                   tfc_trigger.ApplyAction,
+		Branch:                   testSuite.MetaData.SourceBranch,
+		CommitSHA:                "abcd12233",
+		ProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
+		MergeRequestIID:          testSuite.MetaData.MRIID,
+		TriggerSource:            tfc_trigger.CommentTrigger,
+	})
+	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
+	triggeredWS, err := trigger.TriggerTFCEvents(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(triggeredWS.Errored) != 1 {
+		t.Fatalf("expected 1 errored workspace, got: %d", len(triggeredWS.Errored))
+	}
+	if !strings.Contains(triggeredWS.Errored[0].Error, "workspace is locked by another MR! https://gitlab.com/zapier/tfbuddy/-/merge_requests/99") {
+		t.Fatalf("expected locked-by-MR error with URL, got: %s", triggeredWS.Errored[0].Error)
+	}
+}
+
+// TestTFCEvents_StaleLock_RemovalFailure_Errors verifies that if the stale tag
+// removal fails, the apply is aborted with an error (rather than proceeding
+// without a clean lock state).
+func TestTFCEvents_StaleLock_RemovalFailure_Errors(t *testing.T) {
+	ws := &tfc_trigger.ProjectConfig{
+		Workspaces: []*tfc_trigger.TFCWorkspace{{
+			Name:         "service-tfbuddy",
+			Organization: "zapier-test",
+			Mode:         "apply-before-merge",
+		}}}
+
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: ws}, t)
+
+	testSuite.MockApiClient.EXPECT().GetTagsByQuery(gomock.Any(), gomock.Any(), "tfbuddylock").Return([]string{"tfbuddylock-99"}, nil)
+
+	mockLockingMR := mocks.NewMockDetailedMR(mockCtrl)
+	mockLockingMR.EXPECT().GetState().Return("merged")
+	mockLockingMR.EXPECT().GetWebURL().Return("https://gitlab.com/zapier/tfbuddy/-/merge_requests/99")
+	testSuite.MockGitClient.EXPECT().GetMergeRequest(gomock.Any(), 99, testSuite.MetaData.ProjectNameNS).Return(mockLockingMR, nil)
+
+	// Tag removal fails → apply should abort with error
+	testSuite.MockApiClient.EXPECT().RemoveTagsByQuery(gomock.Any(), gomock.Any(), "tfbuddylock-99").Return(fmt.Errorf("tfc api blip"))
+
+	testSuite.MockGitRepo.EXPECT().GetModifiedFileNamesBetweenCommits(testSuite.MetaData.CommonSHA, "main").Return([]string{}, nil)
+
+	testSuite.InitTestSuite()
+
+	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
+		Action:                   tfc_trigger.ApplyAction,
+		Branch:                   testSuite.MetaData.SourceBranch,
+		CommitSHA:                "abcd12233",
+		ProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
+		MergeRequestIID:          testSuite.MetaData.MRIID,
+		TriggerSource:            tfc_trigger.CommentTrigger,
+	})
+	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
+	triggeredWS, err := trigger.TriggerTFCEvents(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(triggeredWS.Errored) != 1 {
+		t.Fatalf("expected 1 errored workspace, got: %d", len(triggeredWS.Errored))
+	}
+	if !strings.Contains(triggeredWS.Errored[0].Error, "failed to auto-clean stale lock tag from MR https://gitlab.com/zapier/tfbuddy/-/merge_requests/99") {
+		t.Fatalf("expected stale-lock cleanup error with URL, got: %s", triggeredWS.Errored[0].Error)
+	}
+}
+
+// TestTFCEvents_UnlockRemovesTags verifies that running `tfc unlock` both
+// releases the TFC native lock AND removes any lingering tfbuddylock-* tags
+// from the workspace.
+func TestTFCEvents_UnlockRemovesTags(t *testing.T) {
+	ws := &tfc_trigger.ProjectConfig{
+		Workspaces: []*tfc_trigger.TFCWorkspace{{
+			Name:         "service-tfbuddy",
+			Organization: "zapier-test",
+			Mode:         "apply-before-merge",
+		}}}
+
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: ws}, t)
+
+	// Native lock is currently held; unlocking it should succeed
+	testSuite.MockApiClient.EXPECT().GetWorkspaceByName(gomock.Any(), "zapier-test", "service-tfbuddy").Return(&tfe.Workspace{ID: "service-tfbuddy", Locked: true}, nil)
+	testSuite.MockApiClient.EXPECT().LockUnlockWorkspace(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), false).Return(nil)
+
+	// LockUnlockWorkspace wrapper formats a reason string using MR author/URL
+	mockAuthor := mocks.NewMockMRAuthor(mockCtrl)
+	mockAuthor.EXPECT().GetUsername().Return("tester").AnyTimes()
+	testSuite.MockGitMR.EXPECT().GetAuthor().Return(mockAuthor).AnyTimes()
+	testSuite.MockGitMR.EXPECT().GetWebURL().Return("https://gitlab.com/zapier/tfbuddy/-/merge_requests/101").AnyTimes()
+
+	// tfbuddylock tags should also be cleared on unlock
+	testSuite.MockApiClient.EXPECT().RemoveTagsByQuery(gomock.Any(), gomock.Any(), "tfbuddylock").Return(nil)
+
+	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(
+		gomock.Any(),
+		testSuite.MetaData.MRIID,
+		testSuite.MetaData.ProjectNameNS,
+		"Successfully unlocked Workspace `zapier-test/service-tfbuddy`",
+	).Return(testSuite.MockGitDisc, nil)
+
+	testSuite.MockGitRepo.EXPECT().GetModifiedFileNamesBetweenCommits(testSuite.MetaData.CommonSHA, "main").Return([]string{}, nil)
+	testSuite.InitTestSuite()
+
+	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
+		Action:                   tfc_trigger.UnlockAction,
+		Branch:                   testSuite.MetaData.SourceBranch,
+		CommitSHA:                "abcd12233",
+		ProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
+		MergeRequestIID:          testSuite.MetaData.MRIID,
+		TriggerSource:            tfc_trigger.CommentTrigger,
+		Workspace:                "service-tfbuddy",
+	})
+	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
+	triggeredWS, err := trigger.TriggerTFCEvents(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(triggeredWS.Errored) != 0 {
+		t.Fatalf("expected no errored workspaces, got: %v", triggeredWS.Errored)
+	}
+	if len(triggeredWS.Executed) != 1 {
+		t.Fatal("expected successful unlock trigger")
+	}
+}
+
+// TestTriggerCleanupEvent_ContinuesOnMissingWorkspace verifies that if one
+// workspace in the .tfbuddy.yaml config no longer exists in TFC, the cleanup
+// loop skips it and still removes the lock tag from the remaining workspaces
+// (rather than crashing with a nil pointer dereference on the missing ws).
+func TestTriggerCleanupEvent_ContinuesOnMissingWorkspace(t *testing.T) {
+	ws := &tfc_trigger.ProjectConfig{
+		Workspaces: []*tfc_trigger.TFCWorkspace{
+			{Name: "deleted-ws", Organization: "zapier-test", Mode: "apply-before-merge"},
+			{Name: "service-tfbuddy", Organization: "zapier-test", Mode: "apply-before-merge"},
+		}}
+
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: ws}, t)
+
+	// First workspace is missing from TFC
+	testSuite.MockApiClient.EXPECT().GetWorkspaceByName(gomock.Any(), "zapier-test", "deleted-ws").
+		Return(nil, fmt.Errorf("resource not found"))
+	// Second workspace exists and has the locking tag
+	testSuite.MockApiClient.EXPECT().GetWorkspaceByName(gomock.Any(), "zapier-test", "service-tfbuddy").
+		Return(&tfe.Workspace{ID: "service-tfbuddy"}, nil)
+	testSuite.MockApiClient.EXPECT().GetTagsByQuery(gomock.Any(), "service-tfbuddy", "tfbuddylock-101").
+		Return([]string{"tfbuddylock-101"}, nil)
+	testSuite.MockApiClient.EXPECT().RemoveTagsByQuery(gomock.Any(), "service-tfbuddy", "tfbuddylock-101").
+		Return(nil)
+
+	// handleError posts an MR comment when the first workspace fails
+	testSuite.MockGitClient.EXPECT().CreateMergeRequestComment(
+		gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS,
+		"Error: error getting workspace: resource not found",
+	).Return(nil)
+
+	// Summary discussion is posted with the successfully cleaned workspace
+	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(
+		gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS,
+		"Released locks for workspaces: service-tfbuddy",
+	).Return(testSuite.MockGitDisc, nil)
+
+	testSuite.InitTestSuite()
+
+	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
+		Action:                   tfc_trigger.PlanAction,
+		Branch:                   testSuite.MetaData.SourceBranch,
+		CommitSHA:                "abcd12233",
+		ProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
+		MergeRequestIID:          testSuite.MetaData.MRIID,
+		TriggerSource:            tfc_trigger.MergeRequestEventTrigger,
+	})
+	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
+	if err := trigger.TriggerCleanupEvent(ctx); err != nil {
+		t.Fatalf("cleanup should not fail when a workspace is missing, got: %v", err)
+	}
+}
+
+// TestTFCEvents_UnlockAlreadyUnlocked_StillRemovesTags verifies that running
+// `tfc unlock` against a workspace that is already unlocked still removes
+// stale tfbuddylock-* tags (treating ErrWorkspaceUnlocked as non-fatal).
+func TestTFCEvents_UnlockAlreadyUnlocked_StillRemovesTags(t *testing.T) {
+	ws := &tfc_trigger.ProjectConfig{
+		Workspaces: []*tfc_trigger.TFCWorkspace{{
+			Name:         "service-tfbuddy",
+			Organization: "zapier-test",
+			Mode:         "apply-before-merge",
+		}}}
+
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: ws}, t)
+
+	// Workspace is already unlocked → LockUnlockWorkspace returns ErrWorkspaceUnlocked
+	// via the TFCTrigger.LockUnlockWorkspace wrapper (no API call is made by the wrapper
+	// in this branch, so we don't set an expectation on MockApiClient.LockUnlockWorkspace).
+	testSuite.MockApiClient.EXPECT().GetWorkspaceByName(gomock.Any(), "zapier-test", "service-tfbuddy").Return(&tfe.Workspace{ID: "service-tfbuddy", Locked: false}, nil)
+
+	// Stale tfbuddylock tags should still be removed
+	testSuite.MockApiClient.EXPECT().RemoveTagsByQuery(gomock.Any(), gomock.Any(), "tfbuddylock").Return(nil)
+
+	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(
+		gomock.Any(),
+		testSuite.MetaData.MRIID,
+		testSuite.MetaData.ProjectNameNS,
+		"Successfully unlocked Workspace `zapier-test/service-tfbuddy`",
+	).Return(testSuite.MockGitDisc, nil)
+
+	testSuite.MockGitRepo.EXPECT().GetModifiedFileNamesBetweenCommits(testSuite.MetaData.CommonSHA, "main").Return([]string{}, nil)
+	testSuite.InitTestSuite()
+
+	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
+		Action:                   tfc_trigger.UnlockAction,
+		Branch:                   testSuite.MetaData.SourceBranch,
+		CommitSHA:                "abcd12233",
+		ProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
+		MergeRequestIID:          testSuite.MetaData.MRIID,
+		TriggerSource:            tfc_trigger.CommentTrigger,
+		Workspace:                "service-tfbuddy",
+	})
+	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
+	triggeredWS, err := trigger.TriggerTFCEvents(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(triggeredWS.Errored) != 0 {
+		t.Fatalf("expected no errored workspaces, got: %v", triggeredWS.Errored)
+	}
+	if len(triggeredWS.Executed) != 1 {
+		t.Fatal("expected unlock to still proceed and remove tags")
+	}
+}
