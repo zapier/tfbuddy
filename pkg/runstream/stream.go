@@ -12,9 +12,10 @@ const RunMetadataKvBucket = "RUN_METADATA"
 
 type Stream struct {
 	//nc         *nats.Conn
-	js         nats.JetStreamContext
-	metadataKV nats.KeyValue
-	pollingKV  nats.KeyValue
+	js          nats.JetStreamContext
+	metadataKV  nats.KeyValue
+	pollingKV   nats.KeyValue
+	workspaceKV nats.KeyValue
 }
 
 func NewStream(js nats.JetStreamContext) StreamClient {
@@ -23,11 +24,13 @@ func NewStream(js nats.JetStreamContext) StreamClient {
 	configureTFRunPollingTaskStream(js)
 	kv, _ := configureTFRunMetadataKVStore(js)
 	pollingKV, _ := configureRunPollingKVStore(js)
+	workspaceKV, _ := configureWorkspaceMetadataKVStore(js)
 
 	s := &Stream{
 		js,
 		kv,
 		pollingKV,
+		workspaceKV,
 	}
 
 	s.startPollingTaskDispatcher()
