@@ -120,12 +120,14 @@ func (c *TFCClient) createConfigurationVersion(opts *ApiRunOptions, ctx context.
 
 func (c *TFCClient) pollCVWhilePending(ctx context.Context, cv *tfe.ConfigurationVersion) (*tfe.ConfigurationVersion, error) {
 	for i := 0; i < 30; i++ {
-		cv, err := c.Client.ConfigurationVersions.Read(ctx, cv.ID)
+		result, err := c.Client.ConfigurationVersions.Read(ctx, cv.ID)
 		if err != nil {
-			return nil, err
+			log.Warn().Err(err).Msg("transient error reading CV status, retrying")
+			time.Sleep(1 * time.Second)
+			continue
 		}
-		if cv.Status != tfe.ConfigurationPending {
-			return cv, nil
+		if result.Status != tfe.ConfigurationPending {
+			return result, nil
 		}
 		time.Sleep(1 * time.Second)
 	}

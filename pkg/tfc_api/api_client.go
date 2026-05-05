@@ -3,6 +3,7 @@ package tfc_api
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 
 	"github.com/hashicorp/go-tfe"
@@ -36,7 +37,11 @@ func NewTFCClient() ApiClient {
 	}
 
 	config := &tfe.Config{
-		Token: token,
+		Token:             token,
+		RetryServerErrors: true,
+		RetryLogHook: func(attemptNum int, _ *http.Response) {
+			log.Debug().Int("attempt", attemptNum).Msg("TFE request retry")
+		},
 	}
 
 	var err error

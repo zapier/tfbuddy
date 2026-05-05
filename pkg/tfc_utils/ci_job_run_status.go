@@ -22,6 +22,8 @@ const TFC_RUN_STATUS_PREFIX = `Terraform Cloud/`
 const TFC_POLICY_STATUS_PREFIX = `sentinel/`
 const TFC_NO_CHANGE = "Run not triggered: Terraform working directories did not change."
 
+var retryInterval = 10 * time.Second
+
 var (
 	glClient  *gitlab.GitlabClient
 	tfcClient tfc_api.ApiClient
@@ -134,7 +136,6 @@ func waitForRunCompletionOrFailure(ctx context.Context, wg *sync.WaitGroup, comm
 	defer wg.Done()
 
 	attempts := 360
-	retryInterval := 10 * time.Second
 
 	for i := 0; i < attempts; i++ {
 		time.Sleep(retryInterval)
@@ -142,7 +143,8 @@ func waitForRunCompletionOrFailure(ctx context.Context, wg *sync.WaitGroup, comm
 		log.Println("Reading Run details.", runID)
 		run, err := tfcClient.GetRun(ctx, runID)
 		if err != nil {
-			log.Printf("err: %v\n", err)
+			log.Printf("transient error reading run %s, retrying: %v\n", runID, err)
+			continue
 		}
 
 		printRunInfo(run, "Run Details", wsName)
