@@ -15,6 +15,8 @@ and then passes status updates of those Runs back to the Merge/Pull Request in t
 
 For MRs with multiple workspaces, TFBuddy tracks each workspace independently and can automatically clean up old plan/apply comments, keeping only the most recent one per workspace and action type. Set `TFBUDDY_DELETE_OLD_COMMENTS` to enable this.
 
+When an MR touches multiple workspaces, TFBuddy triggers the runs in parallel (default 4 concurrent, tunable via `TFBUDDY_WORKSPACE_CONCURRENCY`) and rate-limits its TFC API client (default 30 req/s, tunable via `TFBUDDY_TFC_RATE_LIMIT_RPS` / `_BURST`) so concurrent triggers cooperate with TFC's per-token limit.
+
 
 ### Architecture
 

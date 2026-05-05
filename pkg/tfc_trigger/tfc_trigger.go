@@ -10,10 +10,12 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/hashicorp/go-tfe"
 	"github.com/rs/zerolog/log"
@@ -23,6 +25,26 @@ import (
 	"github.com/zapier/tfbuddy/pkg/utils"
 	"github.com/zapier/tfbuddy/pkg/vcs"
 )
+
+const (
+	workspaceConcurrencyEnv     = "TFBUDDY_WORKSPACE_CONCURRENCY"
+	defaultWorkspaceConcurrency = 4
+)
+
+func getWorkspaceConcurrency() int {
+	raw := os.Getenv(workspaceConcurrencyEnv)
+	if raw == "" {
+		return defaultWorkspaceConcurrency
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 1 {
+		log.Warn().Str("env", workspaceConcurrencyEnv).Str("value", raw).
+			Int("default", defaultWorkspaceConcurrency).
+			Msg("invalid value, falling back to default")
+		return defaultWorkspaceConcurrency
+	}
+	return n
+}
 
 const (
 	ApplyAction TriggerAction = iota
@@ -404,34 +426,52 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 				log.Error().Err(err).Msg("could not update MR with message")
 			}
 		}
+
+		// Trigger workspaces in parallel so a batch of multiple workspaces
+		// completes quickly enough to avoid the GitLab webhook timeout that
+		// caused the upstream redelivery / duplicate-run bug. Each goroutine
+		// owns its own discussion thread and run. Goroutines never return an
+		// error: a single failed workspace must not cancel the rest of the
+		// batch via the errgroup context.
+		var statusMu sync.Mutex
+		recordErrored := func(name, errMsg string) {
+			statusMu.Lock()
+			workspaceStatus.Errored = append(workspaceStatus.Errored, &ErroredWorkspace{Name: name, Error: errMsg})
+			statusMu.Unlock()
+		}
+		recordExecuted := func(name string) {
+			statusMu.Lock()
+			workspaceStatus.Executed = append(workspaceStatus.Executed, name)
+			statusMu.Unlock()
+		}
+
+		g, gctx := errgroup.WithContext(ctx)
+		g.SetLimit(getWorkspaceConcurrency())
+		cloneDir := repo.GetLocalDirectory()
+
 		for _, cfgWS := range triggeredWorkspaces {
-			// check allow / deny lists
+			cfgWS := cfgWS
 			if !isWorkspaceAllowed(cfgWS.Name, cfgWS.Organization) {
 				log.Info().Str("ws", cfgWS.Name).Msg("Ignoring workspace, because of allow/deny list.")
-				workspaceStatus.Errored = append(workspaceStatus.Errored, &ErroredWorkspace{
-					Name:  cfgWS.Name,
-					Error: "Ignoring workspace, because of allow/deny list.",
-				})
+				recordErrored(cfgWS.Name, "Ignoring workspace, because of allow/deny list.")
 				continue
 			}
 			if _, ok := modifiedWSMap[cfgWS.Name]; ok {
 				log.Info().Str("ws", cfgWS.Name).Str("dir", cfgWS.Dir).Strs("triggerDirs", cfgWS.TriggerDirs).Msg("Blocking workspace: relevant paths modified on target branch.")
-				workspaceStatus.Errored = append(workspaceStatus.Errored, &ErroredWorkspace{
-					Name:  cfgWS.Name,
-					Error: fmt.Sprintf("Blocked: workspace-relevant paths (dir: '%s', triggerDirs: %v) have been modified on the target branch since this branch diverged. Please rebase/merge the target branch to resolve this.", cfgWS.Dir, cfgWS.TriggerDirs),
-				})
+				recordErrored(cfgWS.Name, fmt.Sprintf("Blocked: workspace-relevant paths (dir: '%s', triggerDirs: %v) have been modified on the target branch since this branch diverged. Please rebase/merge the target branch to resolve this.", cfgWS.Dir, cfgWS.TriggerDirs))
 				continue
 			}
-			if err := t.triggerRunForWorkspace(ctx, cfgWS, mr, repo.GetLocalDirectory()); err != nil {
-				log.Error().Err(err).Msg("could not trigger Run for Workspace")
-				workspaceStatus.Errored = append(workspaceStatus.Errored, &ErroredWorkspace{
-					Name:  cfgWS.Name,
-					Error: fmt.Sprintf("could not trigger Run for Workspace. %v", err),
-				})
-				continue
-			}
-			workspaceStatus.Executed = append(workspaceStatus.Executed, cfgWS.Name)
+			g.Go(func() error {
+				if err := t.triggerRunForWorkspace(gctx, cfgWS, mr, cloneDir); err != nil {
+					log.Error().Err(err).Str("ws", cfgWS.Name).Msg("could not trigger Run for Workspace")
+					recordErrored(cfgWS.Name, fmt.Sprintf("could not trigger Run for Workspace. %v", err))
+					return nil
+				}
+				recordExecuted(cfgWS.Name)
+				return nil
+			})
 		}
+		_ = g.Wait()
 
 	} else if t.GetTriggerSource() == CommentTrigger {
 		log.Error().Err(ErrNoChangesDetected)
@@ -629,9 +669,12 @@ func (t *TFCTrigger) triggerRunForWorkspace(ctx context.Context, cfgWS *TFCWorks
 	if err != nil {
 		return fmt.Errorf("could not create MR discussion thread for TFC run status updates. %w", err)
 	}
-	t.SetMergeRequestDiscussionID(disc.GetDiscussionID())
+	// Discussion + root note IDs are local to this invocation. They previously
+	// lived on t.cfg, which raced when multiple workspaces fan out in parallel.
+	discussionID := disc.GetDiscussionID()
+	var rootNoteID int64
 	if len(disc.GetMRNotes()) > 0 {
-		t.SetMergeRequestRootNoteID(disc.GetMRNotes()[0].GetNoteID())
+		rootNoteID = disc.GetMRNotes()[0].GetNoteID()
 	} else {
 		log.Debug().Msg("No MR Notes found")
 	}
@@ -659,10 +702,10 @@ func (t *TFCTrigger) triggerRunForWorkspace(ctx context.Context, cfgWS *TFCWorks
 		Bool("speculative", run.ConfigurationVersion.Speculative).
 		Msg("created TFC run")
 
-	return t.publishRunToStream(ctx, run, cfgWS)
+	return t.publishRunToStream(ctx, run, cfgWS, discussionID, rootNoteID)
 }
 
-func (t *TFCTrigger) publishRunToStream(ctx context.Context, run *tfe.Run, cfgWS *TFCWorkspace) error {
+func (t *TFCTrigger) publishRunToStream(ctx context.Context, run *tfe.Run, cfgWS *TFCWorkspace, discussionID string, rootNoteID int64) error {
 	ctx, span := otel.Tracer("TFC").Start(ctx, "publishRunToStream")
 	defer span.End()
 
@@ -675,8 +718,8 @@ func (t *TFCTrigger) publishRunToStream(ctx context.Context, run *tfe.Run, cfgWS
 		CommitSHA:                            t.GetCommitSHA(),
 		MergeRequestProjectNameWithNamespace: t.GetProjectNameWithNamespace(),
 		MergeRequestIID:                      t.GetMergeRequestIID(),
-		DiscussionID:                         t.GetMergeRequestDiscussionID(),
-		RootNoteID:                           t.GetMergeRequestRootNoteID(),
+		DiscussionID:                         discussionID,
+		RootNoteID:                           rootNoteID,
 		VcsProvider:                          t.GetVcsProvider(),
 		AutoMerge:                            cfgWS.AutoMerge,
 	}

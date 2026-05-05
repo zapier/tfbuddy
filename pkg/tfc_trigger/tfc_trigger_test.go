@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1213,5 +1214,152 @@ func TestTFCEvents_UnlockAlreadyUnlocked_StillRemovesTags(t *testing.T) {
 	}
 	if len(triggeredWS.Executed) != 1 {
 		t.Fatal("expected unlock to still proceed and remove tags")
+	}
+}
+
+// buildParallelWorkspacesConfig builds an N-workspace ProjectConfig where each
+// workspace points at a unique service directory.
+func buildParallelWorkspacesConfig(n int) *tfc_trigger.ProjectConfig {
+	wss := make([]*tfc_trigger.TFCWorkspace, 0, n)
+	for i := 0; i < n; i++ {
+		wss = append(wss, &tfc_trigger.TFCWorkspace{
+			Name:         fmt.Sprintf("service-tfbuddy-%02d", i),
+			Organization: "zapier-test",
+			Mode:         "apply-before-merge",
+			Dir:          fmt.Sprintf("services/svc%02d/", i),
+		})
+	}
+	return &tfc_trigger.ProjectConfig{Workspaces: wss}
+}
+
+// TestTFCEvents_WorkspacesParallel covers the core fix: an MR that touches
+// multiple workspaces fans out concurrently instead of running sequentially.
+// The wall-clock check below would fail if the loop regressed to sequential.
+func TestTFCEvents_WorkspacesParallel(t *testing.T) {
+	const numWorkspaces = 20
+	cfg := buildParallelWorkspacesConfig(numWorkspaces)
+
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: cfg}, t)
+
+	modified := make([]string, 0, numWorkspaces)
+	for i := 0; i < numWorkspaces; i++ {
+		modified = append(modified, fmt.Sprintf("services/svc%02d/main.tf", i))
+	}
+	testSuite.MockGitClient.EXPECT().GetMergeRequestModifiedFiles(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS).Return(modified, nil).AnyTimes()
+	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, gomock.Any()).Return(testSuite.MockGitDisc, nil).Times(numWorkspaces)
+	testSuite.MockApiClient.EXPECT().GetWorkspaceByName(gomock.Any(), "zapier-test", gomock.Any()).DoAndReturn(func(_ context.Context, _, name string) (*tfe.Workspace, error) {
+		return &tfe.Workspace{ID: name}, nil
+	}).AnyTimes()
+
+	testSuite.MockApiClient.EXPECT().CreateRunFromSource(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, opts *tfc_api.ApiRunOptions) (*tfe.Run, error) {
+		// Hold the slot long enough that goroutines must overlap.
+		time.Sleep(20 * time.Millisecond)
+		return &tfe.Run{
+			ID: "run-" + opts.Workspace,
+			Workspace: &tfe.Workspace{Name: opts.Workspace,
+				Organization: &tfe.Organization{Name: "zapier-test"},
+			},
+			ConfigurationVersion: &tfe.ConfigurationVersion{Speculative: false}}, nil
+	}).Times(numWorkspaces)
+	testSuite.MockStreamClient.EXPECT().AddRunMeta(gomock.Any()).Times(numWorkspaces)
+
+	testSuite.InitTestSuite()
+
+	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
+		Action:                   tfc_trigger.ApplyAction,
+		Branch:                   testSuite.MetaData.SourceBranch,
+		CommitSHA:                "abcd12233",
+		ProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
+		MergeRequestIID:          testSuite.MetaData.MRIID,
+		TriggerSource:            tfc_trigger.CommentTrigger,
+	})
+	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
+
+	start := time.Now()
+	triggeredWS, err := trigger.TriggerTFCEvents(ctx)
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(triggeredWS.Errored) != 0 {
+		t.Fatalf("expected no errored workspaces, got: %v", triggeredWS.Errored)
+	}
+	if len(triggeredWS.Executed) != numWorkspaces {
+		t.Fatalf("expected %d executed workspaces, got %d", numWorkspaces, len(triggeredWS.Executed))
+	}
+	// Sequential would be 20 * 20ms = 400ms; with concurrency=4, ~100ms.
+	// 250ms upper bound flags a regression to sequential while leaving CI headroom.
+	if elapsed >= 250*time.Millisecond {
+		t.Fatalf("parallel triggers took too long (%s); did the loop regress to sequential?", elapsed)
+	}
+}
+
+// TestTFCEvents_ParallelPartialFailure verifies one failed workspace does not
+// abort the rest of the batch (which used to happen if errgroup.WithContext
+// were allowed to cancel siblings on error).
+func TestTFCEvents_ParallelPartialFailure(t *testing.T) {
+	const numWorkspaces = 6
+	cfg := buildParallelWorkspacesConfig(numWorkspaces)
+
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: cfg}, t)
+
+	modified := make([]string, 0, numWorkspaces)
+	for i := 0; i < numWorkspaces; i++ {
+		modified = append(modified, fmt.Sprintf("services/svc%02d/main.tf", i))
+	}
+	testSuite.MockGitClient.EXPECT().GetMergeRequestModifiedFiles(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS).Return(modified, nil).AnyTimes()
+	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, gomock.Any()).Return(testSuite.MockGitDisc, nil).AnyTimes()
+	testSuite.MockApiClient.EXPECT().GetWorkspaceByName(gomock.Any(), "zapier-test", gomock.Any()).DoAndReturn(func(_ context.Context, _, name string) (*tfe.Workspace, error) {
+		return &tfe.Workspace{ID: name}, nil
+	}).AnyTimes()
+
+	const failName = "service-tfbuddy-02"
+	var failures int32
+	testSuite.MockApiClient.EXPECT().CreateRunFromSource(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, opts *tfc_api.ApiRunOptions) (*tfe.Run, error) {
+		if opts.Workspace == failName {
+			atomic.AddInt32(&failures, 1)
+			return nil, fmt.Errorf("simulated TFC failure")
+		}
+		return &tfe.Run{
+			ID: "run-" + opts.Workspace,
+			Workspace: &tfe.Workspace{Name: opts.Workspace,
+				Organization: &tfe.Organization{Name: "zapier-test"},
+			},
+			ConfigurationVersion: &tfe.ConfigurationVersion{Speculative: false}}, nil
+	}).Times(numWorkspaces)
+	testSuite.MockStreamClient.EXPECT().AddRunMeta(gomock.Any()).Times(numWorkspaces - 1)
+
+	testSuite.InitTestSuite()
+
+	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
+		Action:                   tfc_trigger.ApplyAction,
+		Branch:                   testSuite.MetaData.SourceBranch,
+		CommitSHA:                "abcd12233",
+		ProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
+		MergeRequestIID:          testSuite.MetaData.MRIID,
+		TriggerSource:            tfc_trigger.CommentTrigger,
+	})
+	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
+
+	triggeredWS, err := trigger.TriggerTFCEvents(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := atomic.LoadInt32(&failures); got != 1 {
+		t.Fatalf("expected exactly 1 simulated failure, got %d", got)
+	}
+	if len(triggeredWS.Errored) != 1 || triggeredWS.Errored[0].Name != failName {
+		t.Fatalf("expected only %s to be errored, got: %+v", failName, triggeredWS.Errored)
+	}
+	if len(triggeredWS.Executed) != numWorkspaces-1 {
+		t.Fatalf("expected %d executed workspaces, got %d (%v)", numWorkspaces-1, len(triggeredWS.Executed), triggeredWS.Executed)
 	}
 }

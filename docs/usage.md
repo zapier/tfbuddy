@@ -60,6 +60,12 @@ env:
   # workspace, keeping only the most recent one. Discussions for other workspaces or
   # actions are preserved. Set to "false" or remove to disable.
   TFBUDDY_DELETE_OLD_COMMENTS: "true"
+  # Optional: max workspaces triggered concurrently when an MR touches multiple workspaces (default: 4).
+  TFBUDDY_WORKSPACE_CONCURRENCY: "4"
+  # Optional: client-side TFC API rate limit, requests per second / burst (defaults: 30 / 30).
+  # Defaults match TFC's documented per-token limit; protects against 429s when many workspaces fan out.
+  TFBUDDY_TFC_RATE_LIMIT_RPS: "30"
+  TFBUDDY_TFC_RATE_LIMIT_BURST: "30"
 ```
 
 For sensitive environment variables use `secrets.envs` which can contain a list of key/value pairs

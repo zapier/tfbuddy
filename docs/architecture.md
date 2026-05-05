@@ -20,6 +20,10 @@ Once the apply completes TF Buddy will update the PR indicating what was changed
 
 When `TFBUDDY_DELETE_OLD_COMMENTS` is set, TFBuddy automatically cleans up old discussion threads to keep MRs/PRs readable. Each comment is tagged with an invisible HTML marker identifying its workspace and action (plan or apply). When a new run completes, TFBuddy deletes older discussions that match the same workspace and action, keeping only the latest one. This is workspace-scoped: if your MR triggers runs in multiple workspaces, each workspace retains its own most recent plan and apply comment independently. Previous run URLs are collected into a collapsible "Previous TFC Urls" table on the latest comment.
 
+#### Parallel Workspace Triggering
+
+When an MR/PR touches multiple workspaces, TFBuddy triggers their TFC runs in parallel using a bounded `errgroup` (default `TFBUDDY_WORKSPACE_CONCURRENCY=4`). Each workspace owns its own discussion thread and run. To cooperate with TFC's per-token API limit, the TFC HTTP client is wrapped with a token-bucket rate limiter (default `TFBUDDY_TFC_RATE_LIMIT_RPS=30`, burst `TFBUDDY_TFC_RATE_LIMIT_BURST=30`).
+
 Example of how an error is reported
 
 ![error](img/error.png)

@@ -3,14 +3,52 @@ package tfc_api
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
+	"strconv"
 
 	"github.com/hashicorp/go-tfe"
 	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/time/rate"
 )
+
+const (
+	tfcRateLimitRPSEnv     = "TFBUDDY_TFC_RATE_LIMIT_RPS"
+	tfcRateLimitBurstEnv   = "TFBUDDY_TFC_RATE_LIMIT_BURST"
+	defaultTFCRateLimitRPS = 30
+	defaultTFCRateBurst    = 30
+)
+
+// rateLimitedTransport blocks each request on a shared token bucket so
+// concurrent triggers cooperatively stay under TFC's per-token API limit.
+type rateLimitedTransport struct {
+	rt      http.RoundTripper
+	limiter *rate.Limiter
+}
+
+func (t *rateLimitedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if err := t.limiter.Wait(req.Context()); err != nil {
+		return nil, err
+	}
+	return t.rt.RoundTrip(req)
+}
+
+func envIntOrDefault(key string, fallback int) int {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 1 {
+		log.Warn().Str("env", key).Str("value", raw).Int("default", fallback).
+			Msg("invalid value, falling back to default")
+		return fallback
+	}
+	return n
+}
 
 //go:generate mockgen -source api_client.go -destination=../mocks/mock_tfc_api.go -package=mocks github.com/zapier/tfbuddy/pkg/tfc_api
 type ApiClient interface {
@@ -35,8 +73,16 @@ func NewTFCClient() ApiClient {
 		log.Fatal().Msg("TFC_TOKEN not set")
 	}
 
+	rps := envIntOrDefault(tfcRateLimitRPSEnv, defaultTFCRateLimitRPS)
+	burst := envIntOrDefault(tfcRateLimitBurstEnv, defaultTFCRateBurst)
+	limiter := rate.NewLimiter(rate.Limit(rps), burst)
+	log.Info().Int("rps", rps).Int("burst", burst).Msg("TFC client rate limit configured")
+
 	config := &tfe.Config{
 		Token: token,
+		HTTPClient: &http.Client{
+			Transport: &rateLimitedTransport{rt: http.DefaultTransport, limiter: limiter},
+		},
 	}
 
 	var err error
