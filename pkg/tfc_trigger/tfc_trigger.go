@@ -454,13 +454,16 @@ func (t *TFCTrigger) TriggerCleanupEvent(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("could not read MergeRequest data from Gitlab API. %w", err)
 	}
-	var wsNames []string
-	cfg, err := getProjectConfigFile(ctx, t.gl, t)
+	triggeredWorkspaces, err := t.getTriggeredWorkspacesForRequest(ctx, mr)
 	if err != nil {
-		return fmt.Errorf("ignoring cleanup trigger for project, missing .tfbuddy.yaml. %w", err)
+		return fmt.Errorf("could not determine workspaces for merge cleanup. %w", err)
 	}
+	if len(triggeredWorkspaces) == 0 {
+		return nil
+	}
+	var wsNames []string
 	tag := fmt.Sprintf("%s-%d", tfPrefix, mr.GetInternalID())
-	for _, cfgWS := range cfg.Workspaces {
+	for _, cfgWS := range triggeredWorkspaces {
 		ws, err := t.tfc.GetWorkspaceByName(ctx,
 			cfgWS.Organization,
 			cfgWS.Name)
