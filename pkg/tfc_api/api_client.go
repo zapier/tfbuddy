@@ -22,6 +22,7 @@ type ApiClient interface {
 	LockUnlockWorkspace(ctx context.Context, workspace string, reason string, tag string, lock bool) error
 	AddTags(ctx context.Context, workspace string, prefix string, value string) error
 	RemoveTagsByQuery(ctx context.Context, workspace string, query string) error
+	RemoveTagsByName(ctx context.Context, workspace string, names []string) error
 	GetTagsByQuery(ctx context.Context, workspace string, query string) ([]string, error)
 }
 
@@ -199,6 +200,25 @@ func (t *TFCClient) RemoveTagsByQuery(ctx context.Context, workspace string, que
 		return err
 	}
 	return nil
+}
+
+// RemoveTagsByName removes tags from a workspace by exact name. Unlike RemoveTagsByQuery,
+// it does not perform substring matching and is safe to use with values that share common
+// substrings (e.g. "tfbuddylock-5" vs "tfbuddylock-50"). Empty input is a no-op.
+func (t *TFCClient) RemoveTagsByName(ctx context.Context, workspace string, names []string) error {
+	ctx, span := otel.Tracer("TFC").Start(ctx, "RemoveTagsByName", trace.WithAttributes(
+		attribute.String("workspace", workspace),
+	))
+	defer span.End()
+
+	if len(names) == 0 {
+		return nil
+	}
+	tags := make([]*tfe.Tag, 0, len(names))
+	for _, name := range names {
+		tags = append(tags, &tfe.Tag{Name: name})
+	}
+	return t.Client.Workspaces.RemoveTags(ctx, workspace, tfe.WorkspaceRemoveTagsOptions{Tags: tags})
 }
 
 // GetTagsByQuery returns a list of values of tags on a terraform workspace matching the query string.

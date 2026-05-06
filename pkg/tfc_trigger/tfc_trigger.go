@@ -476,14 +476,27 @@ func (t *TFCTrigger) TriggerCleanupEvent(ctx context.Context) error {
 			t.handleError(ctx, err, "error getting tags")
 			continue
 		}
-		if len(tags) != 0 {
-			err = t.tfc.RemoveTagsByQuery(ctx, ws.ID, tag)
-			if err != nil {
-				t.handleError(ctx, err, "Error removing locking tag from workspace")
-				continue
+		// TFC's tag query is a substring match, so a query for "tfbuddylock-5"
+		// also returns "tfbuddylock-50" (locking MR #50). Filter for an exact
+		// match before treating the workspace as one this MR locked.
+		hasOurTag := false
+		for _, name := range tags {
+			if name == tag {
+				hasOurTag = true
+				break
 			}
-			wsNames = append(wsNames, cfgWS.Name)
 		}
+		if !hasOurTag {
+			continue
+		}
+		if err := t.tfc.RemoveTagsByName(ctx, ws.ID, []string{tag}); err != nil {
+			t.handleError(ctx, err, "Error removing locking tag from workspace")
+			continue
+		}
+		wsNames = append(wsNames, cfgWS.Name)
+	}
+	if len(wsNames) == 0 {
+		return nil
 	}
 	_, err = t.gl.CreateMergeRequestDiscussion(ctx, mr.GetInternalID(),
 		t.GetProjectNameWithNamespace(),

@@ -5,6 +5,7 @@
 //
 //	mockgen -source api_client.go -destination=../mocks/mock_tfc_api.go -package=mocks github.com/zapier/tfbuddy/pkg/tfc_api
 //
+
 // Package mocks is a generated GoMock package.
 package mocks
 
@@ -21,6 +22,7 @@ import (
 type MockApiClient struct {
 	ctrl     *gomock.Controller
 	recorder *MockApiClientMockRecorder
+	isgomock struct{}
 }
 
 // MockApiClientMockRecorder is the mock recorder for MockApiClient.
@@ -156,6 +158,20 @@ func (m *MockApiClient) LockUnlockWorkspace(ctx context.Context, workspace, reas
 func (mr *MockApiClientMockRecorder) LockUnlockWorkspace(ctx, workspace, reason, tag, lock any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LockUnlockWorkspace", reflect.TypeOf((*MockApiClient)(nil).LockUnlockWorkspace), ctx, workspace, reason, tag, lock)
+}
+
+// RemoveTagsByName mocks base method.
+func (m *MockApiClient) RemoveTagsByName(ctx context.Context, workspace string, names []string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RemoveTagsByName", ctx, workspace, names)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RemoveTagsByName indicates an expected call of RemoveTagsByName.
+func (mr *MockApiClientMockRecorder) RemoveTagsByName(ctx, workspace, names any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveTagsByName", reflect.TypeOf((*MockApiClient)(nil).RemoveTagsByName), ctx, workspace, names)
 }
 
 // RemoveTagsByQuery mocks base method.

@@ -1127,7 +1127,9 @@ func TestTriggerCleanupEvent_ContinuesOnMissingWorkspace(t *testing.T) {
 		Return(&tfe.Workspace{ID: "service-tfbuddy"}, nil)
 	testSuite.MockApiClient.EXPECT().GetTagsByQuery(gomock.Any(), "service-tfbuddy", "tfbuddylock-101").
 		Return([]string{"tfbuddylock-101"}, nil)
-	testSuite.MockApiClient.EXPECT().RemoveTagsByQuery(gomock.Any(), "service-tfbuddy", "tfbuddylock-101").
+	// Tags are removed by exact name (not substring query) to avoid releasing
+	// other MRs' locks whose IID happens to share a prefix.
+	testSuite.MockApiClient.EXPECT().RemoveTagsByName(gomock.Any(), "service-tfbuddy", []string{"tfbuddylock-101"}).
 		Return(nil)
 
 	// handleError posts an MR comment when the first workspace fails
@@ -1156,6 +1158,51 @@ func TestTriggerCleanupEvent_ContinuesOnMissingWorkspace(t *testing.T) {
 	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
 	if err := trigger.TriggerCleanupEvent(ctx); err != nil {
 		t.Fatalf("cleanup should not fail when a workspace is missing, got: %v", err)
+	}
+}
+
+// TestTriggerCleanupEvent_DoesNotReleaseOtherMRsLocks verifies that the
+// cleanup does not steal a tag from another MR whose IID happens to contain
+// the merging MR's IID as a substring. The TFC ListTags `q` parameter does
+// partial matching, so a query for "tfbuddylock-101" also returns
+// "tfbuddylock-1010" — cleanup must filter for an exact match before
+// treating the workspace as one this MR locked.
+func TestTriggerCleanupEvent_DoesNotReleaseOtherMRsLocks(t *testing.T) {
+	ws := &tfc_trigger.ProjectConfig{
+		Workspaces: []*tfc_trigger.TFCWorkspace{
+			{Name: "shared-ws", Organization: "zapier-test", Mode: "apply-before-merge"},
+		}}
+
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: ws}, t)
+
+	// MR #101 is merging. The workspace is locked by MR #1010 (different MR
+	// whose IID contains "101" as a substring). TFC's partial-match query
+	// returns the foreign tag.
+	testSuite.MockApiClient.EXPECT().GetWorkspaceByName(gomock.Any(), "zapier-test", "shared-ws").
+		Return(&tfe.Workspace{ID: "shared-ws"}, nil)
+	testSuite.MockApiClient.EXPECT().GetTagsByQuery(gomock.Any(), "shared-ws", "tfbuddylock-101").
+		Return([]string{"tfbuddylock-1010"}, nil)
+
+	// Cleanup MUST NOT remove the foreign tag and MUST NOT include the
+	// workspace in the summary. (No RemoveTagsByName / RemoveTagsByQuery
+	// call is expected; gomock fails the test if one is made.)
+
+	testSuite.InitTestSuite()
+
+	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
+		Action:                   tfc_trigger.PlanAction,
+		Branch:                   testSuite.MetaData.SourceBranch,
+		CommitSHA:                "abcd12233",
+		ProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
+		MergeRequestIID:          testSuite.MetaData.MRIID,
+		TriggerSource:            tfc_trigger.MergeRequestEventTrigger,
+	})
+	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
+	if err := trigger.TriggerCleanupEvent(ctx); err != nil {
+		t.Fatalf("cleanup should not fail, got: %v", err)
 	}
 }
 
