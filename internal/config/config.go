@@ -2,6 +2,7 @@ package config
 
 import (
 	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/go-viper/mapstructure/v2"
@@ -195,5 +196,60 @@ func trimStringSliceHook() mapstructure.DecodeHookFuncType {
 		default:
 			return data, nil
 		}
+	}
+}
+
+type DocumentationOption struct {
+	EnvVars      []string
+	Flag         string
+	Description  string
+	DefaultValue string
+}
+
+func DocumentationOptions() []DocumentationOption {
+	options := make([]DocumentationOption, 0, len(bindings))
+	for _, item := range bindings {
+		options = append(options, DocumentationOption{
+			EnvVars:      []string{envVarName(item.key)},
+			Flag:         flagName(item),
+			Description:  item.description,
+			DefaultValue: defaultValueString(item.defaultValue),
+		})
+	}
+	return options
+}
+
+func envVarName(key string) string {
+	return "TFBUDDY_" + strings.ToUpper(strings.ReplaceAll(key, "-", "_"))
+}
+
+func flagName(item binding) string {
+	flag := "--" + item.key
+	if item.shorthand == "" {
+		return flag
+	}
+	return flag + ", -" + item.shorthand
+}
+
+func defaultValueString(value any) string {
+	switch v := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return v
+	case bool:
+		if v {
+			return "true"
+		}
+		return "false"
+	case int:
+		return strconv.Itoa(v)
+	case []string:
+		if len(v) == 0 {
+			return ""
+		}
+		return strings.Join(v, ",")
+	default:
+		return ""
 	}
 }

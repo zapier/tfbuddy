@@ -1,0 +1,35 @@
+name: docs ci
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/on_pull_request_docs.yaml'
+      - 'Makefile'
+      - 'docs/usage.md'
+      - 'hack/gen-config-docs.go'
+      - 'hack/templates/usage_config.tmpl'
+      - 'internal/config/**'
+      - 'go.mod'
+      - 'go.sum'
+
+jobs:
+  ci-docs:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: wistia/parse-tool-versions@v1.0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GOLANG_TOOL_VERSION }}
+
+      - name: Verify generated docs
+        run: |
+          make rebuild-docs
+          if ! git diff --quiet; then
+            echo "::error::Generated docs are out of date."
+            echo "Run: make rebuild-docs"
+            echo "Then commit the updated files."
+            git diff
+            exit 1
+          fi

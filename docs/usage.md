@@ -40,27 +40,35 @@ helm install tfbuddy charts/tfbuddy \
 
 The default helm values can be found [here](https://github.com/zapier/tfbuddy/blob/main/charts/tfbuddy/values.yaml).
 
-### Configuration
+<!-- BEGIN GENERATED CONFIGURATION -->
+## Configuration
 
-Set the necessary environment variables for your setup.
-```yaml
-env:
-  TFBUDDY_LOG_LEVEL: info
-  TFBUDDY_NATS_SERVICE_URL: nats://tfbuddy-nats:4222
-  TFBUDDY_PROJECT_ALLOW_LIST: tfc-project/
-  TFBUDDY_WORKSPACE_ALLOW_LIST: tfc-workspace
-  TFBUDDY_DEFAULT_TFC_ORGANIZATION: companyX
-  # Optional setting to disable auto merging MRs after a successful apply. This is enabled by default.
-  TFBUDDY_ALLOW_AUTO_MERGE: "false"
-  # Optional: fail CI if Sentinel policy checks soft-fail on plan (default: disabled)
-  # Set to "true" to mark the plan commit status as failed when policies soft-fail
-  TFBUDDY_FAIL_CI_ON_SENTINEL_SOFT_FAIL: "false"
-  # Optional: enable automatic cleanup of old discussion comments per workspace and action.
-  # When enabled ("true"), TFBuddy deletes previous plan/apply discussions for the same
-  # workspace, keeping only the most recent one. Discussions for other workspaces or
-  # actions are preserved. Set to "false" or remove to disable.
-  TFBUDDY_DELETE_OLD_COMMENTS: "true"
-```
+`tfbuddy` can be configured to meet your specific setup through environment variables or flags.
+
+The full list of supported environment variables and flags is described below:
+
+|Env Var|Flag|Description|Default Value|
+|---|---|---|---|
+|`TFBUDDY_LOG_LEVEL`|`--log-level, -v`|Set the log output level (info, debug, trace)|`info`|
+|`TFBUDDY_DEV_MODE`|`--dev-mode`|Enable developer-friendly console logging output.|`false`|
+|`TFBUDDY_OTEL_ENABLED`|`--otel-enabled`|Enable OpenTelemetry export for TFBuddy.|`false`|
+|`TFBUDDY_OTEL_COLLECTOR_HOST`|`--otel-collector-host`|OpenTelemetry collector host.||
+|`TFBUDDY_OTEL_COLLECTOR_PORT`|`--otel-collector-port`|OpenTelemetry collector port.||
+|`TFBUDDY_GITLAB_HOOK_SECRET_KEY`|`--gitlab-hook-secret-key`|Secret key used to validate incoming GitLab webhooks.||
+|`TFBUDDY_GITHUB_HOOK_SECRET_KEY`|`--github-hook-secret-key`|Secret key used to validate incoming GitHub webhooks.||
+|`TFBUDDY_DEFAULT_TFC_ORGANIZATION`|`--default-tfc-organization`|Default Terraform Cloud organization for workspaces that omit one in .tfbuddy.yaml.||
+|`TFBUDDY_WORKSPACE_ALLOW_LIST`|`--workspace-allow-list`|Comma-separated workspace allow list. Entries without an organization use the default Terraform Cloud organization.||
+|`TFBUDDY_WORKSPACE_DENY_LIST`|`--workspace-deny-list`|Comma-separated workspace deny list. Entries without an organization use the default Terraform Cloud organization.||
+|`TFBUDDY_ALLOW_AUTO_MERGE`|`--allow-auto-merge`|Globally enable or disable TFBuddy-managed auto-merge.|`true`|
+|`TFBUDDY_FAIL_CI_ON_SENTINEL_SOFT_FAIL`|`--fail-ci-on-sentinel-soft-fail`|Mark CI as failed when Terraform policy checks soft-fail.|`false`|
+|`TFBUDDY_DELETE_OLD_COMMENTS`|`--delete-old-comments`|Delete older bot comments for the same workspace and action after posting a newer one.|`false`|
+|`TFBUDDY_NATS_SERVICE_URL`|`--nats-service-url`|NATS connection URL. When empty, TFBuddy falls back to the NATS client default.||
+|`TFBUDDY_GITLAB_PROJECT_ALLOW_LIST`|`--gitlab-project-allow-list`|Comma-separated GitLab project allow list prefixes.||
+|`TFBUDDY_PROJECT_ALLOW_LIST`|`--project-allow-list`|Deprecated comma-separated GitLab project allow list prefixes.||
+|`TFBUDDY_GITHUB_REPO_ALLOW_LIST`|`--github-repo-allow-list`|Comma-separated GitHub repository allow list prefixes.||
+|`TFBUDDY_GITHUB_CLONE_DEPTH`|`--github-clone-depth`|Git clone depth to use for GitHub merge request checkouts. Zero means full history.|`0`|
+|`TFBUDDY_GITLAB_CLONE_DEPTH`|`--gitlab-clone-depth`|Git clone depth to use for GitLab merge request checkouts. Zero means full history.|`0`|
+<!-- END GENERATED CONFIGURATION -->
 
 For sensitive environment variables use `secrets.envs` which can contain a list of key/value pairs
 ```yaml
@@ -121,4 +129,3 @@ TF Buddy uses [doublestar](https://github.com/bmatcuk/doublestar#about) for its 
 * `terraform/staging/**/*.tf` - any Terraform files that have `terraform/staging` as an ancestor
 * `terraform/staging/{foo,bar}/**` - anything that has `terraform/staging/foo` or `terraform/staging/bar` as an ancestor
 * `terraform/staging/**/[^0-9]*` - anything that has `terraform/staging` as an ancestor and does _not_ start with an integer
-
