@@ -34,35 +34,37 @@ const (
 
 type binding struct {
 	key          string
-	env          string
 	defaultValue any
 }
 
 var bindings = []binding{
-	{key: KeyLogLevel, env: "TFBUDDY_LOG_LEVEL", defaultValue: "info"},
-	{key: KeyDevMode, env: "TFBUDDY_DEV_MODE", defaultValue: false},
-	{key: KeyOTELEnabled, env: "TFBUDDY_OTEL_ENABLED", defaultValue: false},
-	{key: KeyOTELCollectorHost, env: "TFBUDDY_OTEL_COLLECTOR_HOST"},
-	{key: KeyOTELCollectorPort, env: "TFBUDDY_OTEL_COLLECTOR_PORT"},
-	{key: KeyGitlabHookSecretKey, env: "TFBUDDY_GITLAB_HOOK_SECRET_KEY"},
-	{key: KeyGithubHookSecretKey, env: "TFBUDDY_GITHUB_HOOK_SECRET_KEY"},
-	{key: KeyDefaultTFCOrganization, env: "TFBUDDY_DEFAULT_TFC_ORGANIZATION"},
-	{key: KeyWorkspaceAllowList, env: "TFBUDDY_WORKSPACE_ALLOW_LIST"},
-	{key: KeyWorkspaceDenyList, env: "TFBUDDY_WORKSPACE_DENY_LIST"},
-	{key: KeyAllowAutoMerge, env: "TFBUDDY_ALLOW_AUTO_MERGE", defaultValue: true},
-	{key: KeyFailCIOnSentinelSoftFail, env: "TFBUDDY_FAIL_CI_ON_SENTINEL_SOFT_FAIL", defaultValue: false},
-	{key: KeyDeleteOldComments, env: "TFBUDDY_DELETE_OLD_COMMENTS", defaultValue: false},
-	{key: KeyNATSServiceURL, env: "TFBUDDY_NATS_SERVICE_URL"},
-	{key: KeyGitlabProjectAllowList, env: "TFBUDDY_GITLAB_PROJECT_ALLOW_LIST"},
-	{key: KeyLegacyProjectAllowList, env: "TFBUDDY_PROJECT_ALLOW_LIST"},
-	{key: KeyGithubRepoAllowList, env: "TFBUDDY_GITHUB_REPO_ALLOW_LIST"},
-	{key: KeyGithubCloneDepth, env: "TFBUDDY_GITHUB_CLONE_DEPTH"},
-	{key: KeyGitlabCloneDepth, env: "TFBUDDY_GITLAB_CLONE_DEPTH"},
+	{key: KeyLogLevel, defaultValue: "info"},
+	{key: KeyDevMode, defaultValue: false},
+	{key: KeyOTELEnabled, defaultValue: false},
+	{key: KeyOTELCollectorHost},
+	{key: KeyOTELCollectorPort},
+	{key: KeyGitlabHookSecretKey},
+	{key: KeyGithubHookSecretKey},
+	{key: KeyDefaultTFCOrganization},
+	{key: KeyWorkspaceAllowList},
+	{key: KeyWorkspaceDenyList},
+	{key: KeyAllowAutoMerge, defaultValue: true},
+	{key: KeyFailCIOnSentinelSoftFail, defaultValue: false},
+	{key: KeyDeleteOldComments, defaultValue: false},
+	{key: KeyNATSServiceURL},
+	{key: KeyGitlabProjectAllowList},
+	{key: KeyLegacyProjectAllowList},
+	{key: KeyGithubRepoAllowList},
+	{key: KeyGithubCloneDepth},
+	{key: KeyGitlabCloneDepth},
 }
 
 func Init() {
+	viper.SetEnvPrefix("TFBUDDY")
+	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
+	viper.AutomaticEnv()
+
 	for _, item := range bindings {
-		_ = viper.BindEnv(item.key, item.env)
 		if item.defaultValue != nil {
 			viper.SetDefault(item.key, item.defaultValue)
 		}
@@ -175,11 +177,6 @@ func GithubCloneDepth() int {
 
 func GitlabCloneDepth() int {
 	return Int(KeyGitlabCloneDepth)
-}
-
-func StringListForUnknownEnv(envName string) []string {
-	_ = viper.BindEnv(envName, envName)
-	return StringList(envName)
 }
 
 func splitCSV(value string) []string {

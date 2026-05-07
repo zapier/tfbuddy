@@ -6,7 +6,7 @@ import (
 )
 
 func TestGetAllowList(t *testing.T) {
-	const testEnvVar = "TEST_ALLOW_LIST_ENV"
+	const testEnvVar = githubRepoAllowListEnv
 
 	tests := []struct {
 		name   string
