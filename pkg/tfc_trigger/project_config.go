@@ -164,7 +164,7 @@ type TFCWorkspace struct {
 }
 
 func getProjectConfigFile(ctx context.Context, gl vcs.GitClient, trigger *TFCTrigger) (*ProjectConfig, error) {
-	ctx, span := otel.Tracer("GitlabHandler").Start(ctx, "getProjectConfigFile")
+	ctx, span := otel.Tracer(trigger.tracerName()).Start(ctx, "getProjectConfigFile")
 	defer span.End()
 
 	branches := []string{trigger.GetBranch(), "master", "main"}

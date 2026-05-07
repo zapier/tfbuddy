@@ -101,9 +101,9 @@ func NewTFCClient() ApiClient {
 	return &TFCClient{Client: tfcClient}
 }
 
-// tfcRateLimitValue reads a positive int from viper, falling back (with a
-// warning) on any zero/negative value. Garbage strings would already have
-// errored out via viper's automatic env binding.
+// tfcRateLimitValue reads an int from viper and falls back (with a warning)
+// when the resulting value is invalid for rate limiting, including zero,
+// negative, or otherwise non-usable values.
 func tfcRateLimitValue(key string, fallback int) int {
 	n := viper.GetInt(key)
 	if n < 1 {

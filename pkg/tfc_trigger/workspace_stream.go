@@ -22,7 +22,7 @@ import (
 // JetStream redelivering when the batch has many workspaces.
 const (
 	WorkspaceTriggerStreamName = "TFBUDDY_WORKSPACE_TRIGGERS"
-	workspaceTriggerSubject    = "TFBUDDY_WORKSPACE_TRIGGERS.dispatch"
+	workspaceTriggerSubject    = WorkspaceTriggerStreamName + ".dispatch"
 	workspaceTriggerQueueName  = "tfbuddy_workspace_trigger_worker"
 
 	// Sized to match HOOKS/RUN_EVENTS so a noisy day cannot push older

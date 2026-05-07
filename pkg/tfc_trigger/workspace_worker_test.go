@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 
 	"github.com/hashicorp/go-tfe"
@@ -66,18 +65,7 @@ func TestWorkspaceWorker_DrainsConcurrentlyWithoutLeakingDiscussionIDs(t *testin
 		return &tfe.Workspace{ID: name}, nil
 	}).AnyTimes()
 
-	// Track in-flight runs to confirm the worker actually processes messages
-	// in parallel (peak >= 2 unless a regression serializes them).
-	var inflight, peak int32
 	testSuite.MockApiClient.EXPECT().CreateRunFromSource(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, opts *tfc_api.ApiRunOptions) (*tfe.Run, error) {
-		cur := atomic.AddInt32(&inflight, 1)
-		for {
-			p := atomic.LoadInt32(&peak)
-			if cur <= p || atomic.CompareAndSwapInt32(&peak, p, cur) {
-				break
-			}
-		}
-		atomic.AddInt32(&inflight, -1)
 		return &tfe.Run{
 			ID:                   "run-" + opts.Workspace,
 			Workspace:            &tfe.Workspace{Name: opts.Workspace, Organization: &tfe.Organization{Name: "zapier-test"}},
@@ -108,6 +96,7 @@ func TestWorkspaceWorker_DrainsConcurrentlyWithoutLeakingDiscussionIDs(t *testin
 		ProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
 		MergeRequestIID:          testSuite.MetaData.MRIID,
 		TriggerSource:            tfc_trigger.MergeRequestEventTrigger,
+		VcsProvider:              "gitlab",
 	})
 	pub := &fakeWorkspacePublisher{}
 	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
@@ -119,7 +108,10 @@ func TestWorkspaceWorker_DrainsConcurrentlyWithoutLeakingDiscussionIDs(t *testin
 
 	// Now drain. This is what NATS would do: invoke HandleMsg on each delivery.
 	// We dispatch them in parallel to exercise the goroutine-local fix.
-	worker := tfc_trigger.NewWorkspaceTriggerWorkerWithoutSubscription(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient)
+	worker := tfc_trigger.NewWorkspaceTriggerWorkerWithoutSubscription(
+		map[string]vcs.GitClient{"gitlab": testSuite.MockGitClient},
+		testSuite.MockApiClient, testSuite.MockStreamClient,
+	)
 
 	// The worker re-clones the repo and re-checks target-branch modifications
 	// per workspace. The TestSuite's existing mocks already cover those calls
@@ -179,7 +171,10 @@ func TestWorkspaceWorker_PostsErrorToMRAndACKsOnFailure(t *testing.T) {
 
 	testSuite.InitTestSuite()
 
-	worker := tfc_trigger.NewWorkspaceTriggerWorkerWithoutSubscription(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient)
+	worker := tfc_trigger.NewWorkspaceTriggerWorkerWithoutSubscription(
+		map[string]vcs.GitClient{"gitlab": testSuite.MockGitClient},
+		testSuite.MockApiClient, testSuite.MockStreamClient,
+	)
 	msg := &tfc_trigger.WorkspaceTriggerMsg{
 		Opts: tfc_trigger.TFCTriggerOptions{
 			Action:                   tfc_trigger.PlanAction,
@@ -227,7 +222,10 @@ func TestWorkspaceWorker_RecoversFromPanic(t *testing.T) {
 
 	testSuite.InitTestSuite()
 
-	worker := tfc_trigger.NewWorkspaceTriggerWorkerWithoutSubscription(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient)
+	worker := tfc_trigger.NewWorkspaceTriggerWorkerWithoutSubscription(
+		map[string]vcs.GitClient{"gitlab": testSuite.MockGitClient},
+		testSuite.MockApiClient, testSuite.MockStreamClient,
+	)
 	msg := &tfc_trigger.WorkspaceTriggerMsg{
 		Opts: tfc_trigger.TFCTriggerOptions{
 			Action:                   tfc_trigger.PlanAction,
@@ -245,5 +243,67 @@ func TestWorkspaceWorker_RecoversFromPanic(t *testing.T) {
 	}
 	if len(posted) != 1 || !strings.Contains(posted[0], "internal error") {
 		t.Fatalf("expected an internal-error MR comment, got: %v", posted)
+	}
+}
+
+// TestWorkspaceWorker_RoutesByVcsProvider locks in the fan-out routing fix:
+// the worker must dispatch to the client matching msg.Opts.VcsProvider, never
+// to the other provider. A regression here would manifest in production as
+// GitHub-origin triggers calling the GitLab API (404s, auth failures, MR
+// comment spam) — exactly the class of bug the multi-client worker prevents.
+func TestWorkspaceWorker_RoutesByVcsProvider(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
+
+	// Two distinct clients so we can prove dispatch picks the right one.
+	// The GitHub mock is the one we expect to receive calls; a stray call
+	// to the GitLab mock would fail the test via gomock's strict mode.
+	githubClient := mocks.NewMockGitClient(mockCtrl)
+	gitlabClient := mocks.NewMockGitClient(mockCtrl)
+
+	githubClient.EXPECT().GetMergeRequest(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS).
+		Return(nil, errors.New("forced failure to short-circuit run path")).Times(1)
+	githubClient.EXPECT().CreateMergeRequestComment(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, gomock.Any()).
+		Return(nil).Times(1)
+
+	testSuite.InitTestSuite()
+
+	worker := tfc_trigger.NewWorkspaceTriggerWorkerWithoutSubscription(
+		map[string]vcs.GitClient{"gitlab": gitlabClient, "github": githubClient},
+		testSuite.MockApiClient, testSuite.MockStreamClient,
+	)
+
+	githubMsg := &tfc_trigger.WorkspaceTriggerMsg{
+		Opts: tfc_trigger.TFCTriggerOptions{
+			Action:                   tfc_trigger.PlanAction,
+			ProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
+			MergeRequestIID:          testSuite.MetaData.MRIID,
+			CommitSHA:                "deadbeef",
+			TriggerSource:            tfc_trigger.MergeRequestEventTrigger,
+			VcsProvider:              "github",
+		},
+		Workspace: tfc_trigger.TFCWorkspace{Name: "service-tfbuddy", Organization: "zapier-test"},
+	}
+	if err := worker.HandleMsg(githubMsg); err != nil {
+		t.Fatalf("HandleMsg should ACK on workspace error, got: %v", err)
+	}
+
+	// Unknown provider must be dropped (ACKed) without invoking either
+	// client — there's nothing actionable we can do, and using a default
+	// would corrupt the receiving VCS.
+	unknownMsg := &tfc_trigger.WorkspaceTriggerMsg{
+		Opts: tfc_trigger.TFCTriggerOptions{
+			Action:                   tfc_trigger.PlanAction,
+			ProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
+			MergeRequestIID:          testSuite.MetaData.MRIID,
+			CommitSHA:                "deadbeef",
+			TriggerSource:            tfc_trigger.MergeRequestEventTrigger,
+			VcsProvider:              "bitbucket",
+		},
+		Workspace: tfc_trigger.TFCWorkspace{Name: "service-tfbuddy", Organization: "zapier-test"},
+	}
+	if err := worker.HandleMsg(unknownMsg); err != nil {
+		t.Fatalf("HandleMsg should ACK on unknown provider, got: %v", err)
 	}
 }

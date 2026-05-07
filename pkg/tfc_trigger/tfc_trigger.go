@@ -214,6 +214,24 @@ func (t *TFCTrigger) GetWorkspace() string {
 	return t.cfg.Workspace
 }
 
+// tracerName derives an OpenTelemetry tracer name from the VCS provider
+// driving this trigger. TFCTrigger is shared between the GitLab and GitHub
+// stream workers, so a hard-coded provider name would mislabel half of the
+// traces; falling back to a provider-agnostic name keeps spans honest when
+// VcsProvider is unset (older callers and unit tests).
+func (t *TFCTrigger) tracerName() string {
+	switch t.cfg.VcsProvider {
+	case "github":
+		return "GithubHandler"
+	case "gitlab":
+		return "GitlabHandler"
+	case "bitbucket":
+		return "BitbucketHandler"
+	default:
+		return "TFCTrigger"
+	}
+}
+
 // predefined errors
 var (
 	ErrWorkspaceNotDefined = errors.New("the workspace is not defined in " + ProjectConfigFilename)
@@ -285,7 +303,7 @@ func (t *TFCTrigger) getLockingMR(ctx context.Context, workspace string) string 
 }
 
 func (t *TFCTrigger) getTriggeredWorkspaces(ctx context.Context, modifiedFiles []string) ([]*TFCWorkspace, error) {
-	ctx, span := otel.Tracer("GitlabHandler").Start(ctx, "getTriggeredWorkspaces")
+	ctx, span := otel.Tracer(t.tracerName()).Start(ctx, "getTriggeredWorkspaces")
 	defer span.End()
 
 	cfg, err := getProjectConfigFile(ctx, t.gl, t)
@@ -329,7 +347,7 @@ type TriggeredTFCWorkspaces struct {
 }
 
 func (t *TFCTrigger) getModifiedWorkspacesOnTargetBranch(ctx context.Context, mr vcs.MR, repo vcs.GitRepo, triggeredWorkspaces []*TFCWorkspace) (map[string]struct{}, error) {
-	ctx, span := otel.Tracer("GitlabHandler").Start(ctx, "getModifiedWorkspacesOnTargetBranch")
+	ctx, span := otel.Tracer(t.tracerName()).Start(ctx, "getModifiedWorkspacesOnTargetBranch")
 	defer span.End()
 
 	modifiedWSMap := make(map[string]struct{}, 0)
@@ -367,7 +385,7 @@ func (t *TFCTrigger) getModifiedWorkspacesOnTargetBranch(ctx context.Context, mr
 	return modifiedWSMap, err
 }
 func (t *TFCTrigger) getTriggeredWorkspacesForRequest(ctx context.Context, mr vcs.MR) ([]*TFCWorkspace, error) {
-	ctx, span := otel.Tracer("GitlabHandler").Start(ctx, "getTriggeredWorkspacesForRequest")
+	ctx, span := otel.Tracer(t.tracerName()).Start(ctx, "getTriggeredWorkspacesForRequest")
 	defer span.End()
 
 	mrModifiedFiles, err := t.gl.GetMergeRequestModifiedFiles(ctx, mr.GetInternalID(), t.GetProjectNameWithNamespace())
@@ -381,7 +399,7 @@ func (t *TFCTrigger) getTriggeredWorkspacesForRequest(ctx context.Context, mr vc
 
 // cloneGitRepo will clone the git repo for a specific MR and returns the temp path to be cleaned up later
 func (t *TFCTrigger) cloneGitRepo(ctx context.Context, mr vcs.MR) (vcs.GitRepo, error) {
-	ctx, span := otel.Tracer("GitlabHandler").Start(ctx, "cloneGitRepo")
+	ctx, span := otel.Tracer(t.tracerName()).Start(ctx, "cloneGitRepo")
 	defer span.End()
 
 	safeProj := strings.ReplaceAll(t.GetProjectNameWithNamespace(), "/", "-")
@@ -406,7 +424,7 @@ func (t *TFCTrigger) cloneGitRepo(ctx context.Context, mr vcs.MR) (vcs.GitRepo, 
 // surface them immediately. Per-run failures land in the workspace worker,
 // which posts them to the MR/PR directly.
 func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspaces, error) {
-	ctx, span := otel.Tracer("GitlabHandler").Start(ctx, "TriggerTFCEvents")
+	ctx, span := otel.Tracer(t.tracerName()).Start(ctx, "TriggerTFCEvents")
 	defer span.End()
 
 	mr, err := t.gl.GetMergeRequest(ctx, t.GetMergeRequestIID(), t.GetProjectNameWithNamespace())
@@ -440,7 +458,7 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 // check, lock check, discussion creation, TFC run — happens in the workspace
 // worker, where each delivery has its own JetStream AckWait window.
 func (t *TFCTrigger) enqueueWorkspaceTriggers(ctx context.Context, triggeredWorkspaces []*TFCWorkspace) (*TriggeredTFCWorkspaces, error) {
-	ctx, span := otel.Tracer("GitlabHandler").Start(ctx, "enqueueWorkspaceTriggers")
+	ctx, span := otel.Tracer(t.tracerName()).Start(ctx, "enqueueWorkspaceTriggers")
 	defer span.End()
 
 	status := &TriggeredTFCWorkspaces{
@@ -484,7 +502,11 @@ func (t *TFCTrigger) runWorkspacesInline(ctx context.Context, mr vcs.DetailedMR,
 	if err != nil {
 		return nil, err
 	}
-	defer os.Remove(repo.GetLocalDirectory())
+	defer func() {
+		if err := os.RemoveAll(repo.GetLocalDirectory()); err != nil {
+			log.Error().Err(err).Str("path", repo.GetLocalDirectory()).Msg("could not remove cloned repository directory")
+		}
+	}()
 
 	modifiedWSMap, err := t.getModifiedWorkspacesOnTargetBranch(ctx, mr, repo, triggeredWorkspaces)
 	if err != nil {
@@ -523,7 +545,7 @@ func (t *TFCTrigger) runWorkspacesInline(ctx context.Context, mr vcs.DetailedMR,
 }
 
 func (t *TFCTrigger) TriggerCleanupEvent(ctx context.Context) error {
-	ctx, span := otel.Tracer("GitlabHandler").Start(ctx, "TriggerCleanupEvent")
+	ctx, span := otel.Tracer(t.tracerName()).Start(ctx, "TriggerCleanupEvent")
 	defer span.End()
 
 	mr, err := t.gl.GetMergeRequest(ctx, t.GetMergeRequestIID(), t.GetProjectNameWithNamespace())
