@@ -57,7 +57,7 @@ func NewGitlabHooksHandler(gl vcs.GitClient, tfc tfc_api.ApiClient, rs runstream
 		triggerCreation: tfc_trigger.NewTFCTrigger,
 		mrStream:        mrStream,
 		notesStream:     notesStream,
-		hookSecretKey:   config.GitlabHookSecretKey(),
+		hookSecretKey:   config.C.GitlabHookSecretKey,
 	}
 
 	h.hooksWorker = NewGitlabEventWorker(h, js)

@@ -218,5 +218,5 @@ func (s *TFCWorkspace) UnmarshalYAML(unmarshal func(interface{}) error) error {
 }
 
 func getDefaultOrgName() string {
-	return config.DefaultTFCOrganization()
+	return config.C.DefaultTFCOrganization
 }

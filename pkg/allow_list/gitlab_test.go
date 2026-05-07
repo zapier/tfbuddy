@@ -2,6 +2,8 @@ package allow_list
 
 import (
 	"testing"
+
+	"github.com/zapier/tfbuddy/internal/config"
 )
 
 func TestIsGitlabProjectAllowed(t *testing.T) {
@@ -108,6 +110,7 @@ func TestIsGitlabProjectAllowed(t *testing.T) {
 		t.Run(tt.name+"_primary", func(t *testing.T) {
 			t.Setenv(legacyAllowListEnv, "")
 			t.Setenv(GitlabProjectAllowListEnv, tt.args.allowEnv)
+			config.Reload()
 
 			if got := IsGitlabProjectAllowed(tt.args.projectWithNamespace); got != tt.want {
 				t.Errorf("IsGitlabProjectAllowed() with primary env = %v, want %v", got, tt.want)
@@ -117,6 +120,7 @@ func TestIsGitlabProjectAllowed(t *testing.T) {
 		t.Run(tt.name+"_legacy", func(t *testing.T) {
 			t.Setenv(GitlabProjectAllowListEnv, "")
 			t.Setenv(legacyAllowListEnv, tt.args.allowEnv)
+			config.Reload()
 
 			if got := IsGitlabProjectAllowed(tt.args.projectWithNamespace); got != tt.want {
 				t.Errorf("IsGitlabProjectAllowed() with legacy env = %v, want %v", got, tt.want)

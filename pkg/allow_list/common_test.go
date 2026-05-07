@@ -3,6 +3,8 @@ package allow_list
 import (
 	"reflect"
 	"testing"
+
+	"github.com/zapier/tfbuddy/internal/config"
 )
 
 func TestGetAllowList(t *testing.T) {
@@ -78,6 +80,7 @@ func TestGetAllowList(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv(testEnvVar, tt.envVal)
+			config.Reload()
 
 			if got := getAllowList(testEnvVar); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("getAllowList() = %v, want %v", got, tt.want)

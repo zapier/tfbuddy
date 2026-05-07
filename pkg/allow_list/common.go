@@ -9,11 +9,11 @@ func getAllowList(envVar string) []string {
 	var allowed []string
 	switch envVar {
 	case githubRepoAllowListEnv:
-		allowed = config.GithubRepoAllowList()
+		allowed = config.C.GithubRepoAllowList
 	case GitlabProjectAllowListEnv:
-		allowed = config.GitlabProjectAllowList()
+		allowed = config.C.GitlabProjectAllowList
 	case legacyAllowListEnv:
-		allowed = config.LegacyProjectAllowList()
+		allowed = config.C.LegacyProjectAllowList
 	default:
 		return nil
 	}

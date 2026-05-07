@@ -3,12 +3,9 @@ package config
 import (
 	"strings"
 
+	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 )
-
-func init() {
-	Init()
-}
 
 const (
 	KeyLogLevel                 = "log-level"
@@ -32,6 +29,30 @@ const (
 	KeyGitlabCloneDepth         = "gitlab-clone-depth"
 )
 
+type Config struct {
+	LogLevel                 string   `mapstructure:"log-level"`
+	DevMode                  bool     `mapstructure:"dev-mode"`
+	OTELEnabled              bool     `mapstructure:"otel-enabled"`
+	OTELCollectorHost        string   `mapstructure:"otel-collector-host"`
+	OTELCollectorPort        string   `mapstructure:"otel-collector-port"`
+	GitlabHookSecretKey      string   `mapstructure:"gitlab-hook-secret-key"`
+	GithubHookSecretKey      string   `mapstructure:"github-hook-secret-key"`
+	DefaultTFCOrganization   string   `mapstructure:"default-tfc-organization"`
+	WorkspaceAllowList       []string `mapstructure:"workspace-allow-list"`
+	WorkspaceDenyList        []string `mapstructure:"workspace-deny-list"`
+	AllowAutoMerge           bool     `mapstructure:"allow-auto-merge"`
+	FailCIOnSentinelSoftFail bool     `mapstructure:"fail-ci-on-sentinel-soft-fail"`
+	DeleteOldComments        bool     `mapstructure:"delete-old-comments"`
+	NATSServiceURL           string   `mapstructure:"nats-service-url"`
+	GitlabProjectAllowList   []string `mapstructure:"gitlab-project-allow-list"`
+	LegacyProjectAllowList   []string `mapstructure:"project-allow-list"`
+	GithubRepoAllowList      []string `mapstructure:"github-repo-allow-list"`
+	GithubCloneDepth         int      `mapstructure:"github-clone-depth"`
+	GitlabCloneDepth         int      `mapstructure:"gitlab-clone-depth"`
+}
+
+var C Config
+
 type binding struct {
 	key          string
 	defaultValue any
@@ -41,22 +62,26 @@ var bindings = []binding{
 	{key: KeyLogLevel, defaultValue: "info"},
 	{key: KeyDevMode, defaultValue: false},
 	{key: KeyOTELEnabled, defaultValue: false},
-	{key: KeyOTELCollectorHost},
-	{key: KeyOTELCollectorPort},
-	{key: KeyGitlabHookSecretKey},
-	{key: KeyGithubHookSecretKey},
-	{key: KeyDefaultTFCOrganization},
-	{key: KeyWorkspaceAllowList},
-	{key: KeyWorkspaceDenyList},
+	{key: KeyOTELCollectorHost, defaultValue: ""},
+	{key: KeyOTELCollectorPort, defaultValue: ""},
+	{key: KeyGitlabHookSecretKey, defaultValue: ""},
+	{key: KeyGithubHookSecretKey, defaultValue: ""},
+	{key: KeyDefaultTFCOrganization, defaultValue: ""},
+	{key: KeyWorkspaceAllowList, defaultValue: []string{}},
+	{key: KeyWorkspaceDenyList, defaultValue: []string{}},
 	{key: KeyAllowAutoMerge, defaultValue: true},
 	{key: KeyFailCIOnSentinelSoftFail, defaultValue: false},
 	{key: KeyDeleteOldComments, defaultValue: false},
-	{key: KeyNATSServiceURL},
-	{key: KeyGitlabProjectAllowList},
-	{key: KeyLegacyProjectAllowList},
-	{key: KeyGithubRepoAllowList},
-	{key: KeyGithubCloneDepth},
-	{key: KeyGitlabCloneDepth},
+	{key: KeyNATSServiceURL, defaultValue: ""},
+	{key: KeyGitlabProjectAllowList, defaultValue: []string{}},
+	{key: KeyLegacyProjectAllowList, defaultValue: []string{}},
+	{key: KeyGithubRepoAllowList, defaultValue: []string{}},
+	{key: KeyGithubCloneDepth, defaultValue: 0},
+	{key: KeyGitlabCloneDepth, defaultValue: 0},
+}
+
+func init() {
+	Init()
 }
 
 func Init() {
@@ -69,121 +94,36 @@ func Init() {
 			viper.SetDefault(item.key, item.defaultValue)
 		}
 	}
+
+	Reload()
 }
 
-func String(key string) string {
-	return strings.TrimSpace(viper.GetString(key))
-}
-
-func Bool(key string) bool {
-	return viper.GetBool(key)
-}
-
-func Int(key string) int {
-	return viper.GetInt(key)
-}
-
-func StringList(key string) []string {
-	raw := viper.Get(key)
-	switch value := raw.(type) {
-	case []string:
-		return trimAndFilter(value)
-	case []any:
-		items := make([]string, 0, len(value))
-		for _, item := range value {
-			if str, ok := item.(string); ok {
-				items = append(items, str)
-			}
-		}
-		return trimAndFilter(items)
-	case string:
-		return splitCSV(value)
-	default:
-		return splitCSV(viper.GetString(key))
+func Reload() {
+	cfg := Config{}
+	err := viper.Unmarshal(&cfg, func(dc *mapstructure.DecoderConfig) {
+		dc.DecodeHook = mapstructure.ComposeDecodeHookFunc(
+			mapstructure.StringToSliceHookFunc(","),
+		)
+	})
+	if err != nil {
+		panic(err)
 	}
-}
 
-func LogLevel() string {
-	return String(KeyLogLevel)
-}
+	cfg.LogLevel = strings.TrimSpace(cfg.LogLevel)
+	cfg.OTELCollectorHost = strings.TrimSpace(cfg.OTELCollectorHost)
+	cfg.OTELCollectorPort = strings.TrimSpace(cfg.OTELCollectorPort)
+	cfg.GitlabHookSecretKey = strings.TrimSpace(cfg.GitlabHookSecretKey)
+	cfg.GithubHookSecretKey = strings.TrimSpace(cfg.GithubHookSecretKey)
+	cfg.DefaultTFCOrganization = strings.TrimSpace(cfg.DefaultTFCOrganization)
+	cfg.NATSServiceURL = strings.TrimSpace(cfg.NATSServiceURL)
 
-func DevModeEnabled() bool {
-	return Bool(KeyDevMode)
-}
+	cfg.WorkspaceAllowList = trimAndFilter(cfg.WorkspaceAllowList)
+	cfg.WorkspaceDenyList = trimAndFilter(cfg.WorkspaceDenyList)
+	cfg.GitlabProjectAllowList = trimAndFilter(cfg.GitlabProjectAllowList)
+	cfg.LegacyProjectAllowList = trimAndFilter(cfg.LegacyProjectAllowList)
+	cfg.GithubRepoAllowList = trimAndFilter(cfg.GithubRepoAllowList)
 
-func OTELEnabled() bool {
-	return Bool(KeyOTELEnabled)
-}
-
-func OTELCollectorHost() string {
-	return String(KeyOTELCollectorHost)
-}
-
-func OTELCollectorPort() string {
-	return String(KeyOTELCollectorPort)
-}
-
-func GitlabHookSecretKey() string {
-	return String(KeyGitlabHookSecretKey)
-}
-
-func GithubHookSecretKey() string {
-	return String(KeyGithubHookSecretKey)
-}
-
-func DefaultTFCOrganization() string {
-	return String(KeyDefaultTFCOrganization)
-}
-
-func WorkspaceAllowList() []string {
-	return StringList(KeyWorkspaceAllowList)
-}
-
-func WorkspaceDenyList() []string {
-	return StringList(KeyWorkspaceDenyList)
-}
-
-func AutoMergeEnabled() bool {
-	return Bool(KeyAllowAutoMerge)
-}
-
-func FailCIOnSentinelSoftFail() bool {
-	return Bool(KeyFailCIOnSentinelSoftFail)
-}
-
-func DeleteOldCommentsEnabled() bool {
-	return Bool(KeyDeleteOldComments)
-}
-
-func NATSServiceURL() string {
-	return String(KeyNATSServiceURL)
-}
-
-func GitlabProjectAllowList() []string {
-	return StringList(KeyGitlabProjectAllowList)
-}
-
-func LegacyProjectAllowList() []string {
-	return StringList(KeyLegacyProjectAllowList)
-}
-
-func GithubRepoAllowList() []string {
-	return StringList(KeyGithubRepoAllowList)
-}
-
-func GithubCloneDepth() int {
-	return Int(KeyGithubCloneDepth)
-}
-
-func GitlabCloneDepth() int {
-	return Int(KeyGitlabCloneDepth)
-}
-
-func splitCSV(value string) []string {
-	if strings.TrimSpace(value) == "" {
-		return nil
-	}
-	return trimAndFilter(strings.Split(value, ","))
+	C = cfg
 }
 
 func trimAndFilter(items []string) []string {

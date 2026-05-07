@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/zapier/tfbuddy/internal/config"
 
 	"github.com/kr/pretty"
 )
@@ -505,9 +506,11 @@ func Test_loadProjectConfig(t *testing.T) {
 			args: args{b: []byte(tfbuddyYamlNoOrg)},
 			preTestFn: func() {
 				os.Setenv(DefaultTfcOrganizationEnvName, "foo-corp")
+				config.Reload()
 			},
 			postTestFn: func() {
 				os.Unsetenv(DefaultTfcOrganizationEnvName)
+				config.Reload()
 			},
 			want: &ProjectConfig{Workspaces: []*TFCWorkspace{
 				{

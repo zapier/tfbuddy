@@ -220,7 +220,7 @@ func (c *GitlabClient) GetOldRunUrls(ctx context.Context, mrIID int, project str
 		toDelete = append(toDelete, discussionToDelete{noteIDs: noteIDs})
 	}
 
-	if config.DeleteOldCommentsEnabled() {
+	if config.C.DeleteOldComments {
 		for _, d := range toDelete {
 			for _, noteID := range d.noteIDs {
 				log.Debug().Str("projectID", project).Int("mrIID", mrIID).Str("workspace", workspace).Str("action", action).Msgf("deleting note %d", noteID)

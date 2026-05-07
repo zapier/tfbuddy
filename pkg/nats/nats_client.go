@@ -7,7 +7,7 @@ import (
 )
 
 func Connect() *nats.Conn {
-	natsURL := config.NATSServiceURL()
+	natsURL := config.C.NATSServiceURL
 	if natsURL == "" {
 		// try default
 		natsURL = nats.DefaultURL

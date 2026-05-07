@@ -103,7 +103,7 @@ func FormatRunStatusCommentBody(tfc tfc_api.ApiClient, run *tfe.Run, rmd runstre
 	case tfe.RunPolicySoftFailed:
 		// Policy checks executed and soft-failed; approval required in TFC UI
 		log.Trace().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Msg("policy soft failed")
-		if config.FailCIOnSentinelSoftFail() {
+		if config.C.FailCIOnSentinelSoftFail {
 			extraInfo = "Policy Checks: Soft Failed. Review plan and make changes to pass policy checks."
 		} else {
 			extraInfo = "Policy Checks: Soft Failed — approval required in Terraform Cloud before apply can proceed."

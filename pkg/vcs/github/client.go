@@ -146,7 +146,7 @@ func (c *Client) GetOldRunUrls(ctx context.Context, prID int, fullName string, r
 		}
 	}
 
-	if config.DeleteOldCommentsEnabled() && len(matchingCommentIDs) > 0 {
+	if config.C.DeleteOldComments && len(matchingCommentIDs) > 0 {
 		for _, commentID := range matchingCommentIDs {
 			log.Debug().Str("workspace", workspace).Str("action", action).Msgf("Deleting comment %d", commentID)
 			if err := backoff.Retry(func() error {

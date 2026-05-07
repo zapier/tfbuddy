@@ -15,6 +15,7 @@ func TestIsGlobalAutoMergeEnabledReadsViper(t *testing.T) {
 		config.Init()
 	})
 	viper.Set(config.KeyAllowAutoMerge, false)
+	config.Reload()
 
 	if IsGlobalAutoMergeEnabled() {
 		t.Fatal("IsGlobalAutoMergeEnabled() = true, want false")

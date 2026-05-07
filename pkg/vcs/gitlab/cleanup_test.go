@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/zapier/tfbuddy/internal/config"
 	"github.com/zapier/tfbuddy/pkg/utils"
 	gogitlab "gitlab.com/gitlab-org/api/client-go"
 )
@@ -18,7 +19,7 @@ import (
 const (
 	testProject = "test-group/test-project"
 	testMRIID   = 1
-	botUsername  = "tfbuddy-bot"
+	botUsername = "tfbuddy-bot"
 )
 
 type fakeNote struct {
@@ -113,6 +114,7 @@ func newTestClient(t *testing.T, serverURL string) *GitlabClient {
 
 func TestGetOldRunUrls_SingleWorkspace_DeletesOlderPlanKeepsNewest(t *testing.T) {
 	t.Setenv("TFBUDDY_DELETE_OLD_COMMENTS", "true")
+	config.Reload()
 
 	currentNoteID := 300
 	discussions := []fakeDiscussion{
@@ -173,6 +175,7 @@ func TestGetOldRunUrls_SingleWorkspace_DeletesOlderPlanKeepsNewest(t *testing.T)
 
 func TestGetOldRunUrls_MultiWorkspace_KeepsOnePerWorkspaceAndAction(t *testing.T) {
 	t.Setenv("TFBUDDY_DELETE_OLD_COMMENTS", "true")
+	config.Reload()
 
 	currentPlanA := 500
 	discussions := []fakeDiscussion{
@@ -253,6 +256,7 @@ func TestGetOldRunUrls_MultiWorkspace_KeepsOnePerWorkspaceAndAction(t *testing.T
 
 func TestGetOldRunUrls_ApplyAction_DeletesOlderApplyOnly(t *testing.T) {
 	t.Setenv("TFBUDDY_DELETE_OLD_COMMENTS", "true")
+	config.Reload()
 
 	currentApplyA := 500
 	discussions := []fakeDiscussion{
@@ -322,6 +326,7 @@ func TestGetOldRunUrls_ApplyAction_DeletesOlderApplyOnly(t *testing.T) {
 
 func TestGetOldRunUrls_NoMatchingDiscussions_DeletesNothing(t *testing.T) {
 	t.Setenv("TFBUDDY_DELETE_OLD_COMMENTS", "true")
+	config.Reload()
 
 	currentNoteID := 100
 	discussions := []fakeDiscussion{
@@ -361,6 +366,7 @@ func TestGetOldRunUrls_NoMatchingDiscussions_DeletesNothing(t *testing.T) {
 
 func TestGetOldRunUrls_DeleteDisabled_CollectsUrlsButNoDeletion(t *testing.T) {
 	t.Setenv("TFBUDDY_DELETE_OLD_COMMENTS", "false")
+	config.Reload()
 
 	currentNoteID := 300
 	discussions := []fakeDiscussion{
@@ -404,6 +410,7 @@ func TestGetOldRunUrls_DeleteDisabled_CollectsUrlsButNoDeletion(t *testing.T) {
 
 func TestGetOldRunUrls_CollectsOldRunUrlsInTable(t *testing.T) {
 	t.Setenv("TFBUDDY_DELETE_OLD_COMMENTS", "true")
+	config.Reload()
 
 	currentNoteID := 300
 	discussions := []fakeDiscussion{
@@ -446,6 +453,7 @@ func TestGetOldRunUrls_CollectsOldRunUrlsInTable(t *testing.T) {
 
 func TestGetOldRunUrls_MultiWorkspace_FullScenario(t *testing.T) {
 	t.Setenv("TFBUDDY_DELETE_OLD_COMMENTS", "true")
+	config.Reload()
 
 	currentPlanA := 1000
 	currentPlanB := 1100
