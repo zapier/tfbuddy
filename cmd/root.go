@@ -18,7 +18,6 @@ import (
 )
 
 var cfgFile string
-var logLevel string
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
@@ -50,8 +49,8 @@ func init() {
 	config.Init()
 	cobra.OnInitialize(initConfig)
 
-	rootCmd.PersistentFlags().StringVarP(&logLevel, "log-level", "v", "info", "Set the log output level (info, debug, trace)")
-	cobra.CheckErr(viper.BindPFlag(config.KeyLogLevel, rootCmd.PersistentFlags().Lookup("log-level")))
+	cobra.CheckErr(config.RegisterFlags(rootCmd.PersistentFlags()))
+	config.Reload()
 }
 
 func initTelemetry(ctx context.Context) (*telemetry.OperatorTelemetry, error) {
