@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	gogithub "github.com/google/go-github/v69/github"
 	"github.com/rs/zerolog/log"
+	"github.com/zapier/tfbuddy/internal/config"
 	zgit "github.com/zapier/tfbuddy/pkg/git"
 	"github.com/zapier/tfbuddy/pkg/utils"
 	"github.com/zapier/tfbuddy/pkg/vcs"
@@ -105,8 +105,6 @@ func (c *Client) GetOldRunUrls(ctx context.Context, prID int, fullName string, r
 		return "", err
 	}
 
-	deleteOld, _ := strconv.ParseBool(os.Getenv("TFBUDDY_DELETE_OLD_COMMENTS"))
-
 	var oldRunUrls []string
 	var oldRunBlock string
 	var matchingCommentIDs []int64
@@ -148,7 +146,7 @@ func (c *Client) GetOldRunUrls(ctx context.Context, prID int, fullName string, r
 		}
 	}
 
-	if deleteOld && len(matchingCommentIDs) > 0 {
+	if config.DeleteOldCommentsEnabled() && len(matchingCommentIDs) > 0 {
 		for _, commentID := range matchingCommentIDs {
 			log.Debug().Str("workspace", workspace).Str("action", action).Msgf("Deleting comment %d", commentID)
 			if err := backoff.Retry(func() error {

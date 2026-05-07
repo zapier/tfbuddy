@@ -4,7 +4,9 @@ import (
 	"os"
 	"testing"
 
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
+	"github.com/zapier/tfbuddy/internal/config"
 	"github.com/zapier/tfbuddy/pkg/mocks"
 )
 
@@ -108,5 +110,17 @@ func TestGitCloneDepth(t *testing.T) {
 	t.Run("invalid value", func(t *testing.T) {
 		os.Setenv(testVar, "somestuff")
 		assert.Equal(t, 0, GetCloneDepth(testVar))
+	})
+
+	t.Run("reads viper for owned config", func(t *testing.T) {
+		viper.Reset()
+		config.Init()
+		t.Cleanup(func() {
+			viper.Reset()
+			config.Init()
+		})
+		viper.Set(config.KeyGithubCloneDepth, 7)
+
+		assert.Equal(t, 7, GetCloneDepth("TFBUDDY_GITHUB_CLONE_DEPTH"))
 	})
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
+	appconfig "github.com/zapier/tfbuddy/internal/config"
 	"github.com/zapier/tfbuddy/pkg/utils"
 )
 
@@ -127,6 +128,13 @@ func WalkRepo(s string, d fs.DirEntry, err error) error {
 
 // GetCloneDepth reads the provided env var and returns an int to be used as git clone depth. Default is 0.
 func GetCloneDepth(envVar string) int {
+	switch envVar {
+	case "TFBUDDY_GITHUB_CLONE_DEPTH":
+		return appconfig.GithubCloneDepth()
+	case "TFBUDDY_GITLAB_CLONE_DEPTH":
+		return appconfig.GitlabCloneDepth()
+	}
+
 	val := os.Getenv(envVar)
 	if val != "" {
 		depth, err := strconv.Atoi(val)

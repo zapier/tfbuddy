@@ -1,10 +1,10 @@
 package tfc_trigger
 
 import (
-	"os"
 	"strings"
 
 	"github.com/rs/zerolog/log"
+	"github.com/zapier/tfbuddy/internal/config"
 )
 
 const DefaultTfcOrganizationEnvName = "TFBUDDY_DEFAULT_TFC_ORGANIZATION"
@@ -14,27 +14,19 @@ func getWorkspaceAllowDenyList() ([]string, []string) {
 	// if a workspace in the allow list does not include a org component, prepend this value (if defined).
 	workspaceAllowList := make([]string, 0)
 	workspaceDenyList := make([]string, 0)
-	defaultOrg := os.Getenv(DefaultTfcOrganizationEnvName)
+	defaultOrg := config.DefaultTFCOrganization()
 
-	allowEnv := os.Getenv("TFBUDDY_WORKSPACE_ALLOW_LIST")
-	if allowEnv != "" {
-		allowed := strings.Split(allowEnv, ",")
-		for _, w := range allowed {
-			ws := strings.TrimSpace(w)
-			ws = strings.ToLower(ws)
-			if !strings.Contains(ws, "/") {
-				ws = defaultOrg + "/" + ws
-			}
-			log.Info().Str("workspace", ws).Msg("adding Workspace to allow list")
-			workspaceAllowList = append(workspaceAllowList, ws)
+	for _, w := range config.WorkspaceAllowList() {
+		ws := strings.ToLower(strings.TrimSpace(w))
+		if !strings.Contains(ws, "/") {
+			ws = defaultOrg + "/" + ws
 		}
+		log.Info().Str("workspace", ws).Msg("adding Workspace to allow list")
+		workspaceAllowList = append(workspaceAllowList, ws)
 	}
 
-	denyEnv := os.Getenv("TFBUDDY_WORKSPACE_DENY_LIST")
-	denied := strings.Split(denyEnv, ",")
-	for _, w := range denied {
-		ws := strings.TrimSpace(w)
-		ws = strings.ToLower(ws)
+	for _, w := range config.WorkspaceDenyList() {
+		ws := strings.ToLower(strings.TrimSpace(w))
 		if !strings.Contains(ws, "/") {
 			ws = defaultOrg + "/" + ws
 		}

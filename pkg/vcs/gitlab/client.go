@@ -5,12 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/rs/zerolog/log"
+	"github.com/zapier/tfbuddy/internal/config"
 	"github.com/zapier/tfbuddy/pkg/utils"
 	"github.com/zapier/tfbuddy/pkg/vcs"
 	"go.opentelemetry.io/otel"
@@ -160,8 +160,6 @@ func (c *GitlabClient) GetOldRunUrls(ctx context.Context, mrIID int, project str
 		return "", utils.CreatePermanentError(err)
 	}
 
-	deleteOld, _ := strconv.ParseBool(os.Getenv("TFBUDDY_DELETE_OLD_COMMENTS"))
-
 	var oldRunUrls []string
 	var oldRunBlock string
 
@@ -222,7 +220,7 @@ func (c *GitlabClient) GetOldRunUrls(ctx context.Context, mrIID int, project str
 		toDelete = append(toDelete, discussionToDelete{noteIDs: noteIDs})
 	}
 
-	if deleteOld {
+	if config.DeleteOldCommentsEnabled() {
 		for _, d := range toDelete {
 			for _, noteID := range d.noteIDs {
 				log.Debug().Str("projectID", project).Int("mrIID", mrIID).Str("workspace", workspace).Str("action", action).Msgf("deleting note %d", noteID)
