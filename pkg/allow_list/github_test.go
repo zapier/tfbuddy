@@ -111,7 +111,7 @@ func TestIsGithubRepoAllowed(t *testing.T) {
 			t.Setenv(githubRepoAllowListEnv, tt.args.allowEnv)
 			config.Reload()
 
-			if got := IsGithubRepoAllowed(tt.args.fullName); got != tt.want {
+			if got := IsGithubRepoAllowed(config.C, tt.args.fullName); got != tt.want {
 				t.Errorf("IsGithubRepoAllowed() = %v, want %v", got, tt.want)
 			}
 		})

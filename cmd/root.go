@@ -25,12 +25,19 @@ var rootCmd = &cobra.Command{
 	Short: "Various utilties to aid Terraform CI pipelines & Terraform Cloud runs",
 	Long:  ``,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		logging.SetupLogOutput(resolveLogLevel())
+		cfg := loadConfig()
+		logging.SetupLogOutput(cfg.DevMode, resolveLogLevel(cfg))
 	},
 }
 
-func resolveLogLevel() zerolog.Level {
-	lvl, err := zerolog.ParseLevel(config.C.LogLevel)
+func loadConfig() config.Config {
+	cfg, err := config.Load()
+	cobra.CheckErr(err)
+	return cfg
+}
+
+func resolveLogLevel(cfg config.Config) zerolog.Level {
+	lvl, err := zerolog.ParseLevel(cfg.LogLevel)
 	if err != nil {
 		log.Println("could not parse log level, defaulting to 'info'")
 		lvl = zerolog.InfoLevel
@@ -41,7 +48,6 @@ func resolveLogLevel() zerolog.Level {
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
-	logging.SetupLogOutput(resolveLogLevel())
 	cobra.CheckErr(rootCmd.Execute())
 }
 
@@ -50,14 +56,13 @@ func init() {
 	cobra.OnInitialize(initConfig)
 
 	cobra.CheckErr(config.RegisterFlags(rootCmd.PersistentFlags()))
-	config.Reload()
 }
 
-func initTelemetry(ctx context.Context) (*telemetry.OperatorTelemetry, error) {
+func initTelemetry(ctx context.Context, cfg config.Config) (*telemetry.OperatorTelemetry, error) {
 	return telemetry.Init(ctx, "tfbuddy", telemetry.Options{
-		Enabled:   config.C.OTELEnabled,
-		Host:      config.C.OTELCollectorHost,
-		Port:      config.C.OTELCollectorPort,
+		Enabled:   cfg.OTELEnabled,
+		Host:      cfg.OTELCollectorHost,
+		Port:      cfg.OTELCollectorPort,
 		Version:   pkg.GitTag,
 		CommitSHA: pkg.GitCommit,
 	})
@@ -83,5 +88,4 @@ func initConfig() {
 	if err := viper.ReadInConfig(); err == nil {
 		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
 	}
-	config.Reload()
 }

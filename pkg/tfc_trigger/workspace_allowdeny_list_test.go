@@ -20,7 +20,7 @@ func TestGetWorkspaceAllowDenyListReadsViper(t *testing.T) {
 	viper.Set(config.KeyWorkspaceDenyList, "svc-c")
 	config.Reload()
 
-	allow, deny := getWorkspaceAllowDenyList()
+	allow, deny := getWorkspaceAllowDenyList(config.C)
 
 	wantAllow := []string{"zapier/svc-a", "org-b/svc-b"}
 	wantDeny := []string{"zapier/svc-c"}

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/zapier/tfbuddy/internal/config"
 	"github.com/zapier/tfbuddy/pkg/tfc_api"
 	"github.com/zapier/tfbuddy/pkg/vcs/gitlab"
 	"go.opentelemetry.io/otel"
@@ -43,7 +44,12 @@ const MR_RUN_DETAILS_FORMAT = `
 `
 
 func MonitorRunStatus() {
-	glClient = gitlab.NewGitlabClient()
+	cfg, err := config.Load()
+	if err != nil {
+		log.Printf("error loading config: %v", err)
+		return
+	}
+	glClient = gitlab.NewGitlabClient(cfg)
 	tfcClient = tfc_api.NewTFCClient()
 	ctx := context.Background()
 

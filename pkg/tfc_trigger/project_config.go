@@ -175,21 +175,21 @@ func getProjectConfigFile(ctx context.Context, gl vcs.GitClient, trigger *TFCTri
 			log.Info().Err(err).Msg(fmt.Sprintf("no file on branch %s", branch))
 			continue
 		}
-		return loadProjectConfig(b)
+		return loadProjectConfig(trigger.appCfg, b)
 	}
 	log.Warn().Msg("could not retrieve .tfbuddy.yaml for repo")
 
 	return nil, utils.CreatePermanentError(errors.New("could not retrieve .tfbuddy.yaml for repo"))
 }
 
-func loadProjectConfig(b []byte) (*ProjectConfig, error) {
+func loadProjectConfig(appCfg config.Config, b []byte) (*ProjectConfig, error) {
 	cfg := &ProjectConfig{}
 	err := yaml.Unmarshal(b, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("could not parse Project config file (.tfbuddy.yaml): %v. %w", err, utils.ErrPermanent)
 	}
 
-	defaultOrgName := getDefaultOrgName()
+	defaultOrgName := getDefaultOrgName(appCfg)
 	for _, ws := range cfg.Workspaces {
 		if ws.Organization == "" {
 			ws.Organization = defaultOrgName
@@ -217,6 +217,6 @@ func (s *TFCWorkspace) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
-func getDefaultOrgName() string {
-	return config.C.DefaultTFCOrganization
+func getDefaultOrgName(appCfg config.Config) string {
+	return appCfg.DefaultTFCOrganization
 }

@@ -605,7 +605,7 @@ func Test_loadProjectConfig(t *testing.T) {
 			if tt.preTestFn != nil {
 				tt.preTestFn()
 			}
-			got, err := loadProjectConfig(tt.args.b)
+			got, err := loadProjectConfig(config.C, tt.args.b)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("loadProjectConfig() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -778,7 +778,7 @@ func TestHasChangesForWorkspace(t *testing.T) {
 }
 
 func testLoadConfig(t *testing.T, yaml string) *ProjectConfig {
-	pc, err := loadProjectConfig([]byte(yaml))
+	pc, err := loadProjectConfig(config.C, []byte(yaml))
 	if err != nil {
 		t.Errorf("could not load ProjectConfig for test: %v", err)
 	}

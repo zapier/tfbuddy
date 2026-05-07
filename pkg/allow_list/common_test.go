@@ -82,7 +82,7 @@ func TestGetAllowList(t *testing.T) {
 			t.Setenv(testEnvVar, tt.envVal)
 			config.Reload()
 
-			if got := getAllowList(testEnvVar); !reflect.DeepEqual(got, tt.want) {
+			if got := getAllowList(config.C, testEnvVar); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("getAllowList() = %v, want %v", got, tt.want)
 			}
 		})

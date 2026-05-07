@@ -30,6 +30,7 @@ type Client struct {
 	client *gogithub.Client
 	ctx    context.Context
 	token  string
+	cfg    config.Config
 }
 
 const DefaultMaxRetries = 3
@@ -40,7 +41,7 @@ func createBackOffWithRetries() backoff.BackOff {
 	return backoff.WithMaxRetries(exp, DefaultMaxRetries)
 
 }
-func NewGithubClient() *Client {
+func NewGithubClient(cfg config.Config) *Client {
 	token := os.Getenv("GITHUB_TOKEN")
 	ctx := context.Background()
 	ts := oauth2.StaticTokenSource(
@@ -52,6 +53,7 @@ func NewGithubClient() *Client {
 		client: gogithub.NewClient(tc),
 		ctx:    ctx,
 		token:  token,
+		cfg:    cfg,
 	}
 }
 
@@ -146,7 +148,7 @@ func (c *Client) GetOldRunUrls(ctx context.Context, prID int, fullName string, r
 		}
 	}
 
-	if config.C.DeleteOldComments && len(matchingCommentIDs) > 0 {
+	if c.cfg.DeleteOldComments && len(matchingCommentIDs) > 0 {
 		for _, commentID := range matchingCommentIDs {
 			log.Debug().Str("workspace", workspace).Str("action", action).Msgf("Deleting comment %d", commentID)
 			if err := backoff.Retry(func() error {
@@ -286,7 +288,7 @@ func (c *Client) CloneMergeRequest(ctx context.Context, project string, mr vcs.M
 	if log.Trace().Enabled() {
 		progress = os.Stdout
 	}
-	cloneDepth := zgit.GetCloneDepth(GITHUB_CLONE_DEPTH_ENV)
+	cloneDepth := zgit.GetCloneDepth(c.cfg, GITHUB_CLONE_DEPTH_ENV)
 	gitRepo, err := git.PlainClone(dest, false, &git.CloneOptions{
 		Auth:          auth,
 		URL:           *repo.CloneURL,

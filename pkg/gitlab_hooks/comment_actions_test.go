@@ -151,10 +151,11 @@ func TestProcessNoteEventPlanError(t *testing.T) {
 	mockTFCTrigger.EXPECT().TriggerTFCEvents(gomock.Any()).Return(nil, fmt.Errorf("something went wrong"))
 
 	client := &GitlabEventWorker{
+		cfg:       config.C,
 		gl:        mockGitClient,
 		tfc:       mockApiClient,
 		runstream: mockStreamClient,
-		triggerCreation: func(gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger {
+		triggerCreation: func(appCfg config.Config, gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger {
 			return mockTFCTrigger
 		},
 	}
@@ -172,7 +173,9 @@ func TestProcessNoteEventPlanError(t *testing.T) {
 
 func TestProcessNoteEventPanicHandling(t *testing.T) {
 	os.Setenv(allow_list.GitlabProjectAllowListEnv, "zapier/")
+	config.Reload()
 	defer os.Unsetenv(allow_list.GitlabProjectAllowListEnv)
+	defer config.Reload()
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
@@ -184,10 +187,11 @@ func TestProcessNoteEventPanicHandling(t *testing.T) {
 
 	testSuite.InitTestSuite()
 	client := &GitlabEventWorker{
+		cfg:       config.C,
 		gl:        testSuite.MockGitClient,
 		tfc:       testSuite.MockApiClient,
 		runstream: testSuite.MockStreamClient,
-		triggerCreation: func(gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger {
+		triggerCreation: func(appCfg config.Config, gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger {
 			return nil
 		},
 	}
@@ -238,10 +242,11 @@ func TestProcessNoteEventPlan(t *testing.T) {
 	}, nil)
 
 	client := &GitlabEventWorker{
+		cfg:       config.C,
 		gl:        mockGitClient,
 		tfc:       mockApiClient,
 		runstream: mockStreamClient,
-		triggerCreation: func(gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger {
+		triggerCreation: func(appCfg config.Config, gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger {
 			return mockTFCTrigger
 		},
 	}
@@ -296,10 +301,11 @@ func TestProcessNoteEventPlanFailedWorkspace(t *testing.T) {
 	testSuite.InitTestSuite()
 
 	worker := &GitlabEventWorker{
+		cfg:       config.C,
 		tfc:       testSuite.MockApiClient,
 		gl:        testSuite.MockGitClient,
 		runstream: testSuite.MockStreamClient,
-		triggerCreation: func(gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger {
+		triggerCreation: func(appCfg config.Config, gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger {
 			return mockTFCTrigger
 		},
 	}
@@ -356,10 +362,11 @@ func TestProcessNoteEventPlanFailedMultipleWorkspaces(t *testing.T) {
 	testSuite.InitTestSuite()
 
 	client := &GitlabEventWorker{
+		cfg:       config.C,
 		gl:        testSuite.MockGitClient,
 		tfc:       testSuite.MockApiClient,
 		runstream: testSuite.MockStreamClient,
-		triggerCreation: func(gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger {
+		triggerCreation: func(appCfg config.Config, gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger {
 			return mockTFCTrigger
 		},
 	}
@@ -410,10 +417,11 @@ func TestProcessNoteEventNoErrorNoRuns(t *testing.T) {
 	mockTFCTrigger.EXPECT().TriggerTFCEvents(gomock.Any()).Return(nil, nil)
 
 	client := &GitlabEventWorker{
+		cfg:       config.C,
 		gl:        mockGitClient,
 		tfc:       mockApiClient,
 		runstream: mockStreamClient,
-		triggerCreation: func(gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger {
+		triggerCreation: func(appCfg config.Config, gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger {
 			return mockTFCTrigger
 		},
 	}

@@ -5,15 +5,15 @@ import (
 	"github.com/zapier/tfbuddy/internal/config"
 )
 
-func getAllowList(envVar string) []string {
+func getAllowList(cfg config.Config, envVar string) []string {
 	var allowed []string
 	switch envVar {
 	case githubRepoAllowListEnv:
-		allowed = config.C.GithubRepoAllowList
+		allowed = cfg.GithubRepoAllowList
 	case GitlabProjectAllowListEnv:
-		allowed = config.C.GitlabProjectAllowList
+		allowed = cfg.GitlabProjectAllowList
 	case legacyAllowListEnv:
-		allowed = config.C.LegacyProjectAllowList
+		allowed = cfg.LegacyProjectAllowList
 	default:
 		return nil
 	}

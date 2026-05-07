@@ -7,7 +7,6 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"github.com/zapier/tfbuddy/internal/config"
 )
 
 const (
@@ -24,9 +23,9 @@ const (
 	colorDarkGray = 90
 )
 
-func SetupLogOutput(level zerolog.Level) {
+func SetupLogOutput(devMode bool, level zerolog.Level) {
 	// Setup Human friendly Console Output for dev mode
-	if config.C.DevMode {
+	if devMode {
 		output := zerolog.ConsoleWriter{Out: os.Stdout}
 		output.FormatLevel = formatLevel(false)
 		output.FormatMessage = func(i interface{}) string {
