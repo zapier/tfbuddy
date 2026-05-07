@@ -7,8 +7,6 @@ import (
 	"github.com/zapier/tfbuddy/internal/config"
 )
 
-const DefaultTfcOrganizationEnvName = "TFBUDDY_DEFAULT_TFC_ORGANIZATION"
-
 // getWorkspaceAllowDenyList returns a list of allowed and denied workspaces
 func getWorkspaceAllowDenyList(cfg config.Config) ([]string, []string) {
 	// if a workspace in the allow list does not include a org component, prepend this value (if defined).
