@@ -15,7 +15,7 @@ func getAllowList(envVar string) []string {
 	case legacyAllowListEnv:
 		allowed = config.LegacyProjectAllowList()
 	default:
-		allowed = config.StringListForUnknownEnv(envVar)
+		return nil
 	}
 
 	if len(allowed) > 0 {
