@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 )
 
@@ -11,6 +12,10 @@ func resetViperForTest(t *testing.T) {
 	t.Helper()
 	viper.Reset()
 	Init()
+	fs := pflag.NewFlagSet("config-test", pflag.ContinueOnError)
+	if err := RegisterFlags(fs); err != nil {
+		t.Fatalf("RegisterFlags() error = %v", err)
+	}
 }
 
 func TestStringListParsesCommaSeparatedEnv(t *testing.T) {
@@ -88,5 +93,35 @@ func TestStringAccessorsReadConfiguredValues(t *testing.T) {
 	}
 	if got := C.DefaultTFCOrganization; got != "zapier" {
 		t.Fatalf("C.DefaultTFCOrganization = %q, want %q", got, "zapier")
+	}
+}
+
+func TestRegisterFlagsBindsParsedValuesIntoConfigStruct(t *testing.T) {
+	viper.Reset()
+	Init()
+
+	fs := pflag.NewFlagSet("config-test", pflag.ContinueOnError)
+	if err := RegisterFlags(fs); err != nil {
+		t.Fatalf("RegisterFlags() error = %v", err)
+	}
+	if err := fs.Parse([]string{
+		"--log-level=trace",
+		"--delete-old-comments=true",
+		"--workspace-allow-list=org-a/ws-a,org-b/ws-b",
+	}); err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+
+	Reload()
+
+	if got := C.LogLevel; got != "trace" {
+		t.Fatalf("C.LogLevel = %q, want %q", got, "trace")
+	}
+	if !C.DeleteOldComments {
+		t.Fatal("C.DeleteOldComments = false, want true")
+	}
+	wantAllowList := []string{"org-a/ws-a", "org-b/ws-b"}
+	if !reflect.DeepEqual(C.WorkspaceAllowList, wantAllowList) {
+		t.Fatalf("C.WorkspaceAllowList = %v, want %v", C.WorkspaceAllowList, wantAllowList)
 	}
 }
