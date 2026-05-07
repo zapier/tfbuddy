@@ -5,12 +5,11 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strconv"
-	"strings"
 
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 
+	"github.com/zapier/tfbuddy/internal/config"
 	"github.com/zapier/tfbuddy/internal/logging"
 	"github.com/zapier/tfbuddy/internal/telemetry"
 	"github.com/zapier/tfbuddy/pkg"
@@ -32,12 +31,7 @@ var rootCmd = &cobra.Command{
 }
 
 func resolveLogLevel() zerolog.Level {
-	logLevelEnv := os.Getenv("TFBUDDY_LOG_LEVEL")
-	if logLevelEnv != "" {
-		logLevel = logLevelEnv
-	}
-
-	lvl, err := zerolog.ParseLevel(logLevel)
+	lvl, err := zerolog.ParseLevel(config.LogLevel())
 	if err != nil {
 		log.Println("could not parse log level, defaulting to 'info'")
 		lvl = zerolog.InfoLevel
@@ -53,21 +47,18 @@ func Execute() {
 }
 
 func init() {
+	config.Init()
 	cobra.OnInitialize(initConfig)
 
 	rootCmd.PersistentFlags().StringVarP(&logLevel, "log-level", "v", "info", "Set the log output level (info, debug, trace)")
+	cobra.CheckErr(viper.BindPFlag(config.KeyLogLevel, rootCmd.PersistentFlags().Lookup("log-level")))
 }
 
 func initTelemetry(ctx context.Context) (*telemetry.OperatorTelemetry, error) {
-	enableOtel, err := strconv.ParseBool(os.Getenv("TFBUDDY_OTEL_ENABLED"))
-	if err != nil {
-		log.Printf("could not parse env var TFBUDDY_OTEL_ENABLED, defaulting to false: %v", err)
-		enableOtel = false
-	}
 	return telemetry.Init(ctx, "tfbuddy", telemetry.Options{
-		Enabled:   enableOtel,
-		Host:      os.Getenv("TFBUDDY_OTEL_COLLECTOR_HOST"),
-		Port:      os.Getenv("TFBUDDY_OTEL_COLLECTOR_PORT"),
+		Enabled:   config.OTELEnabled(),
+		Host:      config.OTELCollectorHost(),
+		Port:      config.OTELCollectorPort(),
 		Version:   pkg.GitTag,
 		CommitSHA: pkg.GitCommit,
 	})
@@ -88,10 +79,6 @@ func initConfig() {
 		viper.SetConfigType("yaml")
 		viper.SetConfigName(".tfbuddy")
 	}
-
-	viper.SetEnvPrefix("TFBUDDY")
-	viper.EnvKeyReplacer(strings.NewReplacer("-", "_"))
-	viper.AutomaticEnv() // read in environment variables that match
 
 	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err == nil {

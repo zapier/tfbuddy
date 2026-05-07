@@ -2,7 +2,6 @@ package hooks
 
 import (
 	"context"
-	"os"
 
 	"github.com/cbrgm/githubevents/githubevents"
 	"github.com/google/go-github/v69/github"
@@ -11,6 +10,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog/log"
 	"github.com/sl1pm4t/gongs"
+	"github.com/zapier/tfbuddy/internal/config"
 	"github.com/zapier/tfbuddy/pkg/runstream"
 	"github.com/zapier/tfbuddy/pkg/tfc_api"
 	"github.com/zapier/tfbuddy/pkg/tfc_trigger"
@@ -41,7 +41,6 @@ type GithubHooksHandler struct {
 }
 
 func NewGithubHooksHandler(vcs vcs.GitClient, tfc tfc_api.ApiClient, rs runstream.StreamClient, js nats.JetStreamContext) *GithubHooksHandler {
-	hookSecretEnv := os.Getenv("TFBUDDY_GITHUB_HOOK_SECRET_KEY")
 	prStream := gongs.NewGenericStream[PullRequestEventMsg](js, getGithubJetstreamName(), getGithubJetstreamSubject(PullRequestEventType))
 	commentStream := gongs.NewGenericStream[GithubIssueCommentEventMsg](js, getGithubJetstreamName(), getGithubJetstreamSubject(IssueCommentEvent))
 
@@ -55,7 +54,7 @@ func NewGithubHooksHandler(vcs vcs.GitClient, tfc tfc_api.ApiClient, rs runstrea
 		triggerCreation: tfc_trigger.NewTFCTrigger,
 	}
 
-	ghEvents := githubevents.New(hookSecretEnv)
+	ghEvents := githubevents.New(config.GithubHookSecretKey())
 
 	// add Github event callbacks
 	ghEvents.OnIssueCommentCreated(h.handleIssueCommentCreatedEvent)

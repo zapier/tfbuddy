@@ -2,12 +2,11 @@ package comment_formatter
 
 import (
 	"fmt"
-	"os"
-	"strconv"
 	"strings"
 
 	"github.com/hashicorp/go-tfe"
 	"github.com/rs/zerolog/log"
+	"github.com/zapier/tfbuddy/internal/config"
 	"github.com/zapier/tfbuddy/pkg/runstream"
 	"github.com/zapier/tfbuddy/pkg/terraform_plan"
 	"github.com/zapier/tfbuddy/pkg/tfc_api"
@@ -104,13 +103,7 @@ func FormatRunStatusCommentBody(tfc tfc_api.ApiClient, run *tfe.Run, rmd runstre
 	case tfe.RunPolicySoftFailed:
 		// Policy checks executed and soft-failed; approval required in TFC UI
 		log.Trace().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Msg("policy soft failed")
-		failOnSoftEnv := os.Getenv("TFBUDDY_FAIL_CI_ON_SENTINEL_SOFT_FAIL")
-		failOnSoft, err := strconv.ParseBool(failOnSoftEnv)
-		if err != nil {
-			log.Error().Err(err).Str("env_var", "TFBUDDY_FAIL_CI_ON_SENTINEL_SOFT_FAIL").Msg("could not parse env var, defaulting to false")
-			failOnSoft = false
-		}
-		if failOnSoft {
+		if config.FailCIOnSentinelSoftFail() {
 			extraInfo = "Policy Checks: Soft Failed. Review plan and make changes to pass policy checks."
 		} else {
 			extraInfo = "Policy Checks: Soft Failed — approval required in Terraform Cloud before apply can proceed."

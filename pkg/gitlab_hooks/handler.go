@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sl1pm4t/gongs"
@@ -18,6 +17,7 @@ import (
 	"github.com/rs/zerolog/log"
 	gogitlab "gitlab.com/gitlab-org/api/client-go"
 
+	"github.com/zapier/tfbuddy/internal/config"
 	"github.com/zapier/tfbuddy/pkg/runstream"
 	"github.com/zapier/tfbuddy/pkg/tfc_api"
 	"github.com/zapier/tfbuddy/pkg/tfc_trigger"
@@ -47,7 +47,6 @@ type GitlabHooksHandler struct {
 }
 
 func NewGitlabHooksHandler(gl vcs.GitClient, tfc tfc_api.ApiClient, rs runstream.StreamClient, js nats.JetStreamContext) *GitlabHooksHandler {
-	hookSecretEnv := os.Getenv("TFBUDDY_GITLAB_HOOK_SECRET_KEY")
 	notesStream := gongs.NewGenericStream[NoteEventMsg](js, noteEventsStreamSubject(), hooks_stream.HooksStreamName)
 	mrStream := gongs.NewGenericStream[MergeRequestEventMsg](js, mrEventsStreamSubject(), hooks_stream.HooksStreamName)
 
@@ -58,7 +57,7 @@ func NewGitlabHooksHandler(gl vcs.GitClient, tfc tfc_api.ApiClient, rs runstream
 		triggerCreation: tfc_trigger.NewTFCTrigger,
 		mrStream:        mrStream,
 		notesStream:     notesStream,
-		hookSecretKey:   hookSecretEnv,
+		hookSecretKey:   config.GitlabHookSecretKey(),
 	}
 
 	h.hooksWorker = NewGitlabEventWorker(h, js)

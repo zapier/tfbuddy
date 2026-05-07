@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path"
 	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/creasty/defaults"
 	"github.com/rs/zerolog/log"
+	"github.com/zapier/tfbuddy/internal/config"
 	"github.com/zapier/tfbuddy/pkg/utils"
 	"github.com/zapier/tfbuddy/pkg/vcs"
 	"go.opentelemetry.io/otel"
@@ -26,7 +26,7 @@ type ProjectConfig struct {
 
 // Finds the workspace with the deepest matching directory suffix.
 // For example, given workspaces with config "terraform/dev/" and a dir of "dev/",
-// and a filepath directory of "filesystem/terraform/dev/" - "dev" and "terraform/dev/" are both a suffix 
+// and a filepath directory of "filesystem/terraform/dev/" - "dev" and "terraform/dev/" are both a suffix
 // we would return the ws for "terraform/dev/"as it is the deepest match.
 // Special case: if a workspace has config "/" and the input dir is ".", that workspace is returned.
 // If no workspace matches, returns nil.
@@ -47,7 +47,7 @@ func (cfg *ProjectConfig) workspaceForDir(dir string) *TFCWorkspace {
 			continue
 		}
 
-		if (strings.HasSuffix(dir+"/", wsDir) || strings.HasSuffix(dir, wsDir)) {
+		if strings.HasSuffix(dir+"/", wsDir) || strings.HasSuffix(dir, wsDir) {
 			wsDirDepth := len(strings.Split(wsDir, "/"))
 			if wsDirDepth > longestMatchDepth {
 				longestMatch = ws
@@ -218,5 +218,5 @@ func (s *TFCWorkspace) UnmarshalYAML(unmarshal func(interface{}) error) error {
 }
 
 func getDefaultOrgName() string {
-	return os.Getenv(DefaultTfcOrganizationEnvName)
+	return config.DefaultTFCOrganization()
 }

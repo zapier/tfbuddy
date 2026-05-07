@@ -1,14 +1,13 @@
 package nats
 
 import (
-	"os"
-
 	"github.com/nats-io/nats.go"
 	"github.com/rs/zerolog/log"
+	"github.com/zapier/tfbuddy/internal/config"
 )
 
 func Connect() *nats.Conn {
-	natsURL := os.Getenv("TFBUDDY_NATS_SERVICE_URL")
+	natsURL := config.NATSServiceURL()
 	if natsURL == "" {
 		// try default
 		natsURL = nats.DefaultURL
