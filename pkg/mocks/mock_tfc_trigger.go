@@ -20,6 +20,7 @@ import (
 type MockTrigger struct {
 	ctrl     *gomock.Controller
 	recorder *MockTriggerMockRecorder
+	isgomock struct{}
 }
 
 // MockTriggerMockRecorder is the mock recorder for MockTrigger.
@@ -201,6 +202,18 @@ func (m *MockTrigger) SetMergeRequestRootNoteID(id int64) {
 func (mr *MockTriggerMockRecorder) SetMergeRequestRootNoteID(id any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetMergeRequestRootNoteID", reflect.TypeOf((*MockTrigger)(nil).SetMergeRequestRootNoteID), id)
+}
+
+// SetWorkspaceStream mocks base method.
+func (m *MockTrigger) SetWorkspaceStream(arg0 tfc_trigger.WorkspacePublisher) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "SetWorkspaceStream", arg0)
+}
+
+// SetWorkspaceStream indicates an expected call of SetWorkspaceStream.
+func (mr *MockTriggerMockRecorder) SetWorkspaceStream(arg0 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetWorkspaceStream", reflect.TypeOf((*MockTrigger)(nil).SetWorkspaceStream), arg0)
 }
 
 // TriggerCleanupEvent mocks base method.

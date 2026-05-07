@@ -27,6 +27,16 @@ Example of how an error is reported
 A more detailed error message is provided if the error occurred within TF Buddy. If the error occurred during terraform plan or terraform apply it will not contain a detailed message. Instead the run link will take you to the Terraform workspace where you can debug the error.
 
 
+### Workspace Fan-Out
+
+When an MR/PR touches several Terraform workspaces, TFBuddy splits the work onto a dedicated NATS JetStream queue and processes each workspace independently. The MR/PR webhook subscriber only validates the event and publishes one fan-out message per workspace, so it ACKs well within JetStream's `AckWait`. A separate workspace worker drains the queue, with each delivery getting its own `AckWait` window — a slow workspace can no longer hold the parent message past `AckWait` and trigger a redelivery (which previously caused duplicate runs).
+
+Per-workspace state (discussion ID, root note ID) is local to the worker invocation, so concurrent deliveries cannot leak IDs across workspaces.
+
+### TFC API Rate Limiter
+
+The TFC API client wraps its HTTP transport with a token-bucket rate limiter (`TFBUDDY_TFC_RATE_LIMIT_RPS`, default `30`; burst `TFBUDDY_TFC_RATE_LIMIT_BURST`, default `30`) so concurrent workspace workers cooperatively stay under TFC's documented per-token limit. The client deliberately has no top-level `Timeout`: `ConfigurationVersions.Upload` streams the cloned repo and a fixed cap would truncate slow uploads on large repos. Per-call deadlines flow through `context.Context`.
+
 ### Webhook Management
 
 At Zapier we automate the creation of all relevant webhooks by leveraging Terraform to create them. The example below is a resource we use to hook up a Gitlab project and a Terraform Cloud workspace to TF Buddy.

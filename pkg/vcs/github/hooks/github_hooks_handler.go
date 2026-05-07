@@ -36,13 +36,14 @@ type GithubHooksHandler struct {
 	js              nats.JetStreamContext
 	ghEvents        *githubevents.EventHandler
 	triggerCreation TriggerCreationFunc
+	workspaceStream tfc_trigger.WorkspacePublisher
 
 	// streams
 	prStream      *gongs.GenericStream[PullRequestEventMsg, *PullRequestEventMsg]
 	commentStream *gongs.GenericStream[GithubIssueCommentEventMsg, *GithubIssueCommentEventMsg]
 }
 
-func NewGithubHooksHandler(cfg config.Config, vcs vcs.GitClient, tfc tfc_api.ApiClient, rs runstream.StreamClient, js nats.JetStreamContext) *GithubHooksHandler {
+func NewGithubHooksHandler(cfg config.Config, vcs vcs.GitClient, tfc tfc_api.ApiClient, rs runstream.StreamClient, js nats.JetStreamContext, workspaceStream tfc_trigger.WorkspacePublisher) *GithubHooksHandler {
 	prStream := gongs.NewGenericStream[PullRequestEventMsg](js, getGithubJetstreamName(), getGithubJetstreamSubject(PullRequestEventType))
 	commentStream := gongs.NewGenericStream[GithubIssueCommentEventMsg](js, getGithubJetstreamName(), getGithubJetstreamSubject(IssueCommentEvent))
 
@@ -55,6 +56,7 @@ func NewGithubHooksHandler(cfg config.Config, vcs vcs.GitClient, tfc tfc_api.Api
 		commentStream:   commentStream,
 		prStream:        prStream,
 		triggerCreation: tfc_trigger.NewTFCTrigger,
+		workspaceStream: workspaceStream,
 	}
 
 	ghEvents := githubevents.New(cfg.GithubHookSecretKey)

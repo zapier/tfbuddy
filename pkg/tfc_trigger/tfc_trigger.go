@@ -88,6 +88,24 @@ type TFCTrigger struct {
 	gl        vcs.GitClient
 	tfc       tfc_api.ApiClient
 	runstream runstream.StreamClient
+	// workspaceStream, when set, makes TriggerTFCEvents fan out one NATS
+	// message per workspace instead of running them inline. The MR/PR webhook
+	// flow uses this so the JetStream subscriber ACKs well within AckWait
+	// regardless of how many workspaces an MR touches.
+	workspaceStream WorkspacePublisher
+}
+
+// WorkspacePublisher is the minimum surface area a fan-out target needs. The
+// concrete implementation is *WorkspaceStream; tests use a fake.
+type WorkspacePublisher interface {
+	Publish(ctx context.Context, msg *WorkspaceTriggerMsg) error
+}
+
+// SetWorkspaceStream wires a publisher onto an existing trigger. Used by the
+// hooks layer at construction time and by tests; safe to leave nil to keep
+// the legacy synchronous behavior (e.g. for unit tests of the inner loop).
+func (t *TFCTrigger) SetWorkspaceStream(s WorkspacePublisher) {
+	t.workspaceStream = s
 }
 
 type TFCTriggerOptions struct {
@@ -377,6 +395,16 @@ func (t *TFCTrigger) cloneGitRepo(ctx context.Context, mr vcs.MR) (vcs.GitRepo, 
 	}
 	return repo, nil
 }
+
+// TriggerTFCEvents validates an MR/PR (or comment) trigger and dispatches one
+// run per workspace it touches. When a WorkspacePublisher is wired in (the
+// production path), each workspace is enqueued for the workspace worker to
+// process; otherwise we fall back to the inline flow used by tests.
+//
+// Validation failures (allow/deny list, no changes, project missing
+// .tfbuddy.yaml) are returned synchronously so comment-triggered callers can
+// surface them immediately. Per-run failures land in the workspace worker,
+// which posts them to the MR/PR directly.
 func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspaces, error) {
 	ctx, span := otel.Tracer("GitlabHandler").Start(ctx, "TriggerTFCEvents")
 	defer span.End()
@@ -389,64 +417,108 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 	if err != nil {
 		return nil, fmt.Errorf("could not read triggered workspaces. %w", err)
 	}
-	workspaceStatus := &TriggeredTFCWorkspaces{
-		Errored:  make([]*ErroredWorkspace, 0),
-		Executed: make([]string, 0),
-	}
-	if len(triggeredWorkspaces) > 0 {
-
-		repo, err := t.cloneGitRepo(ctx, mr)
-		if err != nil {
-			return nil, err
+	if len(triggeredWorkspaces) == 0 {
+		if t.GetTriggerSource() == CommentTrigger {
+			log.Error().Err(ErrNoChangesDetected)
+			t.postUpdate(ctx, ErrNoChangesDetected.Error())
+			return nil, nil
 		}
-		defer os.Remove(repo.GetLocalDirectory())
-
-		modifiedWSMap, err := t.getModifiedWorkspacesOnTargetBranch(ctx, mr, repo, triggeredWorkspaces)
-		if err != nil {
-			err = t.postUpdate(ctx, ":warning: Could not identify modified workspaces on target branch. Please review the plan carefully for unrelated changes.")
-			if err != nil {
-				log.Error().Err(err).Msg("could not update MR with message")
-			}
-		}
-		for _, cfgWS := range triggeredWorkspaces {
-			// check allow / deny lists
-			if !isWorkspaceAllowed(t.appCfg, cfgWS.Name, cfgWS.Organization) {
-				log.Info().Str("ws", cfgWS.Name).Msg("Ignoring workspace, because of allow/deny list.")
-				workspaceStatus.Errored = append(workspaceStatus.Errored, &ErroredWorkspace{
-					Name:  cfgWS.Name,
-					Error: "Ignoring workspace, because of allow/deny list.",
-				})
-				continue
-			}
-			if _, ok := modifiedWSMap[cfgWS.Name]; ok {
-				log.Info().Str("ws", cfgWS.Name).Str("dir", cfgWS.Dir).Strs("triggerDirs", cfgWS.TriggerDirs).Msg("Blocking workspace: relevant paths modified on target branch.")
-				workspaceStatus.Errored = append(workspaceStatus.Errored, &ErroredWorkspace{
-					Name:  cfgWS.Name,
-					Error: fmt.Sprintf("Blocked: workspace-relevant paths (dir: '%s', triggerDirs: %v) have been modified on the target branch since this branch diverged. Please rebase/merge the target branch to resolve this.", cfgWS.Dir, cfgWS.TriggerDirs),
-				})
-				continue
-			}
-			if err := t.triggerRunForWorkspace(ctx, cfgWS, mr, repo.GetLocalDirectory()); err != nil {
-				log.Error().Err(err).Msg("could not trigger Run for Workspace")
-				workspaceStatus.Errored = append(workspaceStatus.Errored, &ErroredWorkspace{
-					Name:  cfgWS.Name,
-					Error: fmt.Sprintf("could not trigger Run for Workspace. %v", err),
-				})
-				continue
-			}
-			workspaceStatus.Executed = append(workspaceStatus.Executed, cfgWS.Name)
-		}
-
-	} else if t.GetTriggerSource() == CommentTrigger {
-		log.Error().Err(ErrNoChangesDetected)
-		t.postUpdate(ctx, ErrNoChangesDetected.Error())
-		return nil, nil
-
-	} else {
 		log.Debug().Msg("No Terraform changes found in changeset.")
 		return nil, nil
 	}
 
+	if t.workspaceStream != nil {
+		return t.enqueueWorkspaceTriggers(ctx, triggeredWorkspaces)
+	}
+
+	return t.runWorkspacesInline(ctx, mr, triggeredWorkspaces)
+}
+
+// enqueueWorkspaceTriggers fans out one NATS message per workspace. Cheap
+// validation (allow/deny list) runs synchronously so comment users get
+// immediate feedback; the heavier per-workspace work — clone, target-branch
+// check, lock check, discussion creation, TFC run — happens in the workspace
+// worker, where each delivery has its own JetStream AckWait window.
+func (t *TFCTrigger) enqueueWorkspaceTriggers(ctx context.Context, triggeredWorkspaces []*TFCWorkspace) (*TriggeredTFCWorkspaces, error) {
+	ctx, span := otel.Tracer("GitlabHandler").Start(ctx, "enqueueWorkspaceTriggers")
+	defer span.End()
+
+	status := &TriggeredTFCWorkspaces{
+		Errored:  make([]*ErroredWorkspace, 0),
+		Executed: make([]string, 0),
+	}
+	for _, cfgWS := range triggeredWorkspaces {
+		if !isWorkspaceAllowed(t.appCfg, cfgWS.Name, cfgWS.Organization) {
+			log.Info().Str("ws", cfgWS.Name).Msg("Ignoring workspace, because of allow/deny list.")
+			status.Errored = append(status.Errored, &ErroredWorkspace{
+				Name:  cfgWS.Name,
+				Error: "Ignoring workspace, because of allow/deny list.",
+			})
+			continue
+		}
+
+		msg := &WorkspaceTriggerMsg{Opts: *t.cfg, Workspace: *cfgWS}
+		if err := t.workspaceStream.Publish(ctx, msg); err != nil {
+			log.Error().Err(err).Str("ws", cfgWS.Name).Msg("could not enqueue workspace trigger")
+			status.Errored = append(status.Errored, &ErroredWorkspace{
+				Name:  cfgWS.Name,
+				Error: fmt.Sprintf("could not enqueue workspace trigger. %v", err),
+			})
+			continue
+		}
+		status.Executed = append(status.Executed, cfgWS.Name)
+	}
+	log.Debug().Int("triggered", len(status.Executed)).Int("errored", len(status.Errored)).
+		Msg("workspace triggers enqueued")
+	return status, nil
+}
+
+// runWorkspacesInline preserves the original synchronous behavior, used when
+// no workspace stream is configured (e.g. unit tests of the inner loop).
+func (t *TFCTrigger) runWorkspacesInline(ctx context.Context, mr vcs.DetailedMR, triggeredWorkspaces []*TFCWorkspace) (*TriggeredTFCWorkspaces, error) {
+	workspaceStatus := &TriggeredTFCWorkspaces{
+		Errored:  make([]*ErroredWorkspace, 0),
+		Executed: make([]string, 0),
+	}
+	repo, err := t.cloneGitRepo(ctx, mr)
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(repo.GetLocalDirectory())
+
+	modifiedWSMap, err := t.getModifiedWorkspacesOnTargetBranch(ctx, mr, repo, triggeredWorkspaces)
+	if err != nil {
+		if err := t.postUpdate(ctx, ":warning: Could not identify modified workspaces on target branch. Please review the plan carefully for unrelated changes."); err != nil {
+			log.Error().Err(err).Msg("could not update MR with message")
+		}
+	}
+	for _, cfgWS := range triggeredWorkspaces {
+		if !isWorkspaceAllowed(t.appCfg, cfgWS.Name, cfgWS.Organization) {
+			log.Info().Str("ws", cfgWS.Name).Msg("Ignoring workspace, because of allow/deny list.")
+			workspaceStatus.Errored = append(workspaceStatus.Errored, &ErroredWorkspace{
+				Name:  cfgWS.Name,
+				Error: "Ignoring workspace, because of allow/deny list.",
+			})
+			continue
+		}
+		if _, ok := modifiedWSMap[cfgWS.Name]; ok {
+			log.Info().Str("ws", cfgWS.Name).Str("dir", cfgWS.Dir).Strs("triggerDirs", cfgWS.TriggerDirs).Msg("Blocking workspace: relevant paths modified on target branch.")
+			workspaceStatus.Errored = append(workspaceStatus.Errored, &ErroredWorkspace{
+				Name:  cfgWS.Name,
+				Error: fmt.Sprintf("Blocked: workspace-relevant paths (dir: '%s', triggerDirs: %v) have been modified on the target branch since this branch diverged. Please rebase/merge the target branch to resolve this.", cfgWS.Dir, cfgWS.TriggerDirs),
+			})
+			continue
+		}
+		if err := t.triggerRunForWorkspace(ctx, cfgWS, mr, repo.GetLocalDirectory()); err != nil {
+			log.Error().Err(err).Msg("could not trigger Run for Workspace")
+			workspaceStatus.Errored = append(workspaceStatus.Errored, &ErroredWorkspace{
+				Name:  cfgWS.Name,
+				Error: fmt.Sprintf("could not trigger Run for Workspace. %v", err),
+			})
+			continue
+		}
+		workspaceStatus.Executed = append(workspaceStatus.Executed, cfgWS.Name)
+	}
 	return workspaceStatus, nil
 }
 
@@ -649,9 +721,13 @@ func (t *TFCTrigger) triggerRunForWorkspace(ctx context.Context, cfgWS *TFCWorks
 	if err != nil {
 		return fmt.Errorf("could not create MR discussion thread for TFC run status updates. %w", err)
 	}
-	t.SetMergeRequestDiscussionID(disc.GetDiscussionID())
+	// Discussion + root note IDs are local to this invocation rather than
+	// stashed on t.cfg, so concurrent triggers (one goroutine per workspace
+	// in the fan-out worker) cannot race on the shared struct.
+	discussionID := disc.GetDiscussionID()
+	var rootNoteID int64
 	if len(disc.GetMRNotes()) > 0 {
-		t.SetMergeRequestRootNoteID(disc.GetMRNotes()[0].GetNoteID())
+		rootNoteID = disc.GetMRNotes()[0].GetNoteID()
 	} else {
 		log.Debug().Msg("No MR Notes found")
 	}
@@ -679,10 +755,10 @@ func (t *TFCTrigger) triggerRunForWorkspace(ctx context.Context, cfgWS *TFCWorks
 		Bool("speculative", run.ConfigurationVersion.Speculative).
 		Msg("created TFC run")
 
-	return t.publishRunToStream(ctx, run, cfgWS)
+	return t.publishRunToStream(ctx, run, cfgWS, discussionID, rootNoteID)
 }
 
-func (t *TFCTrigger) publishRunToStream(ctx context.Context, run *tfe.Run, cfgWS *TFCWorkspace) error {
+func (t *TFCTrigger) publishRunToStream(ctx context.Context, run *tfe.Run, cfgWS *TFCWorkspace, discussionID string, rootNoteID int64) error {
 	ctx, span := otel.Tracer("TFC").Start(ctx, "publishRunToStream")
 	defer span.End()
 
@@ -695,8 +771,8 @@ func (t *TFCTrigger) publishRunToStream(ctx context.Context, run *tfe.Run, cfgWS
 		CommitSHA:                            t.GetCommitSHA(),
 		MergeRequestProjectNameWithNamespace: t.GetProjectNameWithNamespace(),
 		MergeRequestIID:                      t.GetMergeRequestIID(),
-		DiscussionID:                         t.GetMergeRequestDiscussionID(),
-		RootNoteID:                           t.GetMergeRequestRootNoteID(),
+		DiscussionID:                         discussionID,
+		RootNoteID:                           rootNoteID,
 		VcsProvider:                          t.GetVcsProvider(),
 		AutoMerge:                            cfgWS.AutoMerge,
 	}

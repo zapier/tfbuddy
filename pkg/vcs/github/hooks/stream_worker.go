@@ -86,6 +86,9 @@ func (h *GithubHooksHandler) processIssueComment(ctx context.Context, msg *Githu
 	}
 
 	trigger := h.triggerCreation(h.cfg, h.vcs, h.tfc, h.runstream, cfg)
+	if h.workspaceStream != nil {
+		trigger.SetWorkspaceStream(h.workspaceStream)
+	}
 
 	//// TODO: support additional commands and arguments (e.g. destroy, refresh, lock, unlock)
 	//// TODO: this should be refactored and be agnostic to the VCS type

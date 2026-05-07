@@ -3,14 +3,61 @@ package tfc_api
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 
 	"github.com/hashicorp/go-tfe"
 	"github.com/rs/zerolog/log"
+	"github.com/spf13/viper"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/time/rate"
 )
+
+// Defaults match Terraform Cloud's documented per-token limit (~30 req/s).
+// When several workspaces fan out concurrently we issue 60+ API calls; without
+// a client-side limiter TFC starts returning 429s and runs end up half-created.
+const (
+	tfcRateLimitRPSKey   = "TFC_RATE_LIMIT_RPS"
+	tfcRateLimitBurstKey = "TFC_RATE_LIMIT_BURST"
+	defaultTFCRateRPS    = 30
+	defaultTFCRateBurst  = 30
+)
+
+func init() {
+	viper.SetDefault(tfcRateLimitRPSKey, defaultTFCRateRPS)
+	viper.SetDefault(tfcRateLimitBurstKey, defaultTFCRateBurst)
+}
+
+// rateLimitedTransport wraps an http.RoundTripper with a token-bucket rate
+// limiter so concurrent callers cooperatively stay under TFC's per-token
+// limit. It is safe for concurrent use.
+type rateLimitedTransport struct {
+	rt      http.RoundTripper
+	limiter *rate.Limiter
+}
+
+func (t *rateLimitedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if err := t.limiter.Wait(req.Context()); err != nil {
+		return nil, err
+	}
+	return t.rt.RoundTrip(req)
+}
+
+// newRateLimitedHTTPClient returns an http.Client whose transport blocks on
+// the supplied limiter. The base transport is a clone of http.DefaultTransport
+// so we keep its connection pooling and dial timeouts. Note: the client has no
+// top-level Timeout — ConfigurationVersions.Upload streams the cloned repo
+// (potentially the whole repo when working_directory is set) and a fixed cap
+// would truncate slow uploads; per-call deadlines flow through context.
+func newRateLimitedHTTPClient(limiter *rate.Limiter) *http.Client {
+	base, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return &http.Client{Transport: &rateLimitedTransport{rt: http.DefaultTransport, limiter: limiter}}
+	}
+	return &http.Client{Transport: &rateLimitedTransport{rt: base.Clone(), limiter: limiter}}
+}
 
 //go:generate mockgen -source api_client.go -destination=../mocks/mock_tfc_api.go -package=mocks github.com/zapier/tfbuddy/pkg/tfc_api
 type ApiClient interface {
@@ -36,17 +83,35 @@ func NewTFCClient() ApiClient {
 		log.Fatal().Msg("TFC_TOKEN not set")
 	}
 
+	rps := tfcRateLimitValue(tfcRateLimitRPSKey, defaultTFCRateRPS)
+	burst := tfcRateLimitValue(tfcRateLimitBurstKey, defaultTFCRateBurst)
+	limiter := rate.NewLimiter(rate.Limit(rps), burst)
+	log.Info().Int("rps", rps).Int("burst", burst).Msg("TFC client rate limit configured")
+
 	config := &tfe.Config{
-		Token: token,
+		Token:      token,
+		HTTPClient: newRateLimitedHTTPClient(limiter),
 	}
 
-	var err error
 	tfcClient, err := tfe.NewClient(config)
 	if err != nil {
 		log.Fatal().Err(err)
 	}
 
 	return &TFCClient{Client: tfcClient}
+}
+
+// tfcRateLimitValue reads a positive int from viper, falling back (with a
+// warning) on any zero/negative value. Garbage strings would already have
+// errored out via viper's automatic env binding.
+func tfcRateLimitValue(key string, fallback int) int {
+	n := viper.GetInt(key)
+	if n < 1 {
+		log.Warn().Str("key", key).Int("value", n).Int("default", fallback).
+			Msg("invalid value, falling back to default")
+		return fallback
+	}
+	return n
 }
 
 func (t *TFCClient) GetRun(ctx context.Context, id string) (*tfe.Run, error) {
