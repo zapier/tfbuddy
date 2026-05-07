@@ -42,6 +42,7 @@ func TestAutoMergeNoChangesApply(t *testing.T) {
 	testSuite.MockGitClient.EXPECT().SetCommitStatus(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("could not commit status")).AnyTimes()
 	testSuite.InitTestSuite()
 	r := &RunStatusUpdater{
+		cfg:    config.C,
 		tfc:    testSuite.MockApiClient,
 		client: testSuite.MockGitClient,
 		rs:     testSuite.MockStreamClient,
@@ -66,6 +67,7 @@ func TestAutoMergeTargetedNoChangesApply(t *testing.T) {
 	testSuite.MockGitClient.EXPECT().SetCommitStatus(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("could not commit status")).AnyTimes()
 	testSuite.InitTestSuite()
 	r := &RunStatusUpdater{
+		cfg:    config.C,
 		tfc:    testSuite.MockApiClient,
 		client: testSuite.MockGitClient,
 		rs:     testSuite.MockStreamClient,
@@ -91,6 +93,7 @@ func TestAutoMergeApply(t *testing.T) {
 	testSuite.MockGitClient.EXPECT().SetCommitStatus(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("could not commit status")).AnyTimes()
 	testSuite.InitTestSuite()
 	r := &RunStatusUpdater{
+		cfg:    config.C,
 		tfc:    testSuite.MockApiClient,
 		client: testSuite.MockGitClient,
 		rs:     testSuite.MockStreamClient,
@@ -116,6 +119,7 @@ func TestAutoMergeTargetedApply(t *testing.T) {
 	testSuite.MockGitClient.EXPECT().SetCommitStatus(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("could not commit status")).AnyTimes()
 	testSuite.InitTestSuite()
 	r := &RunStatusUpdater{
+		cfg:    config.C,
 		tfc:    testSuite.MockApiClient,
 		client: testSuite.MockGitClient,
 		rs:     testSuite.MockStreamClient,
@@ -156,6 +160,7 @@ func TestPolicySoftFailPlanFailsPipelineWhenEnvTrue(t *testing.T) {
 		Times(1)
 
 	r := &RunStatusUpdater{
+		cfg:    config.C,
 		tfc:    testSuite.MockApiClient,
 		client: testSuite.MockGitClient,
 		rs:     testSuite.MockStreamClient,

@@ -87,7 +87,7 @@ func newGHTestClient(t *testing.T, serverURL string) *Client {
 	t.Helper()
 	ghClient := gogithub.NewClient(nil)
 	ghClient.BaseURL, _ = ghClient.BaseURL.Parse(serverURL + "/")
-	return &Client{client: ghClient, ctx: context.Background(), token: "test-token"}
+	return &Client{client: ghClient, ctx: context.Background(), token: "test-token", cfg: config.C}
 }
 
 func TestGH_GetOldRunUrls_SingleWorkspace_DeletesOlderPlan(t *testing.T) {

@@ -109,7 +109,7 @@ func newTestClient(t *testing.T, serverURL string) *GitlabClient {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &GitlabClient{client: glClient, token: "test-token", tokenUser: botUsername}
+	return &GitlabClient{client: glClient, token: "test-token", tokenUser: botUsername, cfg: config.C}
 }
 
 func TestGetOldRunUrls_SingleWorkspace_DeletesOlderPlanKeepsNewest(t *testing.T) {
