@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/go-tfe"
 	"github.com/rs/zerolog/log"
 	"github.com/rzajac/zltest"
+	"github.com/zapier/tfbuddy/internal/config"
 	"github.com/zapier/tfbuddy/pkg/mocks"
 	"github.com/zapier/tfbuddy/pkg/runstream"
 	"github.com/zapier/tfbuddy/pkg/tfc_api"
@@ -733,7 +734,9 @@ func TestAutoMerge_True_Apply_Before_Merge(t *testing.T) {
 func TestAutoMerge_Globally_Disabled(t *testing.T) {
 	originalVal := os.Getenv(vcs.TF_BUDDY_AUTO_MERGE)
 	os.Setenv(vcs.TF_BUDDY_AUTO_MERGE, "false")
+	config.Reload()
 	defer func() { os.Setenv(vcs.TF_BUDDY_AUTO_MERGE, originalVal) }()
+	defer config.Reload()
 
 	ws := &tfc_trigger.ProjectConfig{
 		Workspaces: []*tfc_trigger.TFCWorkspace{{

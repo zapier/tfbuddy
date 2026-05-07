@@ -26,7 +26,7 @@ const (
 
 func SetupLogOutput(level zerolog.Level) {
 	// Setup Human friendly Console Output for dev mode
-	if config.DevModeEnabled() {
+	if config.C.DevMode {
 		output := zerolog.ConsoleWriter{Out: os.Stdout}
 		output.FormatLevel = formatLevel(false)
 		output.FormatMessage = func(i interface{}) string {

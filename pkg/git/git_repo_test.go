@@ -120,6 +120,7 @@ func TestGitCloneDepth(t *testing.T) {
 			config.Init()
 		})
 		viper.Set(config.KeyGithubCloneDepth, 7)
+		config.Reload()
 
 		assert.Equal(t, 7, GetCloneDepth("TFBUDDY_GITHUB_CLONE_DEPTH"))
 	})

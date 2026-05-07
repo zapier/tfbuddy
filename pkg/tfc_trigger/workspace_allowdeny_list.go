@@ -14,9 +14,9 @@ func getWorkspaceAllowDenyList() ([]string, []string) {
 	// if a workspace in the allow list does not include a org component, prepend this value (if defined).
 	workspaceAllowList := make([]string, 0)
 	workspaceDenyList := make([]string, 0)
-	defaultOrg := config.DefaultTFCOrganization()
+	defaultOrg := config.C.DefaultTFCOrganization
 
-	for _, w := range config.WorkspaceAllowList() {
+	for _, w := range config.C.WorkspaceAllowList {
 		ws := strings.ToLower(strings.TrimSpace(w))
 		if !strings.Contains(ws, "/") {
 			ws = defaultOrg + "/" + ws
@@ -25,7 +25,7 @@ func getWorkspaceAllowDenyList() ([]string, []string) {
 		workspaceAllowList = append(workspaceAllowList, ws)
 	}
 
-	for _, w := range config.WorkspaceDenyList() {
+	for _, w := range config.C.WorkspaceDenyList {
 		ws := strings.ToLower(strings.TrimSpace(w))
 		if !strings.Contains(ws, "/") {
 			ws = defaultOrg + "/" + ws

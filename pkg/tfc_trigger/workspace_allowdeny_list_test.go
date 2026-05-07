@@ -18,6 +18,7 @@ func TestGetWorkspaceAllowDenyListReadsViper(t *testing.T) {
 	viper.Set(config.KeyDefaultTFCOrganization, "zapier")
 	viper.Set(config.KeyWorkspaceAllowList, "svc-a, org-b/svc-b")
 	viper.Set(config.KeyWorkspaceDenyList, "svc-c")
+	config.Reload()
 
 	allow, deny := getWorkspaceAllowDenyList()
 

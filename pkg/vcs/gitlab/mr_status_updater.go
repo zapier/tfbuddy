@@ -90,7 +90,7 @@ func (p *RunStatusUpdater) updateCommitStatusForRun(ctx context.Context, run *tf
 		// A sentinel policy has soft failed for a plan-only run. This is a final state.
 		// During the apply, the policy failure will need to be overriden.
 		log.Debug().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Msg("policy soft failed")
-		if config.FailCIOnSentinelSoftFail() && rmd.GetAction() == runstream.PlanAction {
+		if config.C.FailCIOnSentinelSoftFail && rmd.GetAction() == runstream.PlanAction {
 			p.updateStatus(ctx, gogitlab.Failed, "plan", rmd)
 		} else {
 			p.updateStatus(ctx, gogitlab.Success, rmd.GetAction(), rmd)

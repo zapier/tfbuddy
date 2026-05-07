@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/hashicorp/go-tfe"
+	"github.com/zapier/tfbuddy/internal/config"
 	"github.com/zapier/tfbuddy/pkg/mocks"
 	"github.com/zapier/tfbuddy/pkg/runstream"
 	"github.com/zapier/tfbuddy/pkg/vcs"
@@ -131,6 +132,7 @@ func TestAutoMergeTargetedApply(t *testing.T) {
 
 func TestPolicySoftFailPlanFailsPipelineWhenEnvTrue(t *testing.T) {
 	t.Setenv("TFBUDDY_FAIL_CI_ON_SENTINEL_SOFT_FAIL", "true")
+	config.Reload()
 
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
@@ -170,4 +172,5 @@ func TestPolicySoftFailPlanFailsPipelineWhenEnvTrue(t *testing.T) {
 
 	// Clean up env var for safety (though t.Setenv handles this)
 	os.Unsetenv("TFBUDDY_FAIL_CI_ON_SENTINEL_SOFT_FAIL")
+	config.Reload()
 }

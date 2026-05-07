@@ -31,7 +31,7 @@ var rootCmd = &cobra.Command{
 }
 
 func resolveLogLevel() zerolog.Level {
-	lvl, err := zerolog.ParseLevel(config.LogLevel())
+	lvl, err := zerolog.ParseLevel(config.C.LogLevel)
 	if err != nil {
 		log.Println("could not parse log level, defaulting to 'info'")
 		lvl = zerolog.InfoLevel
@@ -56,9 +56,9 @@ func init() {
 
 func initTelemetry(ctx context.Context) (*telemetry.OperatorTelemetry, error) {
 	return telemetry.Init(ctx, "tfbuddy", telemetry.Options{
-		Enabled:   config.OTELEnabled(),
-		Host:      config.OTELCollectorHost(),
-		Port:      config.OTELCollectorPort(),
+		Enabled:   config.C.OTELEnabled,
+		Host:      config.C.OTELCollectorHost,
+		Port:      config.C.OTELCollectorPort,
 		Version:   pkg.GitTag,
 		CommitSHA: pkg.GitCommit,
 	})
@@ -84,4 +84,5 @@ func initConfig() {
 	if err := viper.ReadInConfig(); err == nil {
 		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
 	}
+	config.Reload()
 }

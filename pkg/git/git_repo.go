@@ -130,9 +130,9 @@ func WalkRepo(s string, d fs.DirEntry, err error) error {
 func GetCloneDepth(envVar string) int {
 	switch envVar {
 	case "TFBUDDY_GITHUB_CLONE_DEPTH":
-		return appconfig.GithubCloneDepth()
+		return appconfig.C.GithubCloneDepth
 	case "TFBUDDY_GITLAB_CLONE_DEPTH":
-		return appconfig.GitlabCloneDepth()
+		return appconfig.C.GitlabCloneDepth
 	}
 
 	val := os.Getenv(envVar)

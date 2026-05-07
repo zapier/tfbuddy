@@ -54,7 +54,7 @@ func NewGithubHooksHandler(vcs vcs.GitClient, tfc tfc_api.ApiClient, rs runstrea
 		triggerCreation: tfc_trigger.NewTFCTrigger,
 	}
 
-	ghEvents := githubevents.New(config.GithubHookSecretKey())
+	ghEvents := githubevents.New(config.C.GithubHookSecretKey)
 
 	// add Github event callbacks
 	ghEvents.OnIssueCommentCreated(h.handleIssueCommentCreatedEvent)
