@@ -7,13 +7,10 @@ import (
 	"github.com/zapier/tfbuddy/internal/config"
 )
 
-const legacyAllowListEnv = "TFBUDDY_PROJECT_ALLOW_LIST"
-const GitlabProjectAllowListEnv = "TFBUDDY_GITLAB_PROJECT_ALLOW_LIST"
-
 func IsGitlabProjectAllowed(cfg config.Config, projectWithNamespace string) bool {
-	allowList := getAllowList(cfg, GitlabProjectAllowListEnv)
+	allowList := getAllowList(cfg.GitlabProjectAllowList)
 	if len(allowList) == 0 {
-		allowList = getAllowList(cfg, legacyAllowListEnv)
+		allowList = getAllowList(cfg.LegacyProjectAllowList)
 	}
 
 	if len(allowList) == 0 {

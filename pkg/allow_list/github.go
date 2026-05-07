@@ -7,10 +7,8 @@ import (
 	"github.com/zapier/tfbuddy/internal/config"
 )
 
-const githubRepoAllowListEnv = "TFBUDDY_GITHUB_REPO_ALLOW_LIST"
-
 func IsGithubRepoAllowed(cfg config.Config, fullName string) bool {
-	githubAllowList := getAllowList(cfg, githubRepoAllowListEnv)
+	githubAllowList := getAllowList(cfg.GithubRepoAllowList)
 	if len(githubAllowList) == 0 {
 		log.Warn().Str("repo", fullName).Msg("denying action for repo because allow list is not set.")
 		return false

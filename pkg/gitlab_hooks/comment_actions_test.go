@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/zapier/tfbuddy/internal/config"
-	"github.com/zapier/tfbuddy/pkg/allow_list"
 	"github.com/zapier/tfbuddy/pkg/comment_actions"
 
 	"github.com/stretchr/testify/assert"
@@ -114,10 +113,12 @@ func Test_parseCommentCommand(t *testing.T) {
 }
 
 func TestProcessNoteEventPlanError(t *testing.T) {
-	os.Setenv(allow_list.GitlabProjectAllowListEnv, "zapier/")
+	os.Setenv("TFBUDDY_GITLAB_PROJECT_ALLOW_LIST", "zapier/")
 	config.Reload()
-	defer os.Unsetenv(allow_list.GitlabProjectAllowListEnv)
-	defer config.Reload()
+	defer func() {
+		os.Unsetenv("TFBUDDY_GITLAB_PROJECT_ALLOW_LIST")
+		config.Reload()
+	}()
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 
@@ -172,10 +173,12 @@ func TestProcessNoteEventPlanError(t *testing.T) {
 }
 
 func TestProcessNoteEventPanicHandling(t *testing.T) {
-	os.Setenv(allow_list.GitlabProjectAllowListEnv, "zapier/")
+	os.Setenv("TFBUDDY_GITLAB_PROJECT_ALLOW_LIST", "zapier/")
 	config.Reload()
-	defer os.Unsetenv(allow_list.GitlabProjectAllowListEnv)
-	defer config.Reload()
+	defer func() {
+		os.Unsetenv("TFBUDDY_GITLAB_PROJECT_ALLOW_LIST")
+		config.Reload()
+	}()
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
@@ -204,10 +207,12 @@ func TestProcessNoteEventPanicHandling(t *testing.T) {
 	}
 }
 func TestProcessNoteEventPlan(t *testing.T) {
-	os.Setenv(allow_list.GitlabProjectAllowListEnv, "zapier/")
+	os.Setenv("TFBUDDY_GITLAB_PROJECT_ALLOW_LIST", "zapier/")
 	config.Reload()
-	defer os.Unsetenv(allow_list.GitlabProjectAllowListEnv)
-	defer config.Reload()
+	defer func() {
+		os.Unsetenv("TFBUDDY_GITLAB_PROJECT_ALLOW_LIST")
+		config.Reload()
+	}()
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	mockGitClient := mocks.NewMockGitClient(mockCtrl)
@@ -261,10 +266,12 @@ func TestProcessNoteEventPlan(t *testing.T) {
 }
 
 func TestProcessNoteEventPlanFailedWorkspace(t *testing.T) {
-	os.Setenv(allow_list.GitlabProjectAllowListEnv, "zapier/")
+	os.Setenv("TFBUDDY_GITLAB_PROJECT_ALLOW_LIST", "zapier/")
 	config.Reload()
-	defer os.Unsetenv(allow_list.GitlabProjectAllowListEnv)
-	defer config.Reload()
+	defer func() {
+		os.Unsetenv("TFBUDDY_GITLAB_PROJECT_ALLOW_LIST")
+		config.Reload()
+	}()
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
@@ -320,10 +327,12 @@ func TestProcessNoteEventPlanFailedWorkspace(t *testing.T) {
 }
 
 func TestProcessNoteEventPlanFailedMultipleWorkspaces(t *testing.T) {
-	os.Setenv(allow_list.GitlabProjectAllowListEnv, "zapier/")
+	os.Setenv("TFBUDDY_GITLAB_PROJECT_ALLOW_LIST", "zapier/")
 	config.Reload()
-	defer os.Unsetenv(allow_list.GitlabProjectAllowListEnv)
-	defer config.Reload()
+	defer func() {
+		os.Unsetenv("TFBUDDY_GITLAB_PROJECT_ALLOW_LIST")
+		config.Reload()
+	}()
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
@@ -381,10 +390,12 @@ func TestProcessNoteEventPlanFailedMultipleWorkspaces(t *testing.T) {
 }
 
 func TestProcessNoteEventNoErrorNoRuns(t *testing.T) {
-	os.Setenv(allow_list.GitlabProjectAllowListEnv, "zapier/")
+	os.Setenv("TFBUDDY_GITLAB_PROJECT_ALLOW_LIST", "zapier/")
 	config.Reload()
-	defer os.Unsetenv(allow_list.GitlabProjectAllowListEnv)
-	defer config.Reload()
+	defer func() {
+		os.Unsetenv("TFBUDDY_GITLAB_PROJECT_ALLOW_LIST")
+		config.Reload()
+	}()
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	mockGitClient := mocks.NewMockGitClient(mockCtrl)

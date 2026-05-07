@@ -505,11 +505,11 @@ func Test_loadProjectConfig(t *testing.T) {
 			name: "no-organization-w-default",
 			args: args{b: []byte(tfbuddyYamlNoOrg)},
 			preTestFn: func() {
-				os.Setenv(DefaultTfcOrganizationEnvName, "foo-corp")
+				os.Setenv("TFBUDDY_DEFAULT_TFC_ORGANIZATION", "foo-corp")
 				config.Reload()
 			},
 			postTestFn: func() {
-				os.Unsetenv(DefaultTfcOrganizationEnvName)
+				os.Unsetenv("TFBUDDY_DEFAULT_TFC_ORGANIZATION")
 				config.Reload()
 			},
 			want: &ProjectConfig{Workspaces: []*TFCWorkspace{
