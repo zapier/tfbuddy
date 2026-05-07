@@ -4,15 +4,16 @@ import (
 	"strings"
 
 	"github.com/rs/zerolog/log"
+	"github.com/zapier/tfbuddy/internal/config"
 )
 
 const legacyAllowListEnv = "TFBUDDY_PROJECT_ALLOW_LIST"
 const GitlabProjectAllowListEnv = "TFBUDDY_GITLAB_PROJECT_ALLOW_LIST"
 
-func IsGitlabProjectAllowed(projectWithNamespace string) bool {
-	allowList := getAllowList(GitlabProjectAllowListEnv)
+func IsGitlabProjectAllowed(cfg config.Config, projectWithNamespace string) bool {
+	allowList := getAllowList(cfg, GitlabProjectAllowListEnv)
 	if len(allowList) == 0 {
-		allowList = getAllowList(legacyAllowListEnv)
+		allowList = getAllowList(cfg, legacyAllowListEnv)
 	}
 
 	if len(allowList) == 0 {

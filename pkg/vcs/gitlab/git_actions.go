@@ -45,7 +45,7 @@ func (c *GitlabClient) CloneMergeRequest(ctx context.Context, project string, mr
 	if log.Trace().Enabled() {
 		progress = os.Stdout
 	}
-	cloneDepth := zgit.GetCloneDepth(GITLAB_CLONE_DEPTH_ENV)
+	cloneDepth := zgit.GetCloneDepth(c.cfg, GITLAB_CLONE_DEPTH_ENV)
 
 	repo, err := git.PlainClone(dest, false, &git.CloneOptions{
 		Auth:          auth,

@@ -102,7 +102,7 @@ func Init() {
 	Reload()
 }
 
-func Reload() {
+func Load() (Config, error) {
 	cfg := Config{}
 	err := viper.Unmarshal(&cfg, func(dc *mapstructure.DecoderConfig) {
 		dc.DecodeHook = mapstructure.ComposeDecodeHookFunc(
@@ -112,6 +112,11 @@ func Reload() {
 			mapstructure.StringToSliceHookFunc(","),
 		)
 	})
+	return cfg, err
+}
+
+func Reload() {
+	cfg, err := Load()
 	if err != nil {
 		panic(err)
 	}

@@ -21,7 +21,7 @@ func (w *GitlabEventWorker) processNoteEvent(ctx context.Context, event vcs.MRCo
 	defer span.End()
 
 	proj := event.GetProject().GetPathWithNamespace()
-	if !allow_list.IsGitlabProjectAllowed(proj) {
+	if !allow_list.IsGitlabProjectAllowed(w.cfg, proj) {
 		return proj, nil
 	}
 
@@ -51,7 +51,7 @@ func (w *GitlabEventWorker) processNoteEvent(ctx context.Context, event vcs.MRCo
 		return proj, err
 	}
 
-	trigger := w.triggerCreation(w.gl, w.tfc, w.runstream, cfg)
+	trigger := w.triggerCreation(w.cfg, w.gl, w.tfc, w.runstream, cfg)
 
 	if event.GetAttributes().GetType() == string(gitlab.DiscussionNote) {
 		trigger.SetMergeRequestDiscussionID(event.GetAttributes().GetDiscussionID())

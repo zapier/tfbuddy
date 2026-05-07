@@ -133,7 +133,7 @@ func TestTFCEvents_SingleWorkspacePlan(t *testing.T) {
 		MergeRequestIID:          testSuite.MetaData.MRIID,
 		TriggerSource:            tfc_trigger.CommentTrigger,
 	})
-	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	trigger := tfc_trigger.NewTFCTrigger(config.C, testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
 	triggeredWS, err := trigger.TriggerTFCEvents(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -179,7 +179,7 @@ func TestTFCEvents_SingleWorkspacePlanError(t *testing.T) {
 		MergeRequestIID:          testSuite.MetaData.MRIID,
 		TriggerSource:            tfc_trigger.CommentTrigger,
 	})
-	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	trigger := tfc_trigger.NewTFCTrigger(config.C, testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
 	triggeredWS, err := trigger.TriggerTFCEvents(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -236,7 +236,7 @@ func TestTFCEvents_SingleWorkspaceApply(t *testing.T) {
 		MergeRequestIID:          testSuite.MetaData.MRIID,
 		TriggerSource:            tfc_trigger.CommentTrigger,
 	})
-	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	trigger := tfc_trigger.NewTFCTrigger(config.C, testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
 	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
 	triggeredWS, err := trigger.TriggerTFCEvents(ctx)
 	if err != nil {
@@ -310,7 +310,7 @@ func TestTFCEvents_MultiWorkspaceApply(t *testing.T) {
 		MergeRequestIID:          testSuite.MetaData.MRIID,
 		TriggerSource:            tfc_trigger.CommentTrigger,
 	})
-	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	trigger := tfc_trigger.NewTFCTrigger(config.C, testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
 	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
 	triggeredWS, err := trigger.TriggerTFCEvents(ctx)
 	if err != nil {
@@ -371,7 +371,7 @@ func TestTFCEvents_SingleWorkspaceApplyError(t *testing.T) {
 		MergeRequestIID:          testSuite.MetaData.MRIID,
 		TriggerSource:            tfc_trigger.CommentTrigger,
 	})
-	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	trigger := tfc_trigger.NewTFCTrigger(config.C, testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
 	triggeredWS, err := trigger.TriggerTFCEvents(context.Background())
 	if err == nil {
 		t.Fatal("expected error to be returned")
@@ -440,7 +440,7 @@ func TestTFCEvents_MultiWorkspaceApplyError(t *testing.T) {
 		MergeRequestIID:          testSuite.MetaData.MRIID,
 		TriggerSource:            tfc_trigger.CommentTrigger,
 	})
-	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	trigger := tfc_trigger.NewTFCTrigger(config.C, testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
 	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
 	triggeredWS, err := trigger.TriggerTFCEvents(ctx)
 	if err != nil {
@@ -490,7 +490,7 @@ func TestTFCEvents_WorkspaceApplyModifiedBothSrcDstBranches(t *testing.T) {
 		MergeRequestIID:          testSuite.MetaData.MRIID,
 		TriggerSource:            tfc_trigger.CommentTrigger,
 	})
-	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, mockStreamClient, tCfg)
+	trigger := tfc_trigger.NewTFCTrigger(config.C, testSuite.MockGitClient, testSuite.MockApiClient, mockStreamClient, tCfg)
 	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
 	triggeredWS, err := trigger.TriggerTFCEvents(ctx)
 	if err != nil {
@@ -559,7 +559,7 @@ func TestTFCEvents_MultiWorkspaceApplyModifiedBothSrcDstBranches(t *testing.T) {
 		Workspace:                "",
 		CommitSHA:                "abcd12233",
 	})
-	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	trigger := tfc_trigger.NewTFCTrigger(config.C, testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
 	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
 	triggeredWS, err := trigger.TriggerTFCEvents(ctx)
 	if err != nil {
@@ -633,7 +633,7 @@ func TestAutoMerge_False_Merge_Before_Apply(t *testing.T) {
 		MergeRequestIID:          testSuite.MetaData.MRIID,
 		TriggerSource:            tfc_trigger.CommentTrigger,
 	})
-	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	trigger := tfc_trigger.NewTFCTrigger(config.C, testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
 	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
 	triggeredWS, err := trigger.TriggerTFCEvents(ctx)
 	if err != nil {
@@ -706,7 +706,7 @@ func TestAutoMerge_True_Apply_Before_Merge(t *testing.T) {
 		MergeRequestIID:          testSuite.MetaData.MRIID,
 		TriggerSource:            tfc_trigger.CommentTrigger,
 	})
-	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	trigger := tfc_trigger.NewTFCTrigger(config.C, testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
 	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
 	triggeredWS, err := trigger.TriggerTFCEvents(ctx)
 	if err != nil {
@@ -785,7 +785,7 @@ func TestAutoMerge_Globally_Disabled(t *testing.T) {
 		MergeRequestIID:          testSuite.MetaData.MRIID,
 		TriggerSource:            tfc_trigger.CommentTrigger,
 	})
-	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	trigger := tfc_trigger.NewTFCTrigger(config.C, testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
 	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
 	triggeredWS, err := trigger.TriggerTFCEvents(ctx)
 	if err != nil {
@@ -861,7 +861,7 @@ func TestTFCEvents_ApplyNotBlockedByDifferentServiceChanges(t *testing.T) {
 		MergeRequestIID:          testSuite.MetaData.MRIID,
 		TriggerSource:            tfc_trigger.CommentTrigger,
 	})
-	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	trigger := tfc_trigger.NewTFCTrigger(config.C, testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
 	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
 	triggeredWS, err := trigger.TriggerTFCEvents(ctx)
 	if err != nil {
@@ -927,7 +927,7 @@ func TestTFCEvents_StaleLock_MergedMR_AutoCleans(t *testing.T) {
 		MergeRequestIID:          testSuite.MetaData.MRIID,
 		TriggerSource:            tfc_trigger.CommentTrigger,
 	})
-	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	trigger := tfc_trigger.NewTFCTrigger(config.C, testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
 	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
 	triggeredWS, err := trigger.TriggerTFCEvents(ctx)
 	if err != nil {
@@ -978,7 +978,7 @@ func TestTFCEvents_StaleLock_OpenMR_Rejects(t *testing.T) {
 		MergeRequestIID:          testSuite.MetaData.MRIID,
 		TriggerSource:            tfc_trigger.CommentTrigger,
 	})
-	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	trigger := tfc_trigger.NewTFCTrigger(config.C, testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
 	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
 	triggeredWS, err := trigger.TriggerTFCEvents(ctx)
 	if err != nil {
@@ -1030,7 +1030,7 @@ func TestTFCEvents_StaleLock_RemovalFailure_Errors(t *testing.T) {
 		MergeRequestIID:          testSuite.MetaData.MRIID,
 		TriggerSource:            tfc_trigger.CommentTrigger,
 	})
-	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	trigger := tfc_trigger.NewTFCTrigger(config.C, testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
 	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
 	triggeredWS, err := trigger.TriggerTFCEvents(ctx)
 	if err != nil {
@@ -1092,7 +1092,7 @@ func TestTFCEvents_UnlockRemovesTags(t *testing.T) {
 		TriggerSource:            tfc_trigger.CommentTrigger,
 		Workspace:                "service-tfbuddy",
 	})
-	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	trigger := tfc_trigger.NewTFCTrigger(config.C, testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
 	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
 	triggeredWS, err := trigger.TriggerTFCEvents(ctx)
 	if err != nil {
@@ -1155,7 +1155,7 @@ func TestTriggerCleanupEvent_ContinuesOnMissingWorkspace(t *testing.T) {
 		MergeRequestIID:          testSuite.MetaData.MRIID,
 		TriggerSource:            tfc_trigger.MergeRequestEventTrigger,
 	})
-	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	trigger := tfc_trigger.NewTFCTrigger(config.C, testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
 	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
 	if err := trigger.TriggerCleanupEvent(ctx); err != nil {
 		t.Fatalf("cleanup should not fail when a workspace is missing, got: %v", err)
@@ -1204,7 +1204,7 @@ func TestTFCEvents_UnlockAlreadyUnlocked_StillRemovesTags(t *testing.T) {
 		TriggerSource:            tfc_trigger.CommentTrigger,
 		Workspace:                "service-tfbuddy",
 	})
-	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	trigger := tfc_trigger.NewTFCTrigger(config.C, testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
 	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
 	triggeredWS, err := trigger.TriggerTFCEvents(ctx)
 	if err != nil {

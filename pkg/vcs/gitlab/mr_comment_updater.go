@@ -17,7 +17,7 @@ func (p *RunStatusUpdater) postRunStatusComment(ctx context.Context, run *tfe.Ru
 	ctx, span := otel.Tracer("TFC").Start(ctx, "postRunStatusComment")
 	defer span.End()
 
-	commentBody, topLevelNoteBody, resolveDiscussion := comment_formatter.FormatRunStatusCommentBody(p.tfc, run, rmd)
+	commentBody, topLevelNoteBody, resolveDiscussion := comment_formatter.FormatRunStatusCommentBody(p.cfg, p.tfc, run, rmd)
 
 	var oldUrls string
 	var err error

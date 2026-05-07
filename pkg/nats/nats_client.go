@@ -6,8 +6,8 @@ import (
 	"github.com/zapier/tfbuddy/internal/config"
 )
 
-func Connect() *nats.Conn {
-	natsURL := config.C.NATSServiceURL
+func Connect(cfg config.Config) *nats.Conn {
+	natsURL := cfg.NATSServiceURL
 	if natsURL == "" {
 		// try default
 		natsURL = nats.DefaultURL

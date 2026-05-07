@@ -101,15 +101,15 @@ func TestGitCloneDepth(t *testing.T) {
 	defer os.Unsetenv(testVar)
 	t.Run("no value", func(t *testing.T) {
 		os.Unsetenv(testVar)
-		assert.Equal(t, 0, GetCloneDepth(testVar))
+		assert.Equal(t, 0, GetCloneDepth(config.Config{}, testVar))
 	})
 	t.Run("500 depth", func(t *testing.T) {
 		os.Setenv(testVar, "500")
-		assert.Equal(t, 500, GetCloneDepth(testVar))
+		assert.Equal(t, 500, GetCloneDepth(config.Config{}, testVar))
 	})
 	t.Run("invalid value", func(t *testing.T) {
 		os.Setenv(testVar, "somestuff")
-		assert.Equal(t, 0, GetCloneDepth(testVar))
+		assert.Equal(t, 0, GetCloneDepth(config.Config{}, testVar))
 	})
 
 	t.Run("reads viper for owned config", func(t *testing.T) {
@@ -122,6 +122,6 @@ func TestGitCloneDepth(t *testing.T) {
 		viper.Set(config.KeyGithubCloneDepth, 7)
 		config.Reload()
 
-		assert.Equal(t, 7, GetCloneDepth("TFBUDDY_GITHUB_CLONE_DEPTH"))
+		assert.Equal(t, 7, GetCloneDepth(config.C, "TFBUDDY_GITHUB_CLONE_DEPTH"))
 	})
 }

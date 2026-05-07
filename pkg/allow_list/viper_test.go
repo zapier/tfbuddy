@@ -17,7 +17,7 @@ func TestIsGithubRepoAllowedReadsViper(t *testing.T) {
 	viper.Set(config.KeyGithubRepoAllowList, "org")
 	config.Reload()
 
-	if !IsGithubRepoAllowed("org/repo") {
+	if !IsGithubRepoAllowed(config.C, "org/repo") {
 		t.Fatal("IsGithubRepoAllowed() = false, want true")
 	}
 }
@@ -32,7 +32,7 @@ func TestIsGitlabProjectAllowedReadsViper(t *testing.T) {
 	viper.Set(config.KeyGitlabProjectAllowList, "group")
 	config.Reload()
 
-	if !IsGitlabProjectAllowed("group/project") {
+	if !IsGitlabProjectAllowed(config.C, "group/project") {
 		t.Fatal("IsGitlabProjectAllowed() = false, want true")
 	}
 }

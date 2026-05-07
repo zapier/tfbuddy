@@ -112,7 +112,7 @@ func TestIsGitlabProjectAllowed(t *testing.T) {
 			t.Setenv(GitlabProjectAllowListEnv, tt.args.allowEnv)
 			config.Reload()
 
-			if got := IsGitlabProjectAllowed(tt.args.projectWithNamespace); got != tt.want {
+			if got := IsGitlabProjectAllowed(config.C, tt.args.projectWithNamespace); got != tt.want {
 				t.Errorf("IsGitlabProjectAllowed() with primary env = %v, want %v", got, tt.want)
 			}
 		})
@@ -122,7 +122,7 @@ func TestIsGitlabProjectAllowed(t *testing.T) {
 			t.Setenv(legacyAllowListEnv, tt.args.allowEnv)
 			config.Reload()
 
-			if got := IsGitlabProjectAllowed(tt.args.projectWithNamespace); got != tt.want {
+			if got := IsGitlabProjectAllowed(config.C, tt.args.projectWithNamespace); got != tt.want {
 				t.Errorf("IsGitlabProjectAllowed() with legacy env = %v, want %v", got, tt.want)
 			}
 		})

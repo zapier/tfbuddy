@@ -28,12 +28,14 @@ import (
 const GitlabTokenHeader = "X-Gitlab-Token"
 const GitlabHookIgnoreReasonUnhandledEventType = "unhandled-event-type"
 
-type TriggerCreationFunc func(gl vcs.GitClient,
+type TriggerCreationFunc func(appCfg config.Config,
+	gl vcs.GitClient,
 	tfc tfc_api.ApiClient,
 	runstream runstream.StreamClient,
-	cfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger
+	triggerCfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger
 
 type GitlabHooksHandler struct {
+	cfg             config.Config
 	tfc             tfc_api.ApiClient
 	gl              vcs.GitClient
 	runstream       runstream.StreamClient
@@ -46,18 +48,19 @@ type GitlabHooksHandler struct {
 	hooksWorker   *GitlabEventWorker
 }
 
-func NewGitlabHooksHandler(gl vcs.GitClient, tfc tfc_api.ApiClient, rs runstream.StreamClient, js nats.JetStreamContext) *GitlabHooksHandler {
+func NewGitlabHooksHandler(cfg config.Config, gl vcs.GitClient, tfc tfc_api.ApiClient, rs runstream.StreamClient, js nats.JetStreamContext) *GitlabHooksHandler {
 	notesStream := gongs.NewGenericStream[NoteEventMsg](js, noteEventsStreamSubject(), hooks_stream.HooksStreamName)
 	mrStream := gongs.NewGenericStream[MergeRequestEventMsg](js, mrEventsStreamSubject(), hooks_stream.HooksStreamName)
 
 	h := &GitlabHooksHandler{
+		cfg:             cfg,
 		tfc:             tfc,
 		gl:              gl,
 		runstream:       rs,
 		triggerCreation: tfc_trigger.NewTFCTrigger,
 		mrStream:        mrStream,
 		notesStream:     notesStream,
-		hookSecretKey:   config.C.GitlabHookSecretKey,
+		hookSecretKey:   cfg.GitlabHookSecretKey,
 	}
 
 	h.hooksWorker = NewGitlabEventWorker(h, js)

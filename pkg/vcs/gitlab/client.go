@@ -24,6 +24,7 @@ type GitlabClient struct {
 	client    *gogitlab.Client
 	token     string
 	tokenUser string
+	cfg       config.Config
 }
 
 const DefaultMaxRetries = 3
@@ -34,7 +35,7 @@ func createBackOffWithRetries() backoff.BackOff {
 	return backoff.WithMaxRetries(exp, DefaultMaxRetries)
 
 }
-func NewGitlabClient() *GitlabClient {
+func NewGitlabClient(cfg config.Config) *GitlabClient {
 	token := os.Getenv("GITLAB_TOKEN")
 	if token == "" {
 		token = os.Getenv("GITLAB_ACCESS_TOKEN")
@@ -57,7 +58,7 @@ func NewGitlabClient() *GitlabClient {
 		log.Fatal().Msgf("Failed to create client: %v", err)
 	}
 
-	return &GitlabClient{glClient, token, tokenUser}
+	return &GitlabClient{client: glClient, token: token, tokenUser: tokenUser, cfg: cfg}
 }
 func (c *GitlabClient) ResolveMergeRequestDiscussion(ctx context.Context, projectWithNamespace string, mrIID int, discussionID string) error {
 	_, span := otel.Tracer("TFC").Start(ctx, "ResolveMergeRequestDiscussion")
@@ -220,7 +221,7 @@ func (c *GitlabClient) GetOldRunUrls(ctx context.Context, mrIID int, project str
 		toDelete = append(toDelete, discussionToDelete{noteIDs: noteIDs})
 	}
 
-	if config.C.DeleteOldComments {
+	if c.cfg.DeleteOldComments {
 		for _, d := range toDelete {
 			for _, noteID := range d.noteIDs {
 				log.Debug().Str("projectID", project).Int("mrIID", mrIID).Str("workspace", workspace).Str("action", action).Msgf("deleting note %d", noteID)
