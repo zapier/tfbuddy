@@ -1154,7 +1154,7 @@ func TestTriggerCleanupEvent_ScopesCleanupToTriggeredWorkspaces(t *testing.T) {
 		MergeRequestIID:          testSuite.MetaData.MRIID,
 		TriggerSource:            tfc_trigger.MergeRequestEventTrigger,
 	})
-	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	trigger := tfc_trigger.NewTFCTrigger(config.C, testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
 	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
 	if err := trigger.TriggerCleanupEvent(ctx); err != nil {
 		t.Fatalf("cleanup should not fail when unrelated workspaces exist, got: %v", err)
