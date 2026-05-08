@@ -28,6 +28,19 @@ import (
 const GitlabTokenHeader = "X-Gitlab-Token"
 const GitlabHookIgnoreReasonUnhandledEventType = "unhandled-event-type"
 
+// gitlabDeliveryHeaders identify a webhook delivery. Some integrations
+// surface only Idempotency-Key, so we accept either.
+var gitlabDeliveryHeaders = []string{"X-Gitlab-Event-UUID", "Idempotency-Key"}
+
+func gitlabDeliveryID(r *http.Request) string {
+	for _, h := range gitlabDeliveryHeaders {
+		if v := r.Header.Get(h); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 type TriggerCreationFunc func(appCfg config.Config,
 	gl vcs.GitClient,
 	tfc tfc_api.ApiClient,
@@ -118,6 +131,7 @@ func (h *GitlabHooksHandler) handler(c echo.Context) error {
 		msg := &MergeRequestEventMsg{
 			GitlabHookEvent: GitlabHookEvent{},
 			Payload:         event,
+			DeliveryID:      gitlabDeliveryID(c.Request()),
 		}
 
 		proj = event.Project.PathWithNamespace
@@ -132,6 +146,7 @@ func (h *GitlabHooksHandler) handler(c echo.Context) error {
 		if checkError(ctx, err, "could not decode Note/Comment event") {
 			break
 		}
+		event.DeliveryID = gitlabDeliveryID(c.Request())
 		log.Info().Str("project", event.Payload.GetProject().GetPathWithNamespace()).Int("mergeRequestID", event.Payload.GetMR().GetInternalID()).Str("discussionID", event.Payload.GetDiscussionID()).Msg("processing GitLab Note/Comment event")
 
 		proj = event.Payload.GetProject().GetPathWithNamespace()

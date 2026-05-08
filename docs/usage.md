@@ -69,6 +69,7 @@ The full list of supported environment variables and flags is described below:
 |`TFBUDDY_GITHUB_CLONE_DEPTH`|`--github-clone-depth`|Git clone depth to use for GitHub merge request checkouts. Zero means full history.|`0`|
 |`TFBUDDY_GITLAB_CLONE_DEPTH`|`--gitlab-clone-depth`|Git clone depth to use for GitLab merge request checkouts. Zero means full history.|`0`|
 |`TFBUDDY_WORKSPACE_FANOUT_ENABLED`|`--workspace-fanout-enabled`|Enable per-workspace JetStream fan-out (one NATS message per workspace) to keep AckWait windows scoped per workspace. When disabled, TFBuddy falls back to the inline per-MR loop.|`true`|
+|`TFBUDDY_WORKSPACE_JETSTREAM_REPLICAS`|`--workspace-jetstream-replicas`|JetStream replica count for the workspace-trigger stream. Use 1 for single-node NATS or local dev; set to your NATS cluster size (often 3) in production for durability.|`1`|
 |`TFBUDDY_TFC_RATE_LIMIT_RPS`|`--tfc-rate-limit-rps`|Client-side rate limit (requests per second) for the Terraform Cloud API. Tuned to match TFC's documented per-token limit and prevent 429s when many workspaces are triggered concurrently.|`30`|
 |`TFBUDDY_TFC_RATE_LIMIT_BURST`|`--tfc-rate-limit-burst`|Burst capacity for the TFC API token-bucket rate limiter.|`30`|
 <!-- END GENERATED CONFIGURATION -->

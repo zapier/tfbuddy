@@ -37,8 +37,11 @@ type NoteEventMsg struct {
 	GitlabHookEvent
 
 	Payload *gitlab.GitlabMergeCommentEvent `json:"payload"`
-	Carrier propagation.MapCarrier          `json:"Carrier"`
-	Context context.Context
+	// DeliveryID anchors the workspace fan-out dedup key to the upstream
+	// webhook (X-Gitlab-Event-UUID or Idempotency-Key).
+	DeliveryID string                 `json:"deliveryID"`
+	Carrier    propagation.MapCarrier `json:"Carrier"`
+	Context    context.Context
 }
 
 func (e *NoteEventMsg) GetId(ctx context.Context) string {
@@ -83,6 +86,10 @@ func (e *NoteEventMsg) GetLastCommit() vcs.Commit {
 	return e.Payload.GetLastCommit()
 }
 
+func (e *NoteEventMsg) GetDeliveryID() string {
+	return e.DeliveryID
+}
+
 // ----------------------------------------------
 
 func mrEventsStreamSubject() string {
@@ -92,9 +99,11 @@ func mrEventsStreamSubject() string {
 type MergeRequestEventMsg struct {
 	GitlabHookEvent
 
-	Payload *gogitlab.MergeEvent   `json:"payload"`
-	Carrier propagation.MapCarrier `json:"Carrier"`
-	Context context.Context
+	Payload *gogitlab.MergeEvent `json:"payload"`
+	// DeliveryID anchors the workspace fan-out dedup key to the upstream webhook.
+	DeliveryID string                 `json:"deliveryID"`
+	Carrier    propagation.MapCarrier `json:"Carrier"`
+	Context    context.Context
 }
 
 func (e *MergeRequestEventMsg) GetId(ctx context.Context) string {

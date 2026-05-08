@@ -37,6 +37,7 @@ func (w *GitlabEventWorker) processMergeRequestEvent(msg *MergeRequestEventMsg) 
 		MergeRequestIID:          event.ObjectAttributes.IID,
 		TriggerSource:            tfc_trigger.MergeRequestEventTrigger,
 		VcsProvider:              "gitlab",
+		DeliveryID:               msg.DeliveryID,
 	})
 	if err != nil {
 		log.Error().Err(err).Msg("could not create TFCTriggerConfig")

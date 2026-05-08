@@ -7,10 +7,12 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/go-tfe"
 	"go.uber.org/mock/gomock"
 
+	"github.com/zapier/tfbuddy/internal/config"
 	"github.com/zapier/tfbuddy/pkg/mocks"
 	"github.com/zapier/tfbuddy/pkg/runstream"
 	"github.com/zapier/tfbuddy/pkg/tfc_api"
@@ -18,11 +20,9 @@ import (
 	"github.com/zapier/tfbuddy/pkg/vcs"
 )
 
-// TestWorkspaceWorker_DrainsConcurrentlyWithoutLeakingDiscussionIDs drains a
-// fan-out queue concurrently and asserts each per-workspace AddRunMeta carries
-// that workspace's own DiscussionID/RootNoteID. This is the regression guard
-// for the goroutine-local discussion fix — if discussion IDs ever leak across
-// workspaces (the t.cfg race), the assertion below catches it.
+// TestWorkspaceWorker_DrainsConcurrentlyWithoutLeakingDiscussionIDs guards the
+// goroutine-local discussion fix: each AddRunMeta must carry its workspace's
+// own IDs, and peak inflight must exceed 1 (proving parallel drain).
 func TestWorkspaceWorker_DrainsConcurrentlyWithoutLeakingDiscussionIDs(t *testing.T) {
 	const numWorkspaces = 6
 	cfg := buildFanoutWorkspaces(numWorkspaces)
@@ -31,16 +31,16 @@ func TestWorkspaceWorker_DrainsConcurrentlyWithoutLeakingDiscussionIDs(t *testin
 	defer mockCtrl.Finish()
 	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: cfg}, t)
 
-	// Each workspace gets a unique discussion + note ID so a regression that
-	// shares discussion state across goroutines surfaces as a wrong mapping.
-	// Override default modified-files mock from InitTestSuite so each
-	// workspace dir matches at least one changed file.
+	// Override default modified-files mock so each workspace dir matches.
 	modified := make([]string, 0, numWorkspaces)
 	for i := 0; i < numWorkspaces; i++ {
 		modified = append(modified, fmt.Sprintf("services/svc%02d/main.tf", i))
 	}
 	testSuite.MockGitClient.EXPECT().GetMergeRequestModifiedFiles(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS).Return(modified, nil).AnyTimes()
 
+	// peak >= 2 proves the worker drains messages in parallel.
+	var inflightMu sync.Mutex
+	var inflight, peak int
 	wantDisc := map[string]string{}
 	wantNote := map[string]int64{}
 	for i := 0; i < numWorkspaces; i++ {
@@ -58,7 +58,20 @@ func TestWorkspaceWorker_DrainsConcurrentlyWithoutLeakingDiscussionIDs(t *testin
 		testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(
 			gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS,
 			fmt.Sprintf("Starting TFC apply for Workspace: `zapier-test/%s`.\n<!-- tfbuddy:ws=%s:action=apply -->", wsName, wsName),
-		).Return(dis, nil).Times(1)
+		).DoAndReturn(func(_ context.Context, _ int, _, _ string) (vcs.MRDiscussionNotes, error) {
+			inflightMu.Lock()
+			inflight++
+			if inflight > peak {
+				peak = inflight
+			}
+			inflightMu.Unlock()
+			// Hold so other goroutines overlap before this one exits.
+			time.Sleep(20 * time.Millisecond)
+			inflightMu.Lock()
+			inflight--
+			inflightMu.Unlock()
+			return dis, nil
+		}).Times(1)
 	}
 
 	testSuite.MockApiClient.EXPECT().GetWorkspaceByName(gomock.Any(), "zapier-test", gomock.Any()).DoAndReturn(func(_ context.Context, _, name string) (*tfe.Workspace, error) {
@@ -73,8 +86,6 @@ func TestWorkspaceWorker_DrainsConcurrentlyWithoutLeakingDiscussionIDs(t *testin
 		}, nil
 	}).Times(numWorkspaces)
 
-	// Capture each workspace's metadata as it lands in AddRunMeta. The lock
-	// keeps the assertions safe under -race.
 	var seenMu sync.Mutex
 	seenDisc := make(map[string]string)
 	seenNote := make(map[string]int64)
@@ -87,8 +98,6 @@ func TestWorkspaceWorker_DrainsConcurrentlyWithoutLeakingDiscussionIDs(t *testin
 	}).Times(numWorkspaces)
 	testSuite.InitTestSuite()
 
-	// Build the fan-out exactly as production does — TriggerTFCEvents enqueues,
-	// then the worker drains.
 	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
 		Action:                   tfc_trigger.ApplyAction,
 		Branch:                   testSuite.MetaData.SourceBranch,
@@ -99,23 +108,19 @@ func TestWorkspaceWorker_DrainsConcurrentlyWithoutLeakingDiscussionIDs(t *testin
 		VcsProvider:              "gitlab",
 	})
 	pub := &fakeWorkspacePublisher{}
-	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	trigger := tfc_trigger.NewTFCTrigger(config.Config{}, testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
 	trigger.SetWorkspaceStream(pub)
 
 	if _, err := trigger.TriggerTFCEvents(context.Background()); err != nil {
 		t.Fatalf("enqueue failed: %v", err)
 	}
 
-	// Now drain. This is what NATS would do: invoke HandleMsg on each delivery.
-	// We dispatch them in parallel to exercise the goroutine-local fix.
 	worker := tfc_trigger.NewWorkspaceTriggerWorkerWithoutSubscription(
+		config.Config{},
 		map[string]vcs.GitClient{"gitlab": testSuite.MockGitClient},
 		testSuite.MockApiClient, testSuite.MockStreamClient,
 	)
 
-	// The worker re-clones the repo and re-checks target-branch modifications
-	// per workspace. The TestSuite's existing mocks already cover those calls
-	// with AnyTimes, so all we need is the inner trigger to succeed.
 	var wg sync.WaitGroup
 	for _, msg := range pub.msgs {
 		msg := msg
@@ -146,19 +151,21 @@ func TestWorkspaceWorker_DrainsConcurrentlyWithoutLeakingDiscussionIDs(t *testin
 			t.Fatalf("workspace %s leaked rootNoteID: got %d, want %d", ws, seenNote[ws], wantNote[ws])
 		}
 	}
+	inflightMu.Lock()
+	gotPeak := peak
+	inflightMu.Unlock()
+	if gotPeak < 2 {
+		t.Fatalf("workspace worker did not drain in parallel: peak inflight=%d, want >= 2", gotPeak)
+	}
 }
 
-// TestWorkspaceWorker_PostsErrorToMRAndACKsOnFailure verifies a workspace
-// failure surfaces back to the MR via a top-level comment and the worker
-// returns nil so the message is ACKed (we deliberately don't NAK because
-// retries would create duplicate discussions and runs).
+// TestWorkspaceWorker_PostsErrorToMRAndACKsOnFailure asserts that a failure
+// posts to the MR and HandleMsg returns nil (ACK), so retries don't duplicate.
 func TestWorkspaceWorker_PostsErrorToMRAndACKsOnFailure(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
 
-	// VCS API blows up while loading the MR — runWorkspace returns this error
-	// before any clone or discussion happens.
 	testSuite.MockGitClient.EXPECT().GetMergeRequest(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS).
 		Return(nil, errors.New("VCS API down")).AnyTimes()
 
@@ -172,6 +179,7 @@ func TestWorkspaceWorker_PostsErrorToMRAndACKsOnFailure(t *testing.T) {
 	testSuite.InitTestSuite()
 
 	worker := tfc_trigger.NewWorkspaceTriggerWorkerWithoutSubscription(
+		config.Config{},
 		map[string]vcs.GitClient{"gitlab": testSuite.MockGitClient},
 		testSuite.MockApiClient, testSuite.MockStreamClient,
 	)
@@ -198,16 +206,13 @@ func TestWorkspaceWorker_PostsErrorToMRAndACKsOnFailure(t *testing.T) {
 	}
 }
 
-// TestWorkspaceWorker_RecoversFromPanic confirms a panic inside the worker
-// (e.g. nil pointer in a downstream call) doesn't tear down the JetStream
-// subscription. The worker logs, posts a generic error to the MR, and ACKs.
+// TestWorkspaceWorker_RecoversFromPanic asserts panics are recovered, surfaced
+// as a generic MR comment, and ACKed.
 func TestWorkspaceWorker_RecoversFromPanic(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
 
-	// Force a panic by returning a nil MR — trigger.cloneGitRepo will
-	// dereference it.
 	testSuite.MockGitClient.EXPECT().GetMergeRequest(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS).
 		DoAndReturn(func(_ context.Context, _ int, _ string) (vcs.DetailedMR, error) {
 			panic("unexpected nil dereference in test")
@@ -223,6 +228,7 @@ func TestWorkspaceWorker_RecoversFromPanic(t *testing.T) {
 	testSuite.InitTestSuite()
 
 	worker := tfc_trigger.NewWorkspaceTriggerWorkerWithoutSubscription(
+		config.Config{},
 		map[string]vcs.GitClient{"gitlab": testSuite.MockGitClient},
 		testSuite.MockApiClient, testSuite.MockStreamClient,
 	)
@@ -246,19 +252,15 @@ func TestWorkspaceWorker_RecoversFromPanic(t *testing.T) {
 	}
 }
 
-// TestWorkspaceWorker_RoutesByVcsProvider locks in the fan-out routing fix:
-// the worker must dispatch to the client matching msg.Opts.VcsProvider, never
-// to the other provider. A regression here would manifest in production as
-// GitHub-origin triggers calling the GitLab API (404s, auth failures, MR
-// comment spam) — exactly the class of bug the multi-client worker prevents.
+// TestWorkspaceWorker_RoutesByVcsProvider asserts dispatch matches
+// msg.Opts.VcsProvider and unknown providers are dropped (ACKed) without
+// invoking either client.
 func TestWorkspaceWorker_RoutesByVcsProvider(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
 
-	// Two distinct clients so we can prove dispatch picks the right one.
-	// The GitHub mock is the one we expect to receive calls; a stray call
-	// to the GitLab mock would fail the test via gomock's strict mode.
+	// Stray calls to the GitLab mock fail the test under gomock's strict mode.
 	githubClient := mocks.NewMockGitClient(mockCtrl)
 	gitlabClient := mocks.NewMockGitClient(mockCtrl)
 
@@ -270,6 +272,7 @@ func TestWorkspaceWorker_RoutesByVcsProvider(t *testing.T) {
 	testSuite.InitTestSuite()
 
 	worker := tfc_trigger.NewWorkspaceTriggerWorkerWithoutSubscription(
+		config.Config{},
 		map[string]vcs.GitClient{"gitlab": gitlabClient, "github": githubClient},
 		testSuite.MockApiClient, testSuite.MockStreamClient,
 	)
@@ -289,9 +292,6 @@ func TestWorkspaceWorker_RoutesByVcsProvider(t *testing.T) {
 		t.Fatalf("HandleMsg should ACK on workspace error, got: %v", err)
 	}
 
-	// Unknown provider must be dropped (ACKed) without invoking either
-	// client — there's nothing actionable we can do, and using a default
-	// would corrupt the receiving VCS.
 	unknownMsg := &tfc_trigger.WorkspaceTriggerMsg{
 		Opts: tfc_trigger.TFCTriggerOptions{
 			Action:                   tfc_trigger.PlanAction,

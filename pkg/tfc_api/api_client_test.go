@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -13,8 +14,6 @@ import (
 	"golang.org/x/time/rate"
 )
 
-// TestRateLimitedTransport_Sequential verifies the limiter throttles back-to-back
-// requests on the same client.
 func TestRateLimitedTransport_Sequential(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -36,15 +35,12 @@ func TestRateLimitedTransport_Sequential(t *testing.T) {
 	}
 	elapsed := time.Since(start)
 
-	// At 5 req/s, burst=1: first call immediate, remaining 5 wait ~200ms each.
+	// 5 req/s, burst=1: first call immediate, remaining 5 wait ~200ms each.
 	if elapsed < 700*time.Millisecond {
 		t.Fatalf("expected rate-limited calls to take >=700ms, got %s", elapsed)
 	}
 }
 
-// TestRateLimitedTransport_ConcurrentSharing verifies multiple goroutines share
-// the same limiter, which is the production scenario when several workspaces
-// fan out concurrently.
 func TestRateLimitedTransport_ConcurrentSharing(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -73,15 +69,11 @@ func TestRateLimitedTransport_ConcurrentSharing(t *testing.T) {
 	wg.Wait()
 	elapsed := time.Since(start)
 
-	// All 6 callers compete for the same bucket: even when fully parallel they
-	// must wait ~200ms per token after the initial burst.
 	if elapsed < 700*time.Millisecond {
 		t.Fatalf("expected concurrent callers to coordinate via the shared limiter (>=700ms), got %s", elapsed)
 	}
 }
 
-// TestRateLimitedTransport_HonorsContextCancel ensures callers can abandon a
-// request blocked on the limiter, e.g. when JetStream cancels processing.
 func TestRateLimitedTransport_HonorsContextCancel(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -110,8 +102,8 @@ func TestRateLimitedTransport_HonorsContextCancel(t *testing.T) {
 }
 
 // TestNewRateLimitedHTTPClient_NoHardTimeout guards against re-introducing
-// http.Client.Timeout. ConfigurationVersions.Upload streams the cloned repo
-// so a fixed top-level timeout would truncate slow uploads on large repos.
+// http.Client.Timeout — Upload streams the cloned repo and a fixed cap would
+// truncate slow uploads.
 func TestNewRateLimitedHTTPClient_NoHardTimeout(t *testing.T) {
 	client := newRateLimitedHTTPClient(rate.NewLimiter(rate.Limit(10), 1))
 	if client.Timeout != 0 {
@@ -119,9 +111,8 @@ func TestNewRateLimitedHTTPClient_NoHardTimeout(t *testing.T) {
 	}
 }
 
-// TestTFCRateLimitValue verifies viper-driven defaults and fallback behavior.
 func TestTFCRateLimitValue(t *testing.T) {
-	const key = "TEST_RATE_LIMIT"
+	const key = "test-rate-limit"
 	t.Cleanup(func() { viper.Reset() })
 
 	cases := []struct {
@@ -139,9 +130,10 @@ func TestTFCRateLimitValue(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			viper.Reset()
 			viper.SetEnvPrefix("TFBUDDY")
+			viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 			viper.AutomaticEnv()
 			if tc.setEnv != "" {
-				t.Setenv("TFBUDDY_"+key, tc.setEnv)
+				t.Setenv("TFBUDDY_TEST_RATE_LIMIT", tc.setEnv)
 			}
 			got := tfcRateLimitValue(key, tc.fallback)
 			if got != tc.want {
@@ -151,8 +143,6 @@ func TestTFCRateLimitValue(t *testing.T) {
 	}
 }
 
-// TestRateLimitedTransport_RoundTripIsConcurrencySafe asserts the transport
-// can be hit from many goroutines without panics or data races (run with -race).
 func TestRateLimitedTransport_RoundTripIsConcurrencySafe(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)

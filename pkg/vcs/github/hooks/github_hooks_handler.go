@@ -108,7 +108,10 @@ func (h *GithubHooksHandler) handleIssueCommentCreatedEvent(deliveryID string, e
 		"eventType":  eventName,
 		"repository": *event.Repo.FullName,
 	}
-	_, err := h.commentStream.Publish(ctx, &GithubIssueCommentEventMsg{Payload: event})
+	_, err := h.commentStream.Publish(ctx, &GithubIssueCommentEventMsg{
+		Payload:    event,
+		DeliveryID: deliveryID,
+	})
 	if err != nil {
 		githubWebHookFailed.With(lbls).Inc()
 	}

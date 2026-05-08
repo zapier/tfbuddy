@@ -57,13 +57,11 @@ func StartServer(cfg config.Config) {
 	gh := github.NewGithubClient(cfg)
 	tfc := tfc_api.NewTFCClient()
 
-	// Per-workspace fan-out queue. The MR/PR webhook subscriber publishes one
-	// message per workspace it touches; the worker below drains them so each
-	// workspace has its own JetStream AckWait window. The flag lets operators
-	// fall back to the legacy inline path while we roll this out.
+	// Per-workspace fan-out queue. Flagged so operators can fall back to the
+	// legacy inline path during rollout.
 	var workspaceStream tfc_trigger.WorkspacePublisher
 	if cfg.WorkspaceFanoutEnabled {
-		ws, err := tfc_trigger.NewWorkspaceStream(js)
+		ws, err := tfc_trigger.NewWorkspaceStream(js, cfg.WorkspaceJetStreamReplicas)
 		if err != nil {
 			log.Fatal().Err(err).Msg("could not configure workspace trigger stream")
 		}
@@ -71,7 +69,7 @@ func StartServer(cfg config.Config) {
 			"gitlab": gl,
 			"github": gh,
 		}
-		if _, err := tfc_trigger.NewWorkspaceTriggerWorker(ws, vcsClients, tfc, rs); err != nil {
+		if _, err := tfc_trigger.NewWorkspaceTriggerWorker(ws, cfg, vcsClients, tfc, rs); err != nil {
 			log.Fatal().Err(err).Msg("could not start workspace trigger worker")
 		}
 		health.AddLivenessCheck("workspace-trigger-stream", ws.HealthCheck)

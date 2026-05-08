@@ -66,8 +66,11 @@ const IssueCommentEvent = "IssueCommentEvent"
 
 type GithubIssueCommentEventMsg struct {
 	Payload *github.IssueCommentEvent `json:"payload"`
-	Carrier propagation.MapCarrier    `json:"Carrier"`
-	Context context.Context
+	// DeliveryID is the X-GitHub-Delivery header; anchors the workspace
+	// fan-out dedup key to the upstream webhook.
+	DeliveryID string                 `json:"deliveryID"`
+	Carrier    propagation.MapCarrier `json:"Carrier"`
+	Context    context.Context
 }
 
 func (e *GithubIssueCommentEventMsg) GetId(ctx context.Context) string {

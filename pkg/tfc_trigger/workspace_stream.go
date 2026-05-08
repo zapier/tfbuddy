@@ -16,28 +16,15 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 )
 
-// WorkspaceTriggerStreamName is the JetStream that carries one message per
-// workspace that needs a TFC run dispatched. Each MR/PR event fans out into
-// these messages so the upstream hook subscriber can ACK quickly and avoid
-// JetStream redelivering when the batch has many workspaces.
 const (
 	WorkspaceTriggerStreamName = "TFBUDDY_WORKSPACE_TRIGGERS"
 	workspaceTriggerSubject    = WorkspaceTriggerStreamName + ".dispatch"
 	workspaceTriggerQueueName  = "tfbuddy_workspace_trigger_worker"
 
-	// Sized to match HOOKS/RUN_EVENTS so a noisy day cannot push older
-	// streams off the broker. At ~1KB per msg, 10240 msgs is ~10MB peak.
 	workspaceStreamMaxMsgs = 10240
-
-	// A workspace trigger that hasn't been picked up within an hour is stale
-	// (the user has likely re-triggered or the MR is gone). Dropping it is
-	// safer than dispatching a run against an old commit.
-	workspaceStreamMaxAge = time.Hour
+	workspaceStreamMaxAge  = time.Hour
 )
 
-// WorkspaceTriggerMsg is the unit of work consumed by WorkspaceTriggerWorker.
-// It contains everything required to drive a single workspace's TFC run from
-// scratch, with no shared state across workspaces.
 type WorkspaceTriggerMsg struct {
 	Opts      TFCTriggerOptions      `json:"opts"`
 	Workspace TFCWorkspace           `json:"workspace"`
@@ -46,14 +33,15 @@ type WorkspaceTriggerMsg struct {
 	ctx context.Context
 }
 
-// GetId returns the JetStream message ID, used as a dedup key inside
-// JetStream's deduplication window. A duplicate webhook (or redelivery of
-// the parent MR event) cannot enqueue the same workspace+commit+action twice.
-//
-// The ID is a hex SHA-256 of the canonical fields rather than a delimited
-// string so it can't be accidentally collided by exotic project or workspace
-// names that contain the delimiter.
+// GetId is the JetStream dedup key. When DeliveryID is present (the normal
+// path for GitHub X-GitHub-Delivery / GitLab Idempotency-Key), we compose the
+// key directly from the opaque per-delivery identifier plus workspace identity.
+// The sha256 fallback handles only legacy messages missing the delivery header.
 func (m *WorkspaceTriggerMsg) GetId(ctx context.Context) string {
+	if m.Opts.DeliveryID != "" {
+		return m.Opts.DeliveryID + "/" + m.Workspace.Name + "/" + m.Workspace.Organization
+	}
+
 	h := sha256.New()
 	enc := json.NewEncoder(h)
 	_ = enc.Encode([]any{
@@ -93,15 +81,12 @@ func (m *WorkspaceTriggerMsg) Context() context.Context {
 	return context.Background()
 }
 
-// WorkspaceStream wraps a gongs.GenericStream so callers don't need to import
-// gongs directly to publish or subscribe.
 type WorkspaceStream struct {
+	js     nats.JetStreamContext
 	stream *gongs.GenericStream[WorkspaceTriggerMsg, *WorkspaceTriggerMsg]
 }
 
-// NewWorkspaceStream provisions the JetStream that backs workspace fan-out
-// and returns a publisher/subscriber wrapper.
-func NewWorkspaceStream(js nats.JetStreamContext) (*WorkspaceStream, error) {
+func NewWorkspaceStream(js nats.JetStreamContext, workspaceStreamReplicas int) (*WorkspaceStream, error) {
 	cfg := &nats.StreamConfig{
 		Name:        WorkspaceTriggerStreamName,
 		Description: "Fan-out queue: one message per workspace dispatched by an MR/PR trigger",
@@ -109,7 +94,7 @@ func NewWorkspaceStream(js nats.JetStreamContext) (*WorkspaceStream, error) {
 		Retention:   nats.WorkQueuePolicy,
 		MaxMsgs:     workspaceStreamMaxMsgs,
 		MaxAge:      workspaceStreamMaxAge,
-		Replicas:    1,
+		Replicas:    workspaceStreamReplicas,
 	}
 
 	info, err := js.StreamInfo(cfg.Name)
@@ -127,11 +112,11 @@ func NewWorkspaceStream(js nats.JetStreamContext) (*WorkspaceStream, error) {
 	}
 
 	return &WorkspaceStream{
+		js:     js,
 		stream: gongs.NewGenericStream[WorkspaceTriggerMsg](js, workspaceTriggerSubject, WorkspaceTriggerStreamName),
 	}, nil
 }
 
-// Publish fans out a workspace trigger.
 func (s *WorkspaceStream) Publish(ctx context.Context, msg *WorkspaceTriggerMsg) error {
 	if s == nil || s.stream == nil {
 		return errors.New("workspace stream not configured")
@@ -140,9 +125,37 @@ func (s *WorkspaceStream) Publish(ctx context.Context, msg *WorkspaceTriggerMsg)
 	return err
 }
 
-// QueueSubscribe registers a worker on the shared queue. All replicas of the
-// hooks server share the same queue group, so each message is delivered to
-// exactly one worker.
+// QueueSubscribe binds workers to a shared queue so each message is delivered
+// to exactly one replica.
 func (s *WorkspaceStream) QueueSubscribe(handler func(*WorkspaceTriggerMsg) error) (*nats.Subscription, error) {
 	return s.stream.QueueSubscribe(workspaceTriggerQueueName, handler)
+}
+
+// HealthCheck reports unhealthy when the stream is missing from JetStream,
+// or when it has no consumers (published messages would otherwise pile up
+// undelivered).
+func (s *WorkspaceStream) HealthCheck() error {
+	if s == nil || s.js == nil {
+		return errors.New("workspace stream not configured")
+	}
+	info, err := s.js.StreamInfo(WorkspaceTriggerStreamName)
+	if err != nil {
+		if errors.Is(err, nats.ErrStreamNotFound) {
+			log.Warn().Str("stream", WorkspaceTriggerStreamName).
+				Msg("Healthcheck status: workspace trigger stream not found in JetStream")
+			return fmt.Errorf("%s stream not found in JetStream", WorkspaceTriggerStreamName)
+		}
+		return fmt.Errorf("could not read %s stream info: %w", WorkspaceTriggerStreamName, err)
+	}
+	if info.State.Consumers < 1 {
+		ev := log.Warn().Str("stream", info.Config.Name).
+			Int("consumers", info.State.Consumers).
+			Uint64("msgs", info.State.Msgs)
+		if info.Cluster != nil {
+			ev = ev.Str("cluster_leader", info.Cluster.Leader)
+		}
+		ev.Msg("Healthcheck status.")
+		return fmt.Errorf("%s stream has no consumers", info.Config.Name)
+	}
+	return nil
 }

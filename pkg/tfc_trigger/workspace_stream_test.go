@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -11,13 +12,12 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.uber.org/mock/gomock"
 
+	"github.com/zapier/tfbuddy/internal/config"
 	"github.com/zapier/tfbuddy/pkg/mocks"
 	"github.com/zapier/tfbuddy/pkg/tfc_trigger"
 )
 
-// fakeWorkspacePublisher is a thread-safe in-memory stand-in for the
-// production NATS-backed WorkspaceStream. Tests use it to assert exactly which
-// workspaces would have been enqueued without spinning up JetStream.
+// fakeWorkspacePublisher is an in-memory stand-in for WorkspaceStream.
 type fakeWorkspacePublisher struct {
 	mu       sync.Mutex
 	msgs     []*tfc_trigger.WorkspaceTriggerMsg
@@ -46,8 +46,6 @@ func (f *fakeWorkspacePublisher) names() []string {
 	return out
 }
 
-// buildFanoutWorkspaces builds an N-workspace ProjectConfig where each
-// workspace points at a unique service directory.
 func buildFanoutWorkspaces(n int) *tfc_trigger.ProjectConfig {
 	wss := make([]*tfc_trigger.TFCWorkspace, 0, n)
 	for i := 0; i < n; i++ {
@@ -61,10 +59,8 @@ func buildFanoutWorkspaces(n int) *tfc_trigger.ProjectConfig {
 	return &tfc_trigger.ProjectConfig{Workspaces: wss}
 }
 
-// TestTriggerTFCEvents_FansOutPerWorkspace verifies the production path
-// publishes one message per touched workspace and does no inline TFC work
-// (no clone, no per-workspace API calls). This is the durability boundary
-// that lets the JetStream subscriber ACK quickly regardless of batch size.
+// TestTriggerTFCEvents_FansOutPerWorkspace asserts one publish per touched
+// workspace and no inline clone/API work. Unmocked inline calls would panic.
 func TestTriggerTFCEvents_FansOutPerWorkspace(t *testing.T) {
 	const numWorkspaces = 20
 	cfg := buildFanoutWorkspaces(numWorkspaces)
@@ -79,10 +75,6 @@ func TestTriggerTFCEvents_FansOutPerWorkspace(t *testing.T) {
 	}
 	testSuite.MockGitClient.EXPECT().GetMergeRequestModifiedFiles(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS).Return(modified, nil).AnyTimes()
 
-	// No inline run/discussion/clone work — those would all be expectation
-	// failures because the mocks do not allow them. Setting up the mocks this
-	// way doubles as a regression guard: if TriggerTFCEvents ever falls back
-	// to the inline path while a publisher is set, the unmocked call panics.
 	testSuite.InitTestSuite()
 
 	pub := &fakeWorkspacePublisher{}
@@ -94,7 +86,7 @@ func TestTriggerTFCEvents_FansOutPerWorkspace(t *testing.T) {
 		MergeRequestIID:          testSuite.MetaData.MRIID,
 		TriggerSource:            tfc_trigger.MergeRequestEventTrigger,
 	})
-	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	trigger := tfc_trigger.NewTFCTrigger(config.Config{}, testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
 	trigger.SetWorkspaceStream(pub)
 
 	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
@@ -120,9 +112,8 @@ func TestTriggerTFCEvents_FansOutPerWorkspace(t *testing.T) {
 	}
 }
 
-// TestTriggerTFCEvents_PublishFailureReportsErrored verifies that when the
-// stream rejects a publish (NATS down, etc.) the failed workspace surfaces in
-// Errored so the comment-trigger flow can still tell the user.
+// TestTriggerTFCEvents_PublishFailureReportsErrored asserts that a publish
+// failure surfaces in Errored so comment-trigger callers can surface it.
 func TestTriggerTFCEvents_PublishFailureReportsErrored(t *testing.T) {
 	cfg := buildFanoutWorkspaces(3)
 
@@ -146,7 +137,7 @@ func TestTriggerTFCEvents_PublishFailureReportsErrored(t *testing.T) {
 		MergeRequestIID:          testSuite.MetaData.MRIID,
 		TriggerSource:            tfc_trigger.CommentTrigger,
 	})
-	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	trigger := tfc_trigger.NewTFCTrigger(config.Config{}, testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
 	trigger.SetWorkspaceStream(pub)
 
 	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
@@ -163,9 +154,8 @@ func TestTriggerTFCEvents_PublishFailureReportsErrored(t *testing.T) {
 	}
 }
 
-// TestTriggerTFCEvents_NoChangesWithStreamSet verifies the fan-out path still
-// short-circuits when no workspaces are touched. This must not enqueue any
-// messages — otherwise we'd get useless TFC runs against unchanged paths.
+// TestTriggerTFCEvents_NoChangesWithStreamSet asserts the fan-out path
+// short-circuits when no workspaces are touched.
 func TestTriggerTFCEvents_NoChangesWithStreamSet(t *testing.T) {
 	cfg := buildFanoutWorkspaces(2)
 
@@ -185,7 +175,7 @@ func TestTriggerTFCEvents_NoChangesWithStreamSet(t *testing.T) {
 		MergeRequestIID:          testSuite.MetaData.MRIID,
 		TriggerSource:            tfc_trigger.MergeRequestEventTrigger,
 	})
-	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	trigger := tfc_trigger.NewTFCTrigger(config.Config{}, testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
 	trigger.SetWorkspaceStream(pub)
 
 	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
@@ -193,18 +183,19 @@ func TestTriggerTFCEvents_NoChangesWithStreamSet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if status != nil {
-		t.Fatalf("expected nil status when no workspaces touched, got: %+v", status)
+	if status == nil {
+		t.Fatal("expected non-nil empty status when no workspaces touched, got nil")
+	}
+	if len(status.Errored) != 0 || len(status.Executed) != 0 {
+		t.Fatalf("expected empty status when no workspaces touched, got: %+v", status)
 	}
 	if got := len(pub.msgs); got != 0 {
 		t.Fatalf("expected zero published messages, got %d", got)
 	}
 }
 
-// TestWorkspaceTriggerMsg_GetIdIsStable guards the JetStream dedup key: a
-// duplicate webhook (or redelivery) must produce the same ID for the same
-// (project, MR, commit, action, workspace) tuple, otherwise NATS will accept
-// the duplicate and we'll enqueue twice.
+// TestWorkspaceTriggerMsg_GetIdIsStable asserts the dedup key is deterministic
+// for the same tuple and distinct across workspace / action / commit changes.
 func TestWorkspaceTriggerMsg_GetIdIsStable(t *testing.T) {
 	mk := func() *tfc_trigger.WorkspaceTriggerMsg {
 		return &tfc_trigger.WorkspaceTriggerMsg{
@@ -224,33 +215,25 @@ func TestWorkspaceTriggerMsg_GetIdIsStable(t *testing.T) {
 		t.Fatalf("GetId not deterministic: %s vs %s", a, b)
 	}
 
-	// Different workspace must produce a different ID, otherwise we'd dedupe
-	// across workspaces and silently drop fan-out messages.
 	other := mk()
 	other.Workspace.Name = "service-tfbuddy-staging"
 	if other.GetId(ctx) == a {
 		t.Fatal("GetId collided across workspaces")
 	}
 
-	// Different action (plan vs apply) must dedup independently — otherwise
-	// commenting `tfc apply` after `tfc plan` on the same commit would be
-	// silently dropped within the dedup window.
 	otherAction := mk()
 	otherAction.Opts.Action = tfc_trigger.ApplyAction
 	if otherAction.GetId(ctx) == a {
 		t.Fatal("GetId collided across actions")
 	}
 
-	// Different commit must dedup independently — otherwise re-pushing a
-	// branch with new code wouldn't re-trigger plans during the dedup window.
 	otherCommit := mk()
 	otherCommit.Opts.CommitSHA = "feedface"
 	if otherCommit.GetId(ctx) == a {
 		t.Fatal("GetId collided across commits")
 	}
 
-	// Pipe characters in workspace names mustn't collide with other tuples
-	// (regression guard for the previous delimiter-based encoding).
+	// Regression guard for the previous pipe-delimited encoding.
 	weird := mk()
 	weird.Workspace.Name = "service|name|with|pipes"
 	weird2 := mk()
@@ -260,9 +243,105 @@ func TestWorkspaceTriggerMsg_GetIdIsStable(t *testing.T) {
 	}
 }
 
-// TestWorkspaceTriggerMsg_EncodeDecodeRoundtrips ensures the over-the-wire
-// representation preserves enough state to fully reconstruct the trigger in
-// the workspace worker (no shared state between MR worker and ws worker).
+// TestWorkspaceTriggerMsg_GetIdAnchorsOnDeliveryID asserts the dedup key is
+// anchored to the webhook delivery so retriggers aren't silently dropped.
+func TestWorkspaceTriggerMsg_GetIdAnchorsOnDeliveryID(t *testing.T) {
+	ctx := context.Background()
+	mk := func(deliveryID string) *tfc_trigger.WorkspaceTriggerMsg {
+		return &tfc_trigger.WorkspaceTriggerMsg{
+			Opts: tfc_trigger.TFCTriggerOptions{
+				Action:                   tfc_trigger.PlanAction,
+				ProjectNameWithNamespace: "zapier/tfbuddy",
+				MergeRequestIID:          42,
+				CommitSHA:                "deadbeef",
+				VcsProvider:              "gitlab",
+				DeliveryID:               deliveryID,
+			},
+			Workspace: tfc_trigger.TFCWorkspace{Name: "service-tfbuddy", Organization: "zapier-test"},
+		}
+	}
+
+	first := mk("delivery-aaa").GetId(ctx)
+	second := mk("delivery-bbb").GetId(ctx)
+	if first == second {
+		t.Fatalf("retrigger from a different webhook delivery must produce a fresh dedup key, got %q", first)
+	}
+
+	dup := mk("delivery-aaa").GetId(ctx)
+	if dup != first {
+		t.Fatalf("same delivery+workspace must produce the same dedup key (%q vs %q)", first, dup)
+	}
+
+	siblingWS := mk("delivery-aaa")
+	siblingWS.Workspace.Name = "service-tfbuddy-staging"
+	if siblingWS.GetId(ctx) == first {
+		t.Fatal("same delivery across workspaces must not collide")
+	}
+
+	// Delivery ID stays embedded for greppability during incident triage.
+	if !strings.Contains(first, "delivery-aaa") {
+		t.Fatalf("expected delivery ID embedded in dedup key, got %q", first)
+	}
+
+	// Workspace name and org are embedded directly (no hash).
+	if !strings.Contains(first, "service-tfbuddy") {
+		t.Fatalf("expected workspace name embedded in dedup key, got %q", first)
+	}
+	if !strings.Contains(first, "zapier-test") {
+		t.Fatalf("expected org embedded in dedup key, got %q", first)
+	}
+
+	// Verify the exact format: DeliveryID/Workspace.Name/Workspace.Organization
+	expected := "delivery-aaa/service-tfbuddy/zapier-test"
+	if first != expected {
+		t.Fatalf("expected key %q, got %q", expected, first)
+	}
+}
+
+// TestWorkspaceTriggerMsg_GetIdNoDelimiterCollision regresses encoding bugs
+// where ambiguous splits could produce the same key for different tuples.
+func TestWorkspaceTriggerMsg_GetIdNoDelimiterCollision(t *testing.T) {
+	ctx := context.Background()
+	mk := func(deliveryID, org, name string) *tfc_trigger.WorkspaceTriggerMsg {
+		return &tfc_trigger.WorkspaceTriggerMsg{
+			Opts: tfc_trigger.TFCTriggerOptions{
+				Action:                   tfc_trigger.PlanAction,
+				ProjectNameWithNamespace: "zapier/tfbuddy",
+				MergeRequestIID:          42,
+				CommitSHA:                "deadbeef",
+				VcsProvider:              "gitlab",
+				DeliveryID:               deliveryID,
+			},
+			Workspace: tfc_trigger.TFCWorkspace{Organization: org, Name: name},
+		}
+	}
+
+	cases := []struct {
+		name string
+		a, b *tfc_trigger.WorkspaceTriggerMsg
+	}{
+		{
+			name: "dash in delivery vs start of workspace name",
+			a:    mk("abc-def", "ws1", "prod"),
+			b:    mk("abc", "def-ws1", "prod"),
+		},
+		{
+			name: "dash in org vs start of workspace name",
+			a:    mk("abc", "ws1", "prod-extra"),
+			b:    mk("abc", "ws1-prod", "extra"),
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.a.GetId(ctx) == tc.b.GetId(ctx) {
+				t.Fatalf("GetId collided across distinct tuples:\n  %+v\n  %+v", tc.a, tc.b)
+			}
+		})
+	}
+}
+
+// TestWorkspaceTriggerMsg_EncodeDecodeRoundtrips asserts the over-the-wire
+// payload preserves the state the worker needs.
 func TestWorkspaceTriggerMsg_EncodeDecodeRoundtrips(t *testing.T) {
 	original := &tfc_trigger.WorkspaceTriggerMsg{
 		Opts: tfc_trigger.TFCTriggerOptions{
@@ -305,10 +384,8 @@ func TestWorkspaceTriggerMsg_EncodeDecodeRoundtrips(t *testing.T) {
 	}
 }
 
-// TestTriggerTFCEvents_FanoutIsConcurrencySafe runs many enqueue rounds
-// concurrently; the workspace-local cfg/discussion/note fix means each
-// trigger keeps its own state and the publisher never sees crossed wires.
-// Run with -race to catch regressions.
+// TestTriggerTFCEvents_FanoutIsConcurrencySafe drives concurrent enqueues to
+// catch shared-state regressions (run with -race).
 func TestTriggerTFCEvents_FanoutIsConcurrencySafe(t *testing.T) {
 	const numWorkspaces = 8
 	cfg := buildFanoutWorkspaces(numWorkspaces)
@@ -332,7 +409,7 @@ func TestTriggerTFCEvents_FanoutIsConcurrencySafe(t *testing.T) {
 		MergeRequestIID:          testSuite.MetaData.MRIID,
 		TriggerSource:            tfc_trigger.MergeRequestEventTrigger,
 	})
-	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	trigger := tfc_trigger.NewTFCTrigger(config.Config{}, testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
 
 	pub := &fakeWorkspacePublisher{}
 	trigger.SetWorkspaceStream(pub)

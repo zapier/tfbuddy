@@ -11,47 +11,55 @@ import (
 )
 
 const (
-	KeyLogLevel                 = "log-level"
-	KeyDevMode                  = "dev-mode"
-	KeyOTELEnabled              = "otel-enabled"
-	KeyOTELCollectorHost        = "otel-collector-host"
-	KeyOTELCollectorPort        = "otel-collector-port"
-	KeyGitlabHookSecretKey      = "gitlab-hook-secret-key"
-	KeyGithubHookSecretKey      = "github-hook-secret-key"
-	KeyDefaultTFCOrganization   = "default-tfc-organization"
-	KeyWorkspaceAllowList       = "workspace-allow-list"
-	KeyWorkspaceDenyList        = "workspace-deny-list"
-	KeyAllowAutoMerge           = "allow-auto-merge"
-	KeyFailCIOnSentinelSoftFail = "fail-ci-on-sentinel-soft-fail"
-	KeyDeleteOldComments        = "delete-old-comments"
-	KeyNATSServiceURL           = "nats-service-url"
-	KeyGitlabProjectAllowList   = "gitlab-project-allow-list"
-	KeyLegacyProjectAllowList   = "project-allow-list"
-	KeyGithubRepoAllowList      = "github-repo-allow-list"
-	KeyGithubCloneDepth         = "github-clone-depth"
-	KeyGitlabCloneDepth         = "gitlab-clone-depth"
+	KeyLogLevel                   = "log-level"
+	KeyDevMode                    = "dev-mode"
+	KeyOTELEnabled                = "otel-enabled"
+	KeyOTELCollectorHost          = "otel-collector-host"
+	KeyOTELCollectorPort          = "otel-collector-port"
+	KeyGitlabHookSecretKey        = "gitlab-hook-secret-key"
+	KeyGithubHookSecretKey        = "github-hook-secret-key"
+	KeyDefaultTFCOrganization     = "default-tfc-organization"
+	KeyWorkspaceAllowList         = "workspace-allow-list"
+	KeyWorkspaceDenyList          = "workspace-deny-list"
+	KeyAllowAutoMerge             = "allow-auto-merge"
+	KeyFailCIOnSentinelSoftFail   = "fail-ci-on-sentinel-soft-fail"
+	KeyDeleteOldComments          = "delete-old-comments"
+	KeyNATSServiceURL             = "nats-service-url"
+	KeyGitlabProjectAllowList     = "gitlab-project-allow-list"
+	KeyLegacyProjectAllowList     = "project-allow-list"
+	KeyGithubRepoAllowList        = "github-repo-allow-list"
+	KeyGithubCloneDepth           = "github-clone-depth"
+	KeyGitlabCloneDepth           = "gitlab-clone-depth"
+	KeyWorkspaceFanoutEnabled     = "workspace-fanout-enabled"
+	KeyWorkspaceJetStreamReplicas = "workspace-jetstream-replicas"
+	KeyTFCRateLimitRPS            = "tfc-rate-limit-rps"
+	KeyTFCRateLimitBurst          = "tfc-rate-limit-burst"
 )
 
 type Config struct {
-	LogLevel                 string   `mapstructure:"log-level"`
-	DevMode                  bool     `mapstructure:"dev-mode"`
-	OTELEnabled              bool     `mapstructure:"otel-enabled"`
-	OTELCollectorHost        string   `mapstructure:"otel-collector-host"`
-	OTELCollectorPort        string   `mapstructure:"otel-collector-port"`
-	GitlabHookSecretKey      string   `mapstructure:"gitlab-hook-secret-key"`
-	GithubHookSecretKey      string   `mapstructure:"github-hook-secret-key"`
-	DefaultTFCOrganization   string   `mapstructure:"default-tfc-organization"`
-	WorkspaceAllowList       []string `mapstructure:"workspace-allow-list"`
-	WorkspaceDenyList        []string `mapstructure:"workspace-deny-list"`
-	AllowAutoMerge           bool     `mapstructure:"allow-auto-merge"`
-	FailCIOnSentinelSoftFail bool     `mapstructure:"fail-ci-on-sentinel-soft-fail"`
-	DeleteOldComments        bool     `mapstructure:"delete-old-comments"`
-	NATSServiceURL           string   `mapstructure:"nats-service-url"`
-	GitlabProjectAllowList   []string `mapstructure:"gitlab-project-allow-list"`
-	LegacyProjectAllowList   []string `mapstructure:"project-allow-list"`
-	GithubRepoAllowList      []string `mapstructure:"github-repo-allow-list"`
-	GithubCloneDepth         int      `mapstructure:"github-clone-depth"`
-	GitlabCloneDepth         int      `mapstructure:"gitlab-clone-depth"`
+	LogLevel                   string   `mapstructure:"log-level"`
+	DevMode                    bool     `mapstructure:"dev-mode"`
+	OTELEnabled                bool     `mapstructure:"otel-enabled"`
+	OTELCollectorHost          string   `mapstructure:"otel-collector-host"`
+	OTELCollectorPort          string   `mapstructure:"otel-collector-port"`
+	GitlabHookSecretKey        string   `mapstructure:"gitlab-hook-secret-key"`
+	GithubHookSecretKey        string   `mapstructure:"github-hook-secret-key"`
+	DefaultTFCOrganization     string   `mapstructure:"default-tfc-organization"`
+	WorkspaceAllowList         []string `mapstructure:"workspace-allow-list"`
+	WorkspaceDenyList          []string `mapstructure:"workspace-deny-list"`
+	AllowAutoMerge             bool     `mapstructure:"allow-auto-merge"`
+	FailCIOnSentinelSoftFail   bool     `mapstructure:"fail-ci-on-sentinel-soft-fail"`
+	DeleteOldComments          bool     `mapstructure:"delete-old-comments"`
+	NATSServiceURL             string   `mapstructure:"nats-service-url"`
+	GitlabProjectAllowList     []string `mapstructure:"gitlab-project-allow-list"`
+	LegacyProjectAllowList     []string `mapstructure:"project-allow-list"`
+	GithubRepoAllowList        []string `mapstructure:"github-repo-allow-list"`
+	GithubCloneDepth           int      `mapstructure:"github-clone-depth"`
+	GitlabCloneDepth           int      `mapstructure:"gitlab-clone-depth"`
+	WorkspaceFanoutEnabled     bool     `mapstructure:"workspace-fanout-enabled"`
+	WorkspaceJetStreamReplicas int      `mapstructure:"workspace-jetstream-replicas"`
+	TFCRateLimitRPS            int      `mapstructure:"tfc-rate-limit-rps"`
+	TFCRateLimitBurst          int      `mapstructure:"tfc-rate-limit-burst"`
 }
 
 var C Config
@@ -83,6 +91,10 @@ var bindings = []binding{
 	{key: KeyGithubRepoAllowList, defaultValue: []string{}, description: "Comma-separated GitHub repository allow list prefixes."},
 	{key: KeyGithubCloneDepth, defaultValue: 0, description: "Git clone depth to use for GitHub merge request checkouts. Zero means full history."},
 	{key: KeyGitlabCloneDepth, defaultValue: 0, description: "Git clone depth to use for GitLab merge request checkouts. Zero means full history."},
+	{key: KeyWorkspaceFanoutEnabled, defaultValue: true, description: "Enable per-workspace JetStream fan-out (one NATS message per workspace) to keep AckWait windows scoped per workspace. When disabled, TFBuddy falls back to the inline per-MR loop."},
+	{key: KeyWorkspaceJetStreamReplicas, defaultValue: 1, description: "JetStream replica count for the workspace-trigger stream. Use 1 for single-node NATS or local dev; set to your NATS cluster size (often 3) in production for durability."},
+	{key: KeyTFCRateLimitRPS, defaultValue: 30, description: "Client-side rate limit (requests per second) for the Terraform Cloud API. Tuned to match TFC's documented per-token limit and prevent 429s when many workspaces are triggered concurrently."},
+	{key: KeyTFCRateLimitBurst, defaultValue: 30, description: "Burst capacity for the TFC API token-bucket rate limiter."},
 }
 
 func init() {
