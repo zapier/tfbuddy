@@ -36,3 +36,6 @@ tail-local:
 
 generate-requirements-file:
 	poetry export -f requirements.txt --output docs/requirements.txt --without-hashes
+
+rebuild-docs:
+	go generate ./internal/config

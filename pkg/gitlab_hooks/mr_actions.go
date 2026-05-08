@@ -22,7 +22,7 @@ func (w *GitlabEventWorker) processMergeRequestEvent(msg *MergeRequestEventMsg) 
 
 	projectName = event.Project.PathWithNamespace
 	labels["project"] = projectName
-	if !allow_list.IsGitlabProjectAllowed(event.Project.PathWithNamespace) {
+	if !allow_list.IsGitlabProjectAllowed(w.cfg, event.Project.PathWithNamespace) {
 		log.Warn().Str("project", event.Project.Name).Msg("project not authorized")
 		labels["reason"] = "project-not-authorized"
 		gitlabWebHookIgnored.With(labels).Inc()
@@ -43,7 +43,7 @@ func (w *GitlabEventWorker) processMergeRequestEvent(msg *MergeRequestEventMsg) 
 		return projectName, err
 	}
 
-	trigger := tfc_trigger.NewTFCTrigger(w.gl, w.tfc, w.runstream, cfg)
+	trigger := tfc_trigger.NewTFCTrigger(w.cfg, w.gl, w.tfc, w.runstream, cfg)
 	switch event.ObjectAttributes.Action {
 	case "open", "reopen":
 		log.Debug().Str("project", projectName).Int("mergeRequestID", event.ObjectAttributes.IID).Msg("triggering TFC events for merge request")

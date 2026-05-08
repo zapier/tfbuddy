@@ -44,7 +44,7 @@ func (h *GithubHooksHandler) processIssueComment(ctx context.Context, msg *Githu
 	// Check if fullName is allowed
 	log.Debug().Str("repo", *event.Repo.FullName).Msg("processIssueCommentEvent")
 	fullName := event.Repo.FullName
-	if !allow_list.IsGithubRepoAllowed(*fullName) {
+	if !allow_list.IsGithubRepoAllowed(h.cfg, *fullName) {
 		return nil
 	}
 
@@ -85,7 +85,7 @@ func (h *GithubHooksHandler) processIssueComment(ctx context.Context, msg *Githu
 		return err
 	}
 
-	trigger := h.triggerCreation(h.vcs, h.tfc, h.runstream, cfg)
+	trigger := h.triggerCreation(h.cfg, h.vcs, h.tfc, h.runstream, cfg)
 
 	//// TODO: support additional commands and arguments (e.g. destroy, refresh, lock, unlock)
 	//// TODO: this should be refactored and be agnostic to the VCS type

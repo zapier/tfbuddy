@@ -5,12 +5,11 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strconv"
-	"strings"
 
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 
+	"github.com/zapier/tfbuddy/internal/config"
 	"github.com/zapier/tfbuddy/internal/logging"
 	"github.com/zapier/tfbuddy/internal/telemetry"
 	"github.com/zapier/tfbuddy/pkg"
@@ -19,7 +18,6 @@ import (
 )
 
 var cfgFile string
-var logLevel string
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
@@ -27,17 +25,19 @@ var rootCmd = &cobra.Command{
 	Short: "Various utilties to aid Terraform CI pipelines & Terraform Cloud runs",
 	Long:  ``,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		logging.SetupLogOutput(resolveLogLevel())
+		cfg := loadConfig()
+		logging.SetupLogOutput(cfg.DevMode, resolveLogLevel(cfg))
 	},
 }
 
-func resolveLogLevel() zerolog.Level {
-	logLevelEnv := os.Getenv("TFBUDDY_LOG_LEVEL")
-	if logLevelEnv != "" {
-		logLevel = logLevelEnv
-	}
+func loadConfig() config.Config {
+	cfg, err := config.Load()
+	cobra.CheckErr(err)
+	return cfg
+}
 
-	lvl, err := zerolog.ParseLevel(logLevel)
+func resolveLogLevel(cfg config.Config) zerolog.Level {
+	lvl, err := zerolog.ParseLevel(cfg.LogLevel)
 	if err != nil {
 		log.Println("could not parse log level, defaulting to 'info'")
 		lvl = zerolog.InfoLevel
@@ -48,26 +48,21 @@ func resolveLogLevel() zerolog.Level {
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
-	logging.SetupLogOutput(resolveLogLevel())
 	cobra.CheckErr(rootCmd.Execute())
 }
 
 func init() {
+	config.Init()
 	cobra.OnInitialize(initConfig)
 
-	rootCmd.PersistentFlags().StringVarP(&logLevel, "log-level", "v", "info", "Set the log output level (info, debug, trace)")
+	cobra.CheckErr(config.RegisterFlags(rootCmd.PersistentFlags()))
 }
 
-func initTelemetry(ctx context.Context) (*telemetry.OperatorTelemetry, error) {
-	enableOtel, err := strconv.ParseBool(os.Getenv("TFBUDDY_OTEL_ENABLED"))
-	if err != nil {
-		log.Printf("could not parse env var TFBUDDY_OTEL_ENABLED, defaulting to false: %v", err)
-		enableOtel = false
-	}
+func initTelemetry(ctx context.Context, cfg config.Config) (*telemetry.OperatorTelemetry, error) {
 	return telemetry.Init(ctx, "tfbuddy", telemetry.Options{
-		Enabled:   enableOtel,
-		Host:      os.Getenv("TFBUDDY_OTEL_COLLECTOR_HOST"),
-		Port:      os.Getenv("TFBUDDY_OTEL_COLLECTOR_PORT"),
+		Enabled:   cfg.OTELEnabled,
+		Host:      cfg.OTELCollectorHost,
+		Port:      cfg.OTELCollectorPort,
 		Version:   pkg.GitTag,
 		CommitSHA: pkg.GitCommit,
 	})
@@ -88,10 +83,6 @@ func initConfig() {
 		viper.SetConfigType("yaml")
 		viper.SetConfigName(".tfbuddy")
 	}
-
-	viper.SetEnvPrefix("TFBUDDY")
-	viper.EnvKeyReplacer(strings.NewReplacer("-", "_"))
-	viper.AutomaticEnv() // read in environment variables that match
 
 	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err == nil {

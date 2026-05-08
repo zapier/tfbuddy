@@ -23,10 +23,9 @@ const (
 	colorDarkGray = 90
 )
 
-func SetupLogOutput(level zerolog.Level) {
+func SetupLogOutput(devMode bool, level zerolog.Level) {
 	// Setup Human friendly Console Output for dev mode
-	devMode := os.Getenv("TFBUDDY_DEV_MODE")
-	if devMode != "" {
+	if devMode {
 		output := zerolog.ConsoleWriter{Out: os.Stdout}
 		output.FormatLevel = formatLevel(false)
 		output.FormatMessage = func(i interface{}) string {

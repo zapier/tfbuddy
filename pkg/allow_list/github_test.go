@@ -2,6 +2,8 @@ package allow_list
 
 import (
 	"testing"
+
+	"github.com/zapier/tfbuddy/internal/config"
 )
 
 func TestIsGithubRepoAllowed(t *testing.T) {
@@ -106,9 +108,10 @@ func TestIsGithubRepoAllowed(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv(githubRepoAllowListEnv, tt.args.allowEnv)
+			t.Setenv("TFBUDDY_GITHUB_REPO_ALLOW_LIST", tt.args.allowEnv)
+			config.Reload()
 
-			if got := IsGithubRepoAllowed(tt.args.fullName); got != tt.want {
+			if got := IsGithubRepoAllowed(config.C, tt.args.fullName); got != tt.want {
 				t.Errorf("IsGithubRepoAllowed() = %v, want %v", got, tt.want)
 			}
 		})

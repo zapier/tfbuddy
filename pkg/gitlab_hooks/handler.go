@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sl1pm4t/gongs"
@@ -18,6 +17,7 @@ import (
 	"github.com/rs/zerolog/log"
 	gogitlab "gitlab.com/gitlab-org/api/client-go"
 
+	"github.com/zapier/tfbuddy/internal/config"
 	"github.com/zapier/tfbuddy/pkg/runstream"
 	"github.com/zapier/tfbuddy/pkg/tfc_api"
 	"github.com/zapier/tfbuddy/pkg/tfc_trigger"
@@ -28,12 +28,14 @@ import (
 const GitlabTokenHeader = "X-Gitlab-Token"
 const GitlabHookIgnoreReasonUnhandledEventType = "unhandled-event-type"
 
-type TriggerCreationFunc func(gl vcs.GitClient,
+type TriggerCreationFunc func(appCfg config.Config,
+	gl vcs.GitClient,
 	tfc tfc_api.ApiClient,
 	runstream runstream.StreamClient,
-	cfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger
+	triggerCfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger
 
 type GitlabHooksHandler struct {
+	cfg             config.Config
 	tfc             tfc_api.ApiClient
 	gl              vcs.GitClient
 	runstream       runstream.StreamClient
@@ -46,19 +48,19 @@ type GitlabHooksHandler struct {
 	hooksWorker   *GitlabEventWorker
 }
 
-func NewGitlabHooksHandler(gl vcs.GitClient, tfc tfc_api.ApiClient, rs runstream.StreamClient, js nats.JetStreamContext) *GitlabHooksHandler {
-	hookSecretEnv := os.Getenv("TFBUDDY_GITLAB_HOOK_SECRET_KEY")
+func NewGitlabHooksHandler(cfg config.Config, gl vcs.GitClient, tfc tfc_api.ApiClient, rs runstream.StreamClient, js nats.JetStreamContext) *GitlabHooksHandler {
 	notesStream := gongs.NewGenericStream[NoteEventMsg](js, noteEventsStreamSubject(), hooks_stream.HooksStreamName)
 	mrStream := gongs.NewGenericStream[MergeRequestEventMsg](js, mrEventsStreamSubject(), hooks_stream.HooksStreamName)
 
 	h := &GitlabHooksHandler{
+		cfg:             cfg,
 		tfc:             tfc,
 		gl:              gl,
 		runstream:       rs,
 		triggerCreation: tfc_trigger.NewTFCTrigger,
 		mrStream:        mrStream,
 		notesStream:     notesStream,
-		hookSecretKey:   hookSecretEnv,
+		hookSecretKey:   cfg.GitlabHookSecretKey,
 	}
 
 	h.hooksWorker = NewGitlabEventWorker(h, js)

@@ -1,10 +1,7 @@
 package vcs
 
-import "os"
+import "github.com/zapier/tfbuddy/internal/config"
 
-const TF_BUDDY_AUTO_MERGE = "TFBUDDY_ALLOW_AUTO_MERGE"
-
-func IsGlobalAutoMergeEnabled() bool {
-	//empty or true will permit auto merge.
-	return os.Getenv(TF_BUDDY_AUTO_MERGE) != "false"
+func IsGlobalAutoMergeEnabled(cfg config.Config) bool {
+	return cfg.AllowAutoMerge
 }

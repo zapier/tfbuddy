@@ -20,14 +20,15 @@ var tfcHookHandlerCmd = &cobra.Command{
 	Long:  ``,
 	Run: func(cmd *cobra.Command, args []string) {
 		ctx := context.Background()
+		cfg := loadConfig()
 
-		t, err := initTelemetry(ctx)
+		t, err := initTelemetry(ctx, cfg)
 		if err != nil {
 			panic(err)
 		}
 		defer t.Shutdown()
 
-		hooks.StartServer()
+		hooks.StartServer(cfg)
 
 	},
 	PreRunE: func(cmd *cobra.Command, args []string) error {

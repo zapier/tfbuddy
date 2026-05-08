@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/hashicorp/go-tfe"
+	"github.com/zapier/tfbuddy/internal/config"
 	"github.com/zapier/tfbuddy/pkg/mocks"
 	"github.com/zapier/tfbuddy/pkg/runstream"
 	"github.com/zapier/tfbuddy/pkg/vcs"
@@ -41,6 +42,7 @@ func TestAutoMergeNoChangesApply(t *testing.T) {
 	testSuite.MockGitClient.EXPECT().SetCommitStatus(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("could not commit status")).AnyTimes()
 	testSuite.InitTestSuite()
 	r := &RunStatusUpdater{
+		cfg:    config.C,
 		tfc:    testSuite.MockApiClient,
 		client: testSuite.MockGitClient,
 		rs:     testSuite.MockStreamClient,
@@ -65,6 +67,7 @@ func TestAutoMergeTargetedNoChangesApply(t *testing.T) {
 	testSuite.MockGitClient.EXPECT().SetCommitStatus(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("could not commit status")).AnyTimes()
 	testSuite.InitTestSuite()
 	r := &RunStatusUpdater{
+		cfg:    config.C,
 		tfc:    testSuite.MockApiClient,
 		client: testSuite.MockGitClient,
 		rs:     testSuite.MockStreamClient,
@@ -90,6 +93,7 @@ func TestAutoMergeApply(t *testing.T) {
 	testSuite.MockGitClient.EXPECT().SetCommitStatus(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("could not commit status")).AnyTimes()
 	testSuite.InitTestSuite()
 	r := &RunStatusUpdater{
+		cfg:    config.C,
 		tfc:    testSuite.MockApiClient,
 		client: testSuite.MockGitClient,
 		rs:     testSuite.MockStreamClient,
@@ -115,6 +119,7 @@ func TestAutoMergeTargetedApply(t *testing.T) {
 	testSuite.MockGitClient.EXPECT().SetCommitStatus(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("could not commit status")).AnyTimes()
 	testSuite.InitTestSuite()
 	r := &RunStatusUpdater{
+		cfg:    config.C,
 		tfc:    testSuite.MockApiClient,
 		client: testSuite.MockGitClient,
 		rs:     testSuite.MockStreamClient,
@@ -131,6 +136,7 @@ func TestAutoMergeTargetedApply(t *testing.T) {
 
 func TestPolicySoftFailPlanFailsPipelineWhenEnvTrue(t *testing.T) {
 	t.Setenv("TFBUDDY_FAIL_CI_ON_SENTINEL_SOFT_FAIL", "true")
+	config.Reload()
 
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
@@ -154,6 +160,7 @@ func TestPolicySoftFailPlanFailsPipelineWhenEnvTrue(t *testing.T) {
 		Times(1)
 
 	r := &RunStatusUpdater{
+		cfg:    config.C,
 		tfc:    testSuite.MockApiClient,
 		client: testSuite.MockGitClient,
 		rs:     testSuite.MockStreamClient,
@@ -170,4 +177,5 @@ func TestPolicySoftFailPlanFailsPipelineWhenEnvTrue(t *testing.T) {
 
 	// Clean up env var for safety (though t.Setenv handles this)
 	os.Unsetenv("TFBUDDY_FAIL_CI_ON_SENTINEL_SOFT_FAIL")
+	config.Reload()
 }

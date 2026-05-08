@@ -7,6 +7,7 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/nats-io/nats.go"
 	"github.com/rs/zerolog/log"
+	"github.com/zapier/tfbuddy/internal/config"
 	"github.com/zapier/tfbuddy/pkg/hooks_stream"
 	"github.com/zapier/tfbuddy/pkg/vcs/github"
 	"github.com/ziflex/lecho/v3"
@@ -21,7 +22,7 @@ import (
 	"github.com/zapier/tfbuddy/pkg/vcs/gitlab"
 )
 
-func StartServer() {
+func StartServer(cfg config.Config) {
 	e := echo.New()
 	e.HideBanner = true
 	e.Use(middleware.Recover())
@@ -36,7 +37,7 @@ func StartServer() {
 	e.GET("/live", echo.WrapHandler(health))
 
 	// setup NATS client & streams
-	nc := tfnats.Connect()
+	nc := tfnats.Connect(cfg)
 	js, err := nc.JetStream(nats.PublishAsyncMaxPending(256))
 	if err != nil {
 		log.Fatal().Err(err).Msg("could not create Jetstream context")
@@ -50,7 +51,7 @@ func StartServer() {
 	health.AddLivenessCheck("hook-stream", hs.HealthCheck)
 
 	// setup API clients
-	gl := gitlab.NewGitlabClient()
+	gl := gitlab.NewGitlabClient(cfg)
 	tfc := tfc_api.NewTFCClient()
 
 	hooksGroup := e.Group("/hooks")
@@ -67,14 +68,14 @@ func StartServer() {
 	//
 	// Github
 	//
-	gh := github.NewGithubClient()
-	githubHooksHandler := ghHooks.NewGithubHooksHandler(gh, tfc, rs, js)
+	gh := github.NewGithubClient(cfg)
+	githubHooksHandler := ghHooks.NewGithubHooksHandler(cfg, gh, tfc, rs, js)
 	hooksGroup.POST("/github/events", githubHooksHandler.Handler)
 
 	//
 	// Gitlab
 	//
-	gitlabGroupHandler := gitlab_hooks.NewGitlabHooksHandler(gl, tfc, rs, js)
+	gitlabGroupHandler := gitlab_hooks.NewGitlabHooksHandler(cfg, gl, tfc, rs, js)
 	hooksGroup.POST("/gitlab/group", gitlabGroupHandler.GroupHandler())
 	hooksGroup.POST("/gitlab/project", gitlabGroupHandler.ProjectHandler())
 
@@ -87,11 +88,11 @@ func StartServer() {
 	hooksGroup.POST("/tfc/notification", notifHandler.Handler())
 
 	// Github Run Events Processor
-	ghep := github.NewRunEventsWorker(gh, rs, tfc)
+	ghep := github.NewRunEventsWorker(cfg, gh, rs, tfc)
 	defer ghep.Close()
 
 	// Gitlab Run Events Processor
-	grsp := gitlab.NewRunStatusProcessor(gl, rs, tfc)
+	grsp := gitlab.NewRunStatusProcessor(cfg, gl, rs, tfc)
 	defer grsp.Close()
 
 	if err := e.Start(":8080"); err != nil {

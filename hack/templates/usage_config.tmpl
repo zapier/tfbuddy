@@ -1,0 +1,11 @@
+## Configuration
+
+`tfbuddy` can be configured to meet your specific setup through environment variables or flags.
+
+The full list of supported environment variables and flags is described below:
+
+|Env Var|Flag|Description|Default Value|
+|---|---|---|---|
+{{- range .Options }}
+|`{{ .Env }}`|`{{ .Flag }}`|{{ .Description }}|{{ if .Default }}`{{ .Default }}`{{ end }}|
+{{- end }}

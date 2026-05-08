@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/zapier/tfbuddy/pkg/allow_list"
+	"github.com/zapier/tfbuddy/internal/config"
 	"github.com/zapier/tfbuddy/pkg/comment_actions"
 
 	"github.com/stretchr/testify/assert"
@@ -113,8 +113,12 @@ func Test_parseCommentCommand(t *testing.T) {
 }
 
 func TestProcessNoteEventPlanError(t *testing.T) {
-	os.Setenv(allow_list.GitlabProjectAllowListEnv, "zapier/")
-	defer os.Unsetenv(allow_list.GitlabProjectAllowListEnv)
+	os.Setenv("TFBUDDY_GITLAB_PROJECT_ALLOW_LIST", "zapier/")
+	config.Reload()
+	defer func() {
+		os.Unsetenv("TFBUDDY_GITLAB_PROJECT_ALLOW_LIST")
+		config.Reload()
+	}()
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 
@@ -148,10 +152,11 @@ func TestProcessNoteEventPlanError(t *testing.T) {
 	mockTFCTrigger.EXPECT().TriggerTFCEvents(gomock.Any()).Return(nil, fmt.Errorf("something went wrong"))
 
 	client := &GitlabEventWorker{
+		cfg:       config.C,
 		gl:        mockGitClient,
 		tfc:       mockApiClient,
 		runstream: mockStreamClient,
-		triggerCreation: func(gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger {
+		triggerCreation: func(appCfg config.Config, gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger {
 			return mockTFCTrigger
 		},
 	}
@@ -168,8 +173,12 @@ func TestProcessNoteEventPlanError(t *testing.T) {
 }
 
 func TestProcessNoteEventPanicHandling(t *testing.T) {
-	os.Setenv(allow_list.GitlabProjectAllowListEnv, "zapier/")
-	defer os.Unsetenv(allow_list.GitlabProjectAllowListEnv)
+	os.Setenv("TFBUDDY_GITLAB_PROJECT_ALLOW_LIST", "zapier/")
+	config.Reload()
+	defer func() {
+		os.Unsetenv("TFBUDDY_GITLAB_PROJECT_ALLOW_LIST")
+		config.Reload()
+	}()
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
@@ -181,10 +190,11 @@ func TestProcessNoteEventPanicHandling(t *testing.T) {
 
 	testSuite.InitTestSuite()
 	client := &GitlabEventWorker{
+		cfg:       config.C,
 		gl:        testSuite.MockGitClient,
 		tfc:       testSuite.MockApiClient,
 		runstream: testSuite.MockStreamClient,
-		triggerCreation: func(gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger {
+		triggerCreation: func(appCfg config.Config, gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger {
 			return nil
 		},
 	}
@@ -197,8 +207,12 @@ func TestProcessNoteEventPanicHandling(t *testing.T) {
 	}
 }
 func TestProcessNoteEventPlan(t *testing.T) {
-	os.Setenv(allow_list.GitlabProjectAllowListEnv, "zapier/")
-	defer os.Unsetenv(allow_list.GitlabProjectAllowListEnv)
+	os.Setenv("TFBUDDY_GITLAB_PROJECT_ALLOW_LIST", "zapier/")
+	config.Reload()
+	defer func() {
+		os.Unsetenv("TFBUDDY_GITLAB_PROJECT_ALLOW_LIST")
+		config.Reload()
+	}()
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	mockGitClient := mocks.NewMockGitClient(mockCtrl)
@@ -233,10 +247,11 @@ func TestProcessNoteEventPlan(t *testing.T) {
 	}, nil)
 
 	client := &GitlabEventWorker{
+		cfg:       config.C,
 		gl:        mockGitClient,
 		tfc:       mockApiClient,
 		runstream: mockStreamClient,
-		triggerCreation: func(gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger {
+		triggerCreation: func(appCfg config.Config, gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger {
 			return mockTFCTrigger
 		},
 	}
@@ -251,8 +266,12 @@ func TestProcessNoteEventPlan(t *testing.T) {
 }
 
 func TestProcessNoteEventPlanFailedWorkspace(t *testing.T) {
-	os.Setenv(allow_list.GitlabProjectAllowListEnv, "zapier/")
-	defer os.Unsetenv(allow_list.GitlabProjectAllowListEnv)
+	os.Setenv("TFBUDDY_GITLAB_PROJECT_ALLOW_LIST", "zapier/")
+	config.Reload()
+	defer func() {
+		os.Unsetenv("TFBUDDY_GITLAB_PROJECT_ALLOW_LIST")
+		config.Reload()
+	}()
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
@@ -289,10 +308,11 @@ func TestProcessNoteEventPlanFailedWorkspace(t *testing.T) {
 	testSuite.InitTestSuite()
 
 	worker := &GitlabEventWorker{
+		cfg:       config.C,
 		tfc:       testSuite.MockApiClient,
 		gl:        testSuite.MockGitClient,
 		runstream: testSuite.MockStreamClient,
-		triggerCreation: func(gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger {
+		triggerCreation: func(appCfg config.Config, gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger {
 			return mockTFCTrigger
 		},
 	}
@@ -307,8 +327,12 @@ func TestProcessNoteEventPlanFailedWorkspace(t *testing.T) {
 }
 
 func TestProcessNoteEventPlanFailedMultipleWorkspaces(t *testing.T) {
-	os.Setenv(allow_list.GitlabProjectAllowListEnv, "zapier/")
-	defer os.Unsetenv(allow_list.GitlabProjectAllowListEnv)
+	os.Setenv("TFBUDDY_GITLAB_PROJECT_ALLOW_LIST", "zapier/")
+	config.Reload()
+	defer func() {
+		os.Unsetenv("TFBUDDY_GITLAB_PROJECT_ALLOW_LIST")
+		config.Reload()
+	}()
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
@@ -347,10 +371,11 @@ func TestProcessNoteEventPlanFailedMultipleWorkspaces(t *testing.T) {
 	testSuite.InitTestSuite()
 
 	client := &GitlabEventWorker{
+		cfg:       config.C,
 		gl:        testSuite.MockGitClient,
 		tfc:       testSuite.MockApiClient,
 		runstream: testSuite.MockStreamClient,
-		triggerCreation: func(gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger {
+		triggerCreation: func(appCfg config.Config, gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger {
 			return mockTFCTrigger
 		},
 	}
@@ -365,8 +390,12 @@ func TestProcessNoteEventPlanFailedMultipleWorkspaces(t *testing.T) {
 }
 
 func TestProcessNoteEventNoErrorNoRuns(t *testing.T) {
-	os.Setenv(allow_list.GitlabProjectAllowListEnv, "zapier/")
-	defer os.Unsetenv(allow_list.GitlabProjectAllowListEnv)
+	os.Setenv("TFBUDDY_GITLAB_PROJECT_ALLOW_LIST", "zapier/")
+	config.Reload()
+	defer func() {
+		os.Unsetenv("TFBUDDY_GITLAB_PROJECT_ALLOW_LIST")
+		config.Reload()
+	}()
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	mockGitClient := mocks.NewMockGitClient(mockCtrl)
@@ -399,10 +428,11 @@ func TestProcessNoteEventNoErrorNoRuns(t *testing.T) {
 	mockTFCTrigger.EXPECT().TriggerTFCEvents(gomock.Any()).Return(nil, nil)
 
 	client := &GitlabEventWorker{
+		cfg:       config.C,
 		gl:        mockGitClient,
 		tfc:       mockApiClient,
 		runstream: mockStreamClient,
-		triggerCreation: func(gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger {
+		triggerCreation: func(appCfg config.Config, gl vcs.GitClient, tfc tfc_api.ApiClient, runstream runstream.StreamClient, cfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger {
 			return mockTFCTrigger
 		},
 	}

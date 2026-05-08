@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	gogithub "github.com/google/go-github/v69/github"
+	"github.com/zapier/tfbuddy/internal/config"
 	"github.com/zapier/tfbuddy/pkg/utils"
 )
 
@@ -86,11 +87,12 @@ func newGHTestClient(t *testing.T, serverURL string) *Client {
 	t.Helper()
 	ghClient := gogithub.NewClient(nil)
 	ghClient.BaseURL, _ = ghClient.BaseURL.Parse(serverURL + "/")
-	return &Client{client: ghClient, ctx: context.Background(), token: "test-token"}
+	return &Client{client: ghClient, ctx: context.Background(), token: "test-token", cfg: config.C}
 }
 
 func TestGH_GetOldRunUrls_SingleWorkspace_DeletesOlderPlan(t *testing.T) {
 	t.Setenv("TFBUDDY_DELETE_OLD_COMMENTS", "true")
+	config.Reload()
 
 	currentID := int64(300)
 	comments := []fakeComment{
@@ -130,6 +132,7 @@ func TestGH_GetOldRunUrls_SingleWorkspace_DeletesOlderPlan(t *testing.T) {
 
 func TestGH_GetOldRunUrls_MultiWorkspace_KeepsOnePerWorkspaceAndAction(t *testing.T) {
 	t.Setenv("TFBUDDY_DELETE_OLD_COMMENTS", "true")
+	config.Reload()
 
 	currentPlanA := int64(500)
 	comments := []fakeComment{
@@ -169,6 +172,7 @@ func TestGH_GetOldRunUrls_MultiWorkspace_KeepsOnePerWorkspaceAndAction(t *testin
 
 func TestGH_GetOldRunUrls_ApplyAction_OnlyDeletesMatchingApply(t *testing.T) {
 	t.Setenv("TFBUDDY_DELETE_OLD_COMMENTS", "true")
+	config.Reload()
 
 	currentApplyA := int64(500)
 	comments := []fakeComment{
@@ -206,6 +210,7 @@ func TestGH_GetOldRunUrls_ApplyAction_OnlyDeletesMatchingApply(t *testing.T) {
 
 func TestGH_GetOldRunUrls_DeleteDisabled_NoDeletion(t *testing.T) {
 	t.Setenv("TFBUDDY_DELETE_OLD_COMMENTS", "false")
+	config.Reload()
 
 	currentID := int64(200)
 	comments := []fakeComment{
@@ -237,6 +242,7 @@ func TestGH_GetOldRunUrls_DeleteDisabled_NoDeletion(t *testing.T) {
 
 func TestGH_GetOldRunUrls_FullMultiWorkspaceScenario(t *testing.T) {
 	t.Setenv("TFBUDDY_DELETE_OLD_COMMENTS", "true")
+	config.Reload()
 
 	currentPlanA := int64(1000)
 	currentPlanB := int64(1100)

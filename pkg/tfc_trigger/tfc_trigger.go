@@ -17,6 +17,7 @@ import (
 
 	"github.com/hashicorp/go-tfe"
 	"github.com/rs/zerolog/log"
+	"github.com/zapier/tfbuddy/internal/config"
 
 	"github.com/zapier/tfbuddy/pkg/runstream"
 	"github.com/zapier/tfbuddy/pkg/tfc_api"
@@ -82,6 +83,7 @@ const (
 )
 
 type TFCTrigger struct {
+	appCfg    config.Config
 	cfg       *TFCTriggerOptions
 	gl        vcs.GitClient
 	tfc       tfc_api.ApiClient
@@ -122,6 +124,7 @@ func (tfcOpts *TFCTriggerOptions) validate() error {
 }
 
 func NewTFCTrigger(
+	appCfg config.Config,
 	gl vcs.GitClient,
 	tfc tfc_api.ApiClient,
 	runstream runstream.StreamClient,
@@ -129,6 +132,7 @@ func NewTFCTrigger(
 ) Trigger {
 
 	return &TFCTrigger{
+		appCfg:    appCfg,
 		gl:        gl,
 		tfc:       tfc,
 		cfg:       cfg,
@@ -406,7 +410,7 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 		}
 		for _, cfgWS := range triggeredWorkspaces {
 			// check allow / deny lists
-			if !isWorkspaceAllowed(cfgWS.Name, cfgWS.Organization) {
+			if !isWorkspaceAllowed(t.appCfg, cfgWS.Name, cfgWS.Organization) {
 				log.Info().Str("ws", cfgWS.Name).Msg("Ignoring workspace, because of allow/deny list.")
 				workspaceStatus.Errored = append(workspaceStatus.Errored, &ErroredWorkspace{
 					Name:  cfgWS.Name,
@@ -703,7 +707,7 @@ func (t *TFCTrigger) publishRunToStream(ctx context.Context, run *tfe.Run, cfgWS
 			Str("WS", run.Workspace.Name).Msg("auto-merge cannot be enabled because the 'apply-before-merge' mode is not in use")
 		rmd.AutoMerge = false
 	}
-	if cfgWS.AutoMerge && !vcs.IsGlobalAutoMergeEnabled() {
+	if cfgWS.AutoMerge && !t.appCfg.AllowAutoMerge {
 		log.Info().Str("RunID", run.ID).
 			Str("Org", run.Workspace.Organization.Name).
 			Str("WS", run.Workspace.Name).Msg("auto-merge cannot be enabled since the feature is globally disabled")

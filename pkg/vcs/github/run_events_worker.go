@@ -6,6 +6,7 @@ import (
 
 	"github.com/hashicorp/go-tfe"
 	"github.com/rs/zerolog/log"
+	"github.com/zapier/tfbuddy/internal/config"
 	"github.com/zapier/tfbuddy/pkg/comment_formatter"
 	"github.com/zapier/tfbuddy/pkg/runstream"
 	"github.com/zapier/tfbuddy/pkg/tfc_api"
@@ -16,14 +17,16 @@ import (
 const runEventsConsumerDurableName = "github"
 
 type RunEventsWorker struct {
+	cfg          config.Config
 	client       vcs.GitClient
 	rs           runstream.StreamClient
 	tfc          tfc_api.ApiClient
 	eventQCloser func()
 }
 
-func NewRunEventsWorker(client *Client, rs runstream.StreamClient, tfc tfc_api.ApiClient) *RunEventsWorker {
+func NewRunEventsWorker(cfg config.Config, client *Client, rs runstream.StreamClient, tfc tfc_api.ApiClient) *RunEventsWorker {
 	rsp := &RunEventsWorker{
+		cfg:    cfg,
 		client: client,
 		rs:     rs,
 		tfc:    tfc,
@@ -67,7 +70,7 @@ func (w *RunEventsWorker) postRunStatusComment(ctx context.Context, run *tfe.Run
 	ctx, span := otel.Tracer("TFC").Start(ctx, "postRunStatusComment")
 	defer span.End()
 
-	commentBody, topLevelNoteBody, _ := comment_formatter.FormatRunStatusCommentBody(w.tfc, run, rmd)
+	commentBody, topLevelNoteBody, _ := comment_formatter.FormatRunStatusCommentBody(w.cfg, w.tfc, run, rmd)
 
 	if topLevelNoteBody != "" {
 		if run.Status == tfe.RunErrored || run.Status == tfe.RunCanceled || run.Status == tfe.RunDiscarded || run.Status == tfe.RunPlannedAndFinished {

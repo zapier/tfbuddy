@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"strconv"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
@@ -91,13 +89,7 @@ func (p *RunStatusUpdater) updateCommitStatusForRun(ctx context.Context, run *tf
 		// A sentinel policy has soft failed for a plan-only run. This is a final state.
 		// During the apply, the policy failure will need to be overriden.
 		log.Debug().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Msg("policy soft failed")
-		failOnSoftEnv := os.Getenv("TFBUDDY_FAIL_CI_ON_SENTINEL_SOFT_FAIL")
-		failOnSoft, err := strconv.ParseBool(failOnSoftEnv)
-		if err != nil {
-			log.Error().Err(err).Str("env_var", "TFBUDDY_FAIL_CI_ON_SENTINEL_SOFT_FAIL").Msg("could not parse env var, defaulting to false")
-			failOnSoft = false
-		}
-		if failOnSoft && rmd.GetAction() == runstream.PlanAction {
+		if p.cfg.FailCIOnSentinelSoftFail && rmd.GetAction() == runstream.PlanAction {
 			p.updateStatus(ctx, gogitlab.Failed, "plan", rmd)
 		} else {
 			p.updateStatus(ctx, gogitlab.Success, rmd.GetAction(), rmd)

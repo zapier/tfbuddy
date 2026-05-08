@@ -3,6 +3,7 @@ package gitlab
 import (
 	"github.com/hashicorp/go-tfe"
 	"github.com/rs/zerolog/log"
+	"github.com/zapier/tfbuddy/internal/config"
 	"github.com/zapier/tfbuddy/pkg/runstream"
 	"github.com/zapier/tfbuddy/pkg/tfc_api"
 	"github.com/zapier/tfbuddy/pkg/vcs"
@@ -10,14 +11,16 @@ import (
 )
 
 type RunStatusUpdater struct {
+	cfg          config.Config
 	client       vcs.GitClient
 	rs           runstream.StreamClient
 	tfc          tfc_api.ApiClient
 	eventQCloser func()
 }
 
-func NewRunStatusProcessor(client *GitlabClient, rs runstream.StreamClient, tfc tfc_api.ApiClient) *RunStatusUpdater {
+func NewRunStatusProcessor(cfg config.Config, client *GitlabClient, rs runstream.StreamClient, tfc tfc_api.ApiClient) *RunStatusUpdater {
 	rsp := &RunStatusUpdater{
+		cfg:    cfg,
 		client: client,
 		rs:     rs,
 		tfc:    tfc,

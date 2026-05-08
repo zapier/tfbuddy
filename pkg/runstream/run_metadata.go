@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
-	"github.com/zapier/tfbuddy/pkg/vcs"
 )
 
 // ensure type complies with interface
@@ -79,7 +78,7 @@ func (r *TFRunMetadata) GetVcsProvider() string {
 	return r.VcsProvider
 }
 func (r *TFRunMetadata) GetAutoMerge() bool {
-	return r.AutoMerge && vcs.IsGlobalAutoMergeEnabled()
+	return r.AutoMerge
 }
 func (s *Stream) AddRunMeta(rmd RunMetadata) error {
 	b, err := encodeTFRunMetadata(rmd)
