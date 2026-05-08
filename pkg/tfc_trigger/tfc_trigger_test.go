@@ -1108,43 +1108,86 @@ func TestTFCEvents_UnlockRemovesTags(t *testing.T) {
 	}
 }
 
-// TestTriggerCleanupEvent_ContinuesOnMissingWorkspace verifies that if one
-// workspace in the .tfbuddy.yaml config no longer exists in TFC, the cleanup
-// loop skips it and still removes the lock tag from the remaining workspaces
-// (rather than crashing with a nil pointer dereference on the missing ws).
-func TestTriggerCleanupEvent_ContinuesOnMissingWorkspace(t *testing.T) {
+// TestTriggerCleanupEvent_ScopesCleanupToTriggeredWorkspaces verifies that
+// merge cleanup only inspects workspaces touched by the MR. Unrelated
+// workspaces in .tfbuddy.yaml must not be looked up or produce MR noise.
+func TestTriggerCleanupEvent_ScopesCleanupToTriggeredWorkspaces(t *testing.T) {
 	ws := &tfc_trigger.ProjectConfig{
 		Workspaces: []*tfc_trigger.TFCWorkspace{
-			{Name: "deleted-ws", Organization: "zapier-test", Mode: "apply-before-merge"},
-			{Name: "service-tfbuddy", Organization: "zapier-test", Mode: "apply-before-merge"},
+			{Name: "deleted-ws", Organization: "zapier-test", Mode: "apply-before-merge", Dir: "deleted"},
+			{Name: "service-tfbuddy", Organization: "zapier-test", Mode: "apply-before-merge", Dir: "service"},
 		}}
 
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: ws}, t)
 
-	// First workspace is missing from TFC
-	testSuite.MockApiClient.EXPECT().GetWorkspaceByName(gomock.Any(), "zapier-test", "deleted-ws").
-		Return(nil, fmt.Errorf("resource not found"))
-	// Second workspace exists and has the locking tag
+	testSuite.MockGitMR.EXPECT().GetInternalID().Return(testSuite.MetaData.MRIID).AnyTimes()
+	testSuite.MockGitClient.EXPECT().GetMergeRequest(
+		gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS,
+	).Return(testSuite.MockGitMR, nil)
+	testSuite.MockGitClient.EXPECT().GetRepoFile(
+		gomock.Any(), testSuite.MetaData.ProjectNameNS, ".tfbuddy.yaml", testSuite.MetaData.SourceBranch,
+	).Return(testSuite.MetaData.TFBuddyConfig, nil)
+	testSuite.MockGitClient.EXPECT().GetMergeRequestModifiedFiles(
+		gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS,
+	).Return([]string{"service/main.tf"}, nil)
+
+	// Only the triggered workspace is cleaned up.
 	testSuite.MockApiClient.EXPECT().GetWorkspaceByName(gomock.Any(), "zapier-test", "service-tfbuddy").
 		Return(&tfe.Workspace{ID: "service-tfbuddy"}, nil)
 	testSuite.MockApiClient.EXPECT().GetTagsByQuery(gomock.Any(), "service-tfbuddy", "tfbuddylock-101").
 		Return([]string{"tfbuddylock-101"}, nil)
-	testSuite.MockApiClient.EXPECT().RemoveTagsByQuery(gomock.Any(), "service-tfbuddy", "tfbuddylock-101").
+	testSuite.MockApiClient.EXPECT().RemoveTagsByName(gomock.Any(), "service-tfbuddy", []string{"tfbuddylock-101"}).
 		Return(nil)
 
-	// handleError posts an MR comment when the first workspace fails
-	testSuite.MockGitClient.EXPECT().CreateMergeRequestComment(
-		gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS,
-		"Error: error getting workspace: resource not found",
-	).Return(nil)
-
-	// Summary discussion is posted with the successfully cleaned workspace
 	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(
 		gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS,
 		"Released locks for workspaces: service-tfbuddy",
 	).Return(testSuite.MockGitDisc, nil)
+
+	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
+		Action:                   tfc_trigger.PlanAction,
+		Branch:                   testSuite.MetaData.SourceBranch,
+		CommitSHA:                "abcd12233",
+		ProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
+		MergeRequestIID:          testSuite.MetaData.MRIID,
+		TriggerSource:            tfc_trigger.MergeRequestEventTrigger,
+	})
+	trigger := tfc_trigger.NewTFCTrigger(testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
+	if err := trigger.TriggerCleanupEvent(ctx); err != nil {
+		t.Fatalf("cleanup should not fail when unrelated workspaces exist, got: %v", err)
+	}
+}
+
+// TestTriggerCleanupEvent_DoesNotReleaseOtherMRsLocks verifies that the
+// cleanup does not steal a tag from another MR whose IID happens to contain
+// the merging MR's IID as a substring. The TFC ListTags `q` parameter does
+// partial matching, so a query for "tfbuddylock-101" also returns
+// "tfbuddylock-1010" — cleanup must filter for an exact match before
+// treating the workspace as one this MR locked.
+func TestTriggerCleanupEvent_DoesNotReleaseOtherMRsLocks(t *testing.T) {
+	ws := &tfc_trigger.ProjectConfig{
+		Workspaces: []*tfc_trigger.TFCWorkspace{
+			{Name: "shared-ws", Organization: "zapier-test", Mode: "apply-before-merge"},
+		}}
+
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: ws}, t)
+
+	// MR #101 is merging. The workspace is locked by MR #1010 (different MR
+	// whose IID contains "101" as a substring). TFC's partial-match query
+	// returns the foreign tag.
+	testSuite.MockApiClient.EXPECT().GetWorkspaceByName(gomock.Any(), "zapier-test", "shared-ws").
+		Return(&tfe.Workspace{ID: "shared-ws"}, nil)
+	testSuite.MockApiClient.EXPECT().GetTagsByQuery(gomock.Any(), "shared-ws", "tfbuddylock-101").
+		Return([]string{"tfbuddylock-1010"}, nil)
+
+	// Cleanup MUST NOT remove the foreign tag and MUST NOT include the
+	// workspace in the summary. (No RemoveTagsByName / RemoveTagsByQuery
+	// call is expected; gomock fails the test if one is made.)
 
 	testSuite.InitTestSuite()
 
@@ -1159,7 +1202,7 @@ func TestTriggerCleanupEvent_ContinuesOnMissingWorkspace(t *testing.T) {
 	trigger := tfc_trigger.NewTFCTrigger(config.C, testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
 	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
 	if err := trigger.TriggerCleanupEvent(ctx); err != nil {
-		t.Fatalf("cleanup should not fail when a workspace is missing, got: %v", err)
+		t.Fatalf("cleanup should not fail, got: %v", err)
 	}
 }
 
