@@ -2,6 +2,7 @@ package tfc_trigger_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -297,6 +298,10 @@ func TestTFCEvents_MultiWorkspaceApply(t *testing.T) {
 	}).Times(2)
 
 	testSuite.MockStreamClient.EXPECT().AddRunMeta(gomock.Any()).Times(2)
+	testSuite.MockStreamClient.EXPECT().AddWorkspaceMeta(&runstream.TFCWorkspacesMetadata{
+		CountTotalWorkspaces:    2,
+		CountExecutedWorkspaces: 0,
+	}, fmt.Sprintf("%d", testSuite.MetaData.MRIID), testSuite.MetaData.ProjectNameNS)
 	testSuite.InitTestSuite()
 	testLogger := zltest.New(t)
 	log.Logger = log.Logger.Output(testLogger)
@@ -475,7 +480,11 @@ func TestTFCEvents_WorkspaceApplyModifiedBothSrcDstBranches(t *testing.T) {
 	testSuite.MockGitClient.EXPECT().GetMergeRequestModifiedFiles(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS).Return([]string{"main.tf"}, nil)
 
 	mockStreamClient := mocks.NewMockStreamClient(mockCtrl)
-
+	mockStreamClient.EXPECT().GetWorkspaceMeta(gomock.Any(), gomock.Any()).Return(nil, errors.New("no record"))
+	mockStreamClient.EXPECT().AddWorkspaceMeta(&runstream.TFCWorkspacesMetadata{
+		CountTotalWorkspaces:    1,
+		CountExecutedWorkspaces: 0,
+	}, fmt.Sprintf("%d", testSuite.MetaData.MRIID), testSuite.MetaData.ProjectNameNS)
 	testSuite.InitTestSuite()
 
 	testLogger := zltest.New(t)
