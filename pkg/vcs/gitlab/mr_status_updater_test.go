@@ -31,6 +31,67 @@ func (m *commitStatusStateMatcher) String() string {
 	return "matches commit status with state=" + m.expectedState
 }
 
+// pipelineIDMatcher asserts that the commit status options carry the expected pipeline ID.
+type pipelineIDMatcher struct {
+	expectedID int
+}
+
+func (m *pipelineIDMatcher) Matches(x interface{}) bool {
+	opts, ok := x.(*GitlabCommitStatusOptions)
+	if !ok {
+		return false
+	}
+	if opts.PipelineID == nil {
+		return false
+	}
+	return *opts.PipelineID == m.expectedID
+}
+
+func (m *pipelineIDMatcher) String() string {
+	return "matches commit status whose PipelineID is set to the expected value"
+}
+
+// TestUpdateStatusAttachesPipelineID guards against a regression of the closure
+// shadowing bug where the resolved pipeline ID was discarded and SetCommitStatus
+// was called with PipelineID == nil. Without an attached pipeline ID, GitLab
+// can't associate the status with the current MR pipeline, leaving the "apply"
+// check stuck and pipeline-status links pointing at stale runs.
+func TestUpdateStatusAttachesPipelineID(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
+
+	const expectedPipelineID = 42
+	testSuite.MockGitClient.EXPECT().
+		GetPipelinesForCommit(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return([]vcs.ProjectPipeline{&GitlabPipeline{&gogitlab.PipelineInfo{ID: expectedPipelineID, Source: "merge_request_event"}}}, nil).
+		AnyTimes()
+
+	testSuite.MockGitClient.EXPECT().
+		SetCommitStatus(
+			gomock.Any(),
+			gomock.Any(),
+			gomock.Any(),
+			&pipelineIDMatcher{expectedID: expectedPipelineID},
+		).
+		Return(&GitlabCommitStatus{&gogitlab.CommitStatus{}}, nil).
+		Times(1)
+
+	testSuite.InitTestSuite()
+	r := &RunStatusUpdater{
+		cfg:    config.C,
+		tfc:    testSuite.MockApiClient,
+		client: testSuite.MockGitClient,
+		rs:     testSuite.MockStreamClient,
+	}
+
+	r.updateStatus(context.Background(), gogitlab.Success, "apply", &runstream.TFRunMetadata{
+		Action:    "apply",
+		Workspace: "service-tfbuddy",
+		RunID:     "run-123",
+	})
+}
+
 func TestAutoMergeNoChangesApply(t *testing.T) {
 
 	mockCtrl := gomock.NewController(t)

@@ -124,7 +124,7 @@ func (p *RunStatusUpdater) updateStatus(ctx context.Context, state gogitlab.Buil
 	var pipelineID *int
 	getPipelineIDFn := func() error {
 		log.Debug().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Msg("getting pipeline status")
-		pipelineID := p.getLatestPipelineID(ctx, rmd)
+		pipelineID = p.getLatestPipelineID(ctx, rmd)
 		if pipelineID == nil {
 			return errNoPipelineStatus
 		}
