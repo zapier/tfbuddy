@@ -3,14 +3,48 @@ package tfc_api
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 
 	"github.com/hashicorp/go-tfe"
 	"github.com/rs/zerolog/log"
+	"github.com/spf13/viper"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/time/rate"
+
+	"github.com/zapier/tfbuddy/internal/config"
 )
+
+// Defaults match TFC's documented per-token limit (~30 req/s).
+const (
+	defaultTFCRateRPS   = 30
+	defaultTFCRateBurst = 30
+)
+
+type rateLimitedTransport struct {
+	rt      http.RoundTripper
+	limiter *rate.Limiter
+}
+
+func (t *rateLimitedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if err := t.limiter.Wait(req.Context()); err != nil {
+		return nil, err
+	}
+	return t.rt.RoundTrip(req)
+}
+
+// newRateLimitedHTTPClient deliberately sets no top-level Timeout —
+// ConfigurationVersions.Upload streams the repo and a fixed cap would
+// truncate slow uploads. Per-call deadlines flow through context.
+func newRateLimitedHTTPClient(limiter *rate.Limiter) *http.Client {
+	base, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return &http.Client{Transport: &rateLimitedTransport{rt: http.DefaultTransport, limiter: limiter}}
+	}
+	return &http.Client{Transport: &rateLimitedTransport{rt: base.Clone(), limiter: limiter}}
+}
 
 //go:generate mockgen -source api_client.go -destination=../mocks/mock_tfc_api.go -package=mocks github.com/zapier/tfbuddy/pkg/tfc_api
 type ApiClient interface {
@@ -36,17 +70,33 @@ func NewTFCClient() ApiClient {
 		log.Fatal().Msg("TFC_TOKEN not set")
 	}
 
-	config := &tfe.Config{
-		Token: token,
+	rps := tfcRateLimitValue(config.KeyTFCRateLimitRPS, defaultTFCRateRPS)
+	burst := tfcRateLimitValue(config.KeyTFCRateLimitBurst, defaultTFCRateBurst)
+	limiter := rate.NewLimiter(rate.Limit(rps), burst)
+	log.Info().Int("rps", rps).Int("burst", burst).Msg("TFC client rate limit configured")
+
+	tfeConfig := &tfe.Config{
+		Token:      token,
+		HTTPClient: newRateLimitedHTTPClient(limiter),
 	}
 
-	var err error
-	tfcClient, err := tfe.NewClient(config)
+	tfcClient, err := tfe.NewClient(tfeConfig)
 	if err != nil {
 		log.Fatal().Err(err)
 	}
 
 	return &TFCClient{Client: tfcClient}
+}
+
+// tfcRateLimitValue falls back when the configured value is invalid (zero or negative).
+func tfcRateLimitValue(key string, fallback int) int {
+	n := viper.GetInt(key)
+	if n < 1 {
+		log.Warn().Str("key", key).Int("value", n).Int("default", fallback).
+			Msg("invalid value, falling back to default")
+		return fallback
+	}
+	return n
 }
 
 func (t *TFCClient) GetRun(ctx context.Context, id string) (*tfe.Run, error) {

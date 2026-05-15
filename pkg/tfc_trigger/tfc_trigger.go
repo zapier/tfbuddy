@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -24,6 +23,10 @@ import (
 	"github.com/zapier/tfbuddy/pkg/utils"
 	"github.com/zapier/tfbuddy/pkg/vcs"
 )
+
+// MRCommentTargetBranchEvalFailed is the MR-level warning when analysis cannot
+// determine whether the target branch modified workspace-relevant paths.
+const MRCommentTargetBranchEvalFailed = ":warning: Could not identify modified workspaces on target branch. Please review the plan carefully for unrelated changes."
 
 const (
 	ApplyAction TriggerAction = iota
@@ -88,6 +91,17 @@ type TFCTrigger struct {
 	gl        vcs.GitClient
 	tfc       tfc_api.ApiClient
 	runstream runstream.StreamClient
+	// workspaceStream, when set, fans out one message per workspace instead
+	// of running them inline. Nil keeps the legacy synchronous behavior.
+	workspaceStream WorkspacePublisher
+}
+
+type WorkspacePublisher interface {
+	Publish(ctx context.Context, msg *WorkspaceTriggerMsg) error
+}
+
+func (t *TFCTrigger) SetWorkspaceStream(s WorkspacePublisher) {
+	t.workspaceStream = s
 }
 
 type TFCTriggerOptions struct {
@@ -100,10 +114,14 @@ type TFCTriggerOptions struct {
 	MergeRequestRootNoteID   int64
 	TriggerSource            TriggerSource
 	VcsProvider              string
-	Workspace                string `short:"w" long:"workspace" description:"A specific terraform Workspace to use" required:"false"`
-	TFVersion                string `short:"v" long:"tf_version" description:"A specific terraform version to use" required:"false"`
-	Target                   string `short:"t" long:"target" description:"A specific terraform target to use" required:"false"`
-	AllowEmptyRun            bool   `short:"e" long:"allow_empty_run" description:"A specific terraform AllowEmptyRun" required:"false"`
+	// DeliveryID is the upstream webhook delivery ID (X-GitHub-Delivery /
+	// X-Gitlab-Event-UUID). Used as the JetStream dedup anchor so retriggers
+	// are not silently dropped within the dedup window.
+	DeliveryID    string
+	Workspace     string `short:"w" long:"workspace" description:"A specific terraform Workspace to use" required:"false"`
+	TFVersion     string `short:"v" long:"tf_version" description:"A specific terraform version to use" required:"false"`
+	Target        string `short:"t" long:"target" description:"A specific terraform target to use" required:"false"`
+	AllowEmptyRun bool   `short:"e" long:"allow_empty_run" description:"A specific terraform AllowEmptyRun" required:"false"`
 }
 
 func NewTFCTriggerConfig(opts *TFCTriggerOptions) (*TFCTriggerOptions, error) {
@@ -196,6 +214,19 @@ func (t *TFCTrigger) GetWorkspace() string {
 	return t.cfg.Workspace
 }
 
+// tracerName derives the OpenTelemetry tracer name from VcsProvider so spans
+// are correctly labeled regardless of which stream worker invoked this trigger.
+func (t *TFCTrigger) tracerName() string {
+	switch t.cfg.VcsProvider {
+	case "github":
+		return "GithubHandler"
+	case "gitlab":
+		return "GitlabHandler"
+	default:
+		return "TFCTrigger"
+	}
+}
+
 // predefined errors
 var (
 	ErrWorkspaceNotDefined = errors.New("the workspace is not defined in " + ProjectConfigFilename)
@@ -267,7 +298,7 @@ func (t *TFCTrigger) getLockingMR(ctx context.Context, workspace string) string 
 }
 
 func (t *TFCTrigger) getTriggeredWorkspaces(ctx context.Context, modifiedFiles []string) ([]*TFCWorkspace, error) {
-	ctx, span := otel.Tracer("GitlabHandler").Start(ctx, "getTriggeredWorkspaces")
+	ctx, span := otel.Tracer(t.tracerName()).Start(ctx, "getTriggeredWorkspaces")
 	defer span.End()
 
 	cfg, err := getProjectConfigFile(ctx, t.gl, t)
@@ -311,7 +342,7 @@ type TriggeredTFCWorkspaces struct {
 }
 
 func (t *TFCTrigger) getModifiedWorkspacesOnTargetBranch(ctx context.Context, mr vcs.MR, repo vcs.GitRepo, triggeredWorkspaces []*TFCWorkspace) (map[string]struct{}, error) {
-	ctx, span := otel.Tracer("GitlabHandler").Start(ctx, "getModifiedWorkspacesOnTargetBranch")
+	ctx, span := otel.Tracer(t.tracerName()).Start(ctx, "getModifiedWorkspacesOnTargetBranch")
 	defer span.End()
 
 	modifiedWSMap := make(map[string]struct{}, 0)
@@ -349,7 +380,7 @@ func (t *TFCTrigger) getModifiedWorkspacesOnTargetBranch(ctx context.Context, mr
 	return modifiedWSMap, err
 }
 func (t *TFCTrigger) getTriggeredWorkspacesForRequest(ctx context.Context, mr vcs.MR) ([]*TFCWorkspace, error) {
-	ctx, span := otel.Tracer("GitlabHandler").Start(ctx, "getTriggeredWorkspacesForRequest")
+	ctx, span := otel.Tracer(t.tracerName()).Start(ctx, "getTriggeredWorkspacesForRequest")
 	defer span.End()
 
 	mrModifiedFiles, err := t.gl.GetMergeRequestModifiedFiles(ctx, mr.GetInternalID(), t.GetProjectNameWithNamespace())
@@ -363,11 +394,11 @@ func (t *TFCTrigger) getTriggeredWorkspacesForRequest(ctx context.Context, mr vc
 
 // cloneGitRepo will clone the git repo for a specific MR and returns the temp path to be cleaned up later
 func (t *TFCTrigger) cloneGitRepo(ctx context.Context, mr vcs.MR) (vcs.GitRepo, error) {
-	ctx, span := otel.Tracer("GitlabHandler").Start(ctx, "cloneGitRepo")
+	ctx, span := otel.Tracer(t.tracerName()).Start(ctx, "cloneGitRepo")
 	defer span.End()
 
 	safeProj := strings.ReplaceAll(t.GetProjectNameWithNamespace(), "/", "-")
-	cloneDir, err := ioutil.TempDir("", fmt.Sprintf("%s-%d-*", safeProj, t.GetMergeRequestIID()))
+	cloneDir, err := os.MkdirTemp("", fmt.Sprintf("%s-%d-*", safeProj, t.GetMergeRequestIID()))
 	if err != nil {
 		return nil, fmt.Errorf("could not create tmp directory. %w", err)
 	}
@@ -377,86 +408,118 @@ func (t *TFCTrigger) cloneGitRepo(ctx context.Context, mr vcs.MR) (vcs.GitRepo, 
 	}
 	return repo, nil
 }
+
+// TriggerTFCEvents dispatches one run per touched workspace. The clone and
+// target-branch evaluation happen once per delivery so the fan-out path
+// doesn't redo MR-level work in every worker.
 func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspaces, error) {
-	ctx, span := otel.Tracer("GitlabHandler").Start(ctx, "TriggerTFCEvents")
+	ctx, span := otel.Tracer(t.tracerName()).Start(ctx, "TriggerTFCEvents")
 	defer span.End()
 
 	mr, err := t.gl.GetMergeRequest(ctx, t.GetMergeRequestIID(), t.GetProjectNameWithNamespace())
 	if err != nil {
-		return nil, fmt.Errorf("could not read MergeRequest data from Gitlab API. %w", err)
+		return nil, fmt.Errorf("could not read MergeRequest data from VCS API: %w", err)
 	}
 	triggeredWorkspaces, err := t.getTriggeredWorkspacesForRequest(ctx, mr)
 	if err != nil {
 		return nil, fmt.Errorf("could not read triggered workspaces. %w", err)
 	}
-	workspaceStatus := &TriggeredTFCWorkspaces{
+	if len(triggeredWorkspaces) == 0 {
+		if t.GetTriggerSource() == CommentTrigger {
+			log.Error().Err(ErrNoChangesDetected).Msg("No Terraform changes found in changeset.")
+			t.postUpdate(ctx, ErrNoChangesDetected.Error())
+		} else {
+			log.Debug().Msg("No Terraform changes found in changeset.")
+		}
+		return &TriggeredTFCWorkspaces{}, nil
+	}
+
+	repo, err := t.cloneGitRepo(ctx, mr)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := os.RemoveAll(repo.GetLocalDirectory()); err != nil {
+			log.Error().Err(err).Str("path", repo.GetLocalDirectory()).Msg("could not remove cloned repository directory")
+		}
+	}()
+
+	blocked, err := t.getModifiedWorkspacesOnTargetBranch(ctx, mr, repo, triggeredWorkspaces)
+	if err != nil {
+		if err := t.postUpdate(ctx, MRCommentTargetBranchEvalFailed); err != nil {
+			log.Error().Err(err).Msg("could not update MR with message")
+		}
+	}
+
+	dispatch := t.runInline(mr, repo)
+	if t.workspaceStream != nil {
+		dispatch = t.enqueue
+	}
+	return t.dispatchWorkspaces(ctx, triggeredWorkspaces, blocked, dispatch), nil
+}
+
+// workspaceDispatchFn runs (inline) or enqueues (fan-out) a single workspace.
+// Returning an error puts the workspace into status.Errored verbatim.
+type workspaceDispatchFn func(ctx context.Context, ws *TFCWorkspace) error
+
+func (t *TFCTrigger) dispatchWorkspaces(ctx context.Context, workspaces []*TFCWorkspace, blocked map[string]struct{}, dispatch workspaceDispatchFn) *TriggeredTFCWorkspaces {
+	status := &TriggeredTFCWorkspaces{
 		Errored:  make([]*ErroredWorkspace, 0),
 		Executed: make([]string, 0),
 	}
-	if len(triggeredWorkspaces) > 0 {
-
-		repo, err := t.cloneGitRepo(ctx, mr)
-		if err != nil {
-			return nil, err
+	for _, ws := range workspaces {
+		if !isWorkspaceAllowed(t.appCfg, ws.Name, ws.Organization) {
+			log.Info().Str("ws", ws.Name).Msg("Ignoring workspace, because of allow/deny list.")
+			status.Errored = append(status.Errored, &ErroredWorkspace{
+				Name:  ws.Name,
+				Error: "Ignoring workspace, because of allow/deny list.",
+			})
+			continue
 		}
-		defer os.Remove(repo.GetLocalDirectory())
-
-		modifiedWSMap, err := t.getModifiedWorkspacesOnTargetBranch(ctx, mr, repo, triggeredWorkspaces)
-		if err != nil {
-			err = t.postUpdate(ctx, ":warning: Could not identify modified workspaces on target branch. Please review the plan carefully for unrelated changes.")
-			if err != nil {
-				log.Error().Err(err).Msg("could not update MR with message")
-			}
+		if _, ok := blocked[ws.Name]; ok {
+			log.Info().Str("ws", ws.Name).Str("dir", ws.Dir).Strs("triggerDirs", ws.TriggerDirs).
+				Msg("Blocking workspace: relevant paths modified on target branch.")
+			status.Errored = append(status.Errored, &ErroredWorkspace{
+				Name:  ws.Name,
+				Error: fmt.Sprintf("Blocked: workspace-relevant paths (dir: '%s', triggerDirs: %v) have been modified on the target branch since this branch diverged. Please rebase/merge the target branch to resolve this.", ws.Dir, ws.TriggerDirs),
+			})
+			continue
 		}
-		for _, cfgWS := range triggeredWorkspaces {
-			// check allow / deny lists
-			if !isWorkspaceAllowed(t.appCfg, cfgWS.Name, cfgWS.Organization) {
-				log.Info().Str("ws", cfgWS.Name).Msg("Ignoring workspace, because of allow/deny list.")
-				workspaceStatus.Errored = append(workspaceStatus.Errored, &ErroredWorkspace{
-					Name:  cfgWS.Name,
-					Error: "Ignoring workspace, because of allow/deny list.",
-				})
-				continue
-			}
-			if _, ok := modifiedWSMap[cfgWS.Name]; ok {
-				log.Info().Str("ws", cfgWS.Name).Str("dir", cfgWS.Dir).Strs("triggerDirs", cfgWS.TriggerDirs).Msg("Blocking workspace: relevant paths modified on target branch.")
-				workspaceStatus.Errored = append(workspaceStatus.Errored, &ErroredWorkspace{
-					Name:  cfgWS.Name,
-					Error: fmt.Sprintf("Blocked: workspace-relevant paths (dir: '%s', triggerDirs: %v) have been modified on the target branch since this branch diverged. Please rebase/merge the target branch to resolve this.", cfgWS.Dir, cfgWS.TriggerDirs),
-				})
-				continue
-			}
-			if err := t.triggerRunForWorkspace(ctx, cfgWS, mr, repo.GetLocalDirectory()); err != nil {
-				log.Error().Err(err).Msg("could not trigger Run for Workspace")
-				workspaceStatus.Errored = append(workspaceStatus.Errored, &ErroredWorkspace{
-					Name:  cfgWS.Name,
-					Error: fmt.Sprintf("could not trigger Run for Workspace. %v", err),
-				})
-				continue
-			}
-			workspaceStatus.Executed = append(workspaceStatus.Executed, cfgWS.Name)
+		if err := dispatch(ctx, ws); err != nil {
+			status.Errored = append(status.Errored, &ErroredWorkspace{Name: ws.Name, Error: err.Error()})
+			continue
 		}
-
-	} else if t.GetTriggerSource() == CommentTrigger {
-		log.Error().Err(ErrNoChangesDetected)
-		t.postUpdate(ctx, ErrNoChangesDetected.Error())
-		return nil, nil
-
-	} else {
-		log.Debug().Msg("No Terraform changes found in changeset.")
-		return nil, nil
+		status.Executed = append(status.Executed, ws.Name)
 	}
+	return status
+}
 
-	return workspaceStatus, nil
+func (t *TFCTrigger) runInline(mr vcs.DetailedMR, repo vcs.GitRepo) workspaceDispatchFn {
+	return func(ctx context.Context, ws *TFCWorkspace) error {
+		if err := t.triggerRunForWorkspace(ctx, ws, mr, repo.GetLocalDirectory()); err != nil {
+			log.Error().Err(err).Str("ws", ws.Name).Msg("could not trigger Run for Workspace")
+			return fmt.Errorf("could not trigger Run for Workspace. %w", err)
+		}
+		return nil
+	}
+}
+
+func (t *TFCTrigger) enqueue(ctx context.Context, ws *TFCWorkspace) error {
+	msg := &WorkspaceTriggerMsg{Opts: *t.cfg, Workspace: *ws}
+	if err := t.workspaceStream.Publish(ctx, msg); err != nil {
+		log.Error().Err(err).Str("ws", ws.Name).Msg("could not enqueue workspace trigger")
+		return fmt.Errorf("could not enqueue workspace trigger. %w", err)
+	}
+	return nil
 }
 
 func (t *TFCTrigger) TriggerCleanupEvent(ctx context.Context) error {
-	ctx, span := otel.Tracer("GitlabHandler").Start(ctx, "TriggerCleanupEvent")
+	ctx, span := otel.Tracer(t.tracerName()).Start(ctx, "TriggerCleanupEvent")
 	defer span.End()
 
 	mr, err := t.gl.GetMergeRequest(ctx, t.GetMergeRequestIID(), t.GetProjectNameWithNamespace())
 	if err != nil {
-		return fmt.Errorf("could not read MergeRequest data from Gitlab API. %w", err)
+		return fmt.Errorf("could not read MergeRequest data from VCS API: %w", err)
 	}
 	triggeredWorkspaces, err := t.getTriggeredWorkspacesForRequest(ctx, mr)
 	if err != nil {
@@ -649,9 +712,11 @@ func (t *TFCTrigger) triggerRunForWorkspace(ctx context.Context, cfgWS *TFCWorks
 	if err != nil {
 		return fmt.Errorf("could not create MR discussion thread for TFC run status updates. %w", err)
 	}
-	t.SetMergeRequestDiscussionID(disc.GetDiscussionID())
+	// Keep these local — concurrent fan-out workers must not share state via t.cfg.
+	discussionID := disc.GetDiscussionID()
+	var rootNoteID int64
 	if len(disc.GetMRNotes()) > 0 {
-		t.SetMergeRequestRootNoteID(disc.GetMRNotes()[0].GetNoteID())
+		rootNoteID = disc.GetMRNotes()[0].GetNoteID()
 	} else {
 		log.Debug().Msg("No MR Notes found")
 	}
@@ -679,10 +744,10 @@ func (t *TFCTrigger) triggerRunForWorkspace(ctx context.Context, cfgWS *TFCWorks
 		Bool("speculative", run.ConfigurationVersion.Speculative).
 		Msg("created TFC run")
 
-	return t.publishRunToStream(ctx, run, cfgWS)
+	return t.publishRunToStream(ctx, run, cfgWS, discussionID, rootNoteID)
 }
 
-func (t *TFCTrigger) publishRunToStream(ctx context.Context, run *tfe.Run, cfgWS *TFCWorkspace) error {
+func (t *TFCTrigger) publishRunToStream(ctx context.Context, run *tfe.Run, cfgWS *TFCWorkspace, discussionID string, rootNoteID int64) error {
 	ctx, span := otel.Tracer("TFC").Start(ctx, "publishRunToStream")
 	defer span.End()
 
@@ -695,8 +760,8 @@ func (t *TFCTrigger) publishRunToStream(ctx context.Context, run *tfe.Run, cfgWS
 		CommitSHA:                            t.GetCommitSHA(),
 		MergeRequestProjectNameWithNamespace: t.GetProjectNameWithNamespace(),
 		MergeRequestIID:                      t.GetMergeRequestIID(),
-		DiscussionID:                         t.GetMergeRequestDiscussionID(),
-		RootNoteID:                           t.GetMergeRequestRootNoteID(),
+		DiscussionID:                         discussionID,
+		RootNoteID:                           rootNoteID,
 		VcsProvider:                          t.GetVcsProvider(),
 		AutoMerge:                            cfgWS.AutoMerge,
 	}

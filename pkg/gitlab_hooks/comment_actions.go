@@ -14,6 +14,12 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
+// deliveryIDProvider is the optional accessor production envelopes implement
+// to thread the webhook delivery ID without widening vcs.MRCommentEvent.
+type deliveryIDProvider interface {
+	GetDeliveryID() string
+}
+
 // processNoteEvent processes GitLab Webhooks for Note events
 // In the Gitlab API, MR comments are called Notes
 func (w *GitlabEventWorker) processNoteEvent(ctx context.Context, event vcs.MRCommentEvent) (projectName string, err error) {
@@ -44,6 +50,9 @@ func (w *GitlabEventWorker) processNoteEvent(ctx context.Context, event vcs.MRCo
 	opts.TriggerOpts.MergeRequestIID = event.GetMR().GetInternalID()
 	opts.TriggerOpts.TriggerSource = tfc_trigger.CommentTrigger
 	opts.TriggerOpts.VcsProvider = "gitlab"
+	if dp, ok := event.(deliveryIDProvider); ok {
+		opts.TriggerOpts.DeliveryID = dp.GetDeliveryID()
+	}
 
 	cfg, err := tfc_trigger.NewTFCTriggerConfig(opts.TriggerOpts)
 	if err != nil {
@@ -52,6 +61,9 @@ func (w *GitlabEventWorker) processNoteEvent(ctx context.Context, event vcs.MRCo
 	}
 
 	trigger := w.triggerCreation(w.cfg, w.gl, w.tfc, w.runstream, cfg)
+	if w.workspaceStream != nil {
+		trigger.SetWorkspaceStream(w.workspaceStream)
+	}
 
 	if event.GetAttributes().GetType() == string(gitlab.DiscussionNote) {
 		trigger.SetMergeRequestDiscussionID(event.GetAttributes().GetDiscussionID())

@@ -37,6 +37,7 @@ func (w *GitlabEventWorker) processMergeRequestEvent(msg *MergeRequestEventMsg) 
 		MergeRequestIID:          event.ObjectAttributes.IID,
 		TriggerSource:            tfc_trigger.MergeRequestEventTrigger,
 		VcsProvider:              "gitlab",
+		DeliveryID:               msg.DeliveryID,
 	})
 	if err != nil {
 		log.Error().Err(err).Msg("could not create TFCTriggerConfig")
@@ -44,6 +45,9 @@ func (w *GitlabEventWorker) processMergeRequestEvent(msg *MergeRequestEventMsg) 
 	}
 
 	trigger := tfc_trigger.NewTFCTrigger(w.cfg, w.gl, w.tfc, w.runstream, cfg)
+	if w.workspaceStream != nil {
+		trigger.SetWorkspaceStream(w.workspaceStream)
+	}
 	switch event.ObjectAttributes.Action {
 	case "open", "reopen":
 		log.Debug().Str("project", projectName).Int("mergeRequestID", event.ObjectAttributes.IID).Msg("triggering TFC events for merge request")

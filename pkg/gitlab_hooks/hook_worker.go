@@ -18,6 +18,7 @@ type GitlabEventWorker struct {
 	gl              vcs.GitClient
 	runstream       runstream.StreamClient
 	triggerCreation TriggerCreationFunc
+	workspaceStream tfc_trigger.WorkspacePublisher
 }
 
 func NewGitlabEventWorker(h *GitlabHooksHandler, js nats.JetStreamContext) *GitlabEventWorker {
@@ -27,6 +28,7 @@ func NewGitlabEventWorker(h *GitlabHooksHandler, js nats.JetStreamContext) *Gitl
 		gl:              h.gl,
 		runstream:       h.runstream,
 		triggerCreation: tfc_trigger.NewTFCTrigger,
+		workspaceStream: h.workspaceStream,
 	}
 
 	_, err := h.mrStream.QueueSubscribe("gitlab_mr_event_worker", w.processMREventStreamMsg)

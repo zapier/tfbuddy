@@ -78,6 +78,7 @@ func (h *GithubHooksHandler) processIssueComment(ctx context.Context, msg *Githu
 	opts.TriggerOpts.MergeRequestIID = *event.Issue.Number
 	opts.TriggerOpts.TriggerSource = tfc_trigger.CommentTrigger
 	opts.TriggerOpts.VcsProvider = "github"
+	opts.TriggerOpts.DeliveryID = msg.DeliveryID
 
 	cfg, err := tfc_trigger.NewTFCTriggerConfig(opts.TriggerOpts)
 	if err != nil {
@@ -86,6 +87,9 @@ func (h *GithubHooksHandler) processIssueComment(ctx context.Context, msg *Githu
 	}
 
 	trigger := h.triggerCreation(h.cfg, h.vcs, h.tfc, h.runstream, cfg)
+	if h.workspaceStream != nil {
+		trigger.SetWorkspaceStream(h.workspaceStream)
+	}
 
 	//// TODO: support additional commands and arguments (e.g. destroy, refresh, lock, unlock)
 	//// TODO: this should be refactored and be agnostic to the VCS type
@@ -111,7 +115,7 @@ func (h *GithubHooksHandler) processIssueComment(ctx context.Context, msg *Githu
 		return fmt.Errorf("could not parse command")
 	}
 	executedWorkspaces, tfError := trigger.TriggerTFCEvents(ctx)
-	if tfError == nil && len(executedWorkspaces.Errored) > 0 {
+	if tfError == nil && executedWorkspaces != nil && len(executedWorkspaces.Errored) > 0 {
 		for _, failedWS := range executedWorkspaces.Errored {
 			h.postPullRequestComment(ctx, event, fmt.Sprintf(":no_entry: %s could not be run because: %s", failedWS.Name, failedWS.Error))
 		}

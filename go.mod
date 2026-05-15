@@ -11,6 +11,7 @@ require (
 	github.com/creasty/defaults v1.8.0
 	github.com/go-git/go-billy/v5 v5.6.2
 	github.com/go-git/go-git/v5 v5.16.0
+	github.com/go-viper/mapstructure/v2 v2.2.1
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-github/v69 v69.2.0
 	github.com/hashicorp/go-tfe v1.80.0
@@ -27,6 +28,7 @@ require (
 	github.com/rzajac/zltest v0.12.0
 	github.com/sl1pm4t/gongs v0.0.0-20230501190600-06976a7fac23
 	github.com/spf13/cobra v1.9.1
+	github.com/spf13/pflag v1.0.6
 	github.com/spf13/viper v1.20.1
 	github.com/stretchr/testify v1.11.1
 	github.com/ziflex/lecho/v3 v3.8.0
@@ -41,6 +43,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.39.0
 	go.uber.org/mock v0.5.2
 	golang.org/x/oauth2 v0.34.0
+	golang.org/x/time v0.15.0
 	google.golang.org/grpc v1.79.3
 	gopkg.in/dealancer/validate.v2 v2.1.0
 	gopkg.in/errgo.v2 v2.1.0
@@ -63,7 +66,6 @@ require (
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/go-tpm v0.9.8 // indirect
@@ -101,7 +103,6 @@ require (
 	github.com/sourcegraph/conc v0.3.0 // indirect
 	github.com/spf13/afero v1.14.0 // indirect
 	github.com/spf13/cast v1.8.0 // indirect
-	github.com/spf13/pflag v1.0.6 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
@@ -118,7 +119,6 @@ require (
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
-	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20251202230838-ff82c1b0f217 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20251202230838-ff82c1b0f217 // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
