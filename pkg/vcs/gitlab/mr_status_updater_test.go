@@ -10,6 +10,7 @@ import (
 	"github.com/zapier/tfbuddy/internal/config"
 	"github.com/zapier/tfbuddy/pkg/mocks"
 	"github.com/zapier/tfbuddy/pkg/runstream"
+	"github.com/zapier/tfbuddy/pkg/utils"
 	"github.com/zapier/tfbuddy/pkg/vcs"
 	gogitlab "gitlab.com/gitlab-org/api/client-go"
 	"go.uber.org/mock/gomock"
@@ -17,6 +18,22 @@ import (
 
 type commitStatusStateMatcher struct {
 	expectedState string
+}
+
+func testAutoMergeRunMetadata() *runstream.TFRunMetadata {
+	return &runstream.TFRunMetadata{
+		RunID:                                "run-123",
+		Organization:                         "zapier",
+		Workspace:                            "service-tfbuddy",
+		Action:                               runstream.ApplyAction,
+		CommitSHA:                            "commit-123",
+		MergeRequestProjectNameWithNamespace: "zapier/tfbuddy",
+		MergeRequestIID:                      101,
+		VcsProvider:                          "gitlab",
+		AutoMerge:                            true,
+		AutoMergeGeneration:                  "delivery-123",
+		AutoMergeSequence:                    123,
+	}
 }
 
 func (m *commitStatusStateMatcher) Matches(x interface{}) bool {
@@ -98,7 +115,8 @@ func TestAutoMergeNoChangesApply(t *testing.T) {
 	defer mockCtrl.Finish()
 	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
 
-	testSuite.MockGitClient.EXPECT().MergeMR(gomock.Any(), gomock.Any(), gomock.Any())
+	testSuite.MockStreamClient.EXPECT().RecordAutoMergeSuccess(gomock.Any()).Return(true, nil)
+	testSuite.MockGitClient.EXPECT().MergeMRAtSHA(gomock.Any(), 101, "zapier/tfbuddy", "commit-123")
 	testSuite.MockGitClient.EXPECT().GetPipelinesForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return([]vcs.ProjectPipeline{&GitlabPipeline{&gogitlab.PipelineInfo{ID: 1}}}, nil).AnyTimes()
 	testSuite.MockGitClient.EXPECT().SetCommitStatus(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("could not commit status")).AnyTimes()
 	testSuite.InitTestSuite()
@@ -111,18 +129,13 @@ func TestAutoMergeNoChangesApply(t *testing.T) {
 	r.updateCommitStatusForRun(context.Background(), &tfe.Run{
 		Status:     tfe.RunPlannedAndFinished,
 		HasChanges: false,
-	}, &runstream.TFRunMetadata{
-		Action:    "apply",
-		AutoMerge: true,
-	})
+	}, testAutoMergeRunMetadata())
 }
 func TestAutoMergeTargetedNoChangesApply(t *testing.T) {
 
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
-
-	testSuite.MockGitClient.EXPECT().MergeMR(gomock.Any(), gomock.Any(), gomock.Any()).MaxTimes(0)
 
 	testSuite.MockGitClient.EXPECT().GetPipelinesForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return([]vcs.ProjectPipeline{&GitlabPipeline{&gogitlab.PipelineInfo{ID: 1}}}, nil).AnyTimes()
 	testSuite.MockGitClient.EXPECT().SetCommitStatus(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("could not commit status")).AnyTimes()
@@ -149,7 +162,8 @@ func TestAutoMergeApply(t *testing.T) {
 	defer mockCtrl.Finish()
 	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
 
-	testSuite.MockGitClient.EXPECT().MergeMR(gomock.Any(), gomock.Any(), gomock.Any())
+	testSuite.MockStreamClient.EXPECT().RecordAutoMergeSuccess(gomock.Any()).Return(true, nil)
+	testSuite.MockGitClient.EXPECT().MergeMRAtSHA(gomock.Any(), 101, "zapier/tfbuddy", "commit-123")
 	testSuite.MockGitClient.EXPECT().GetPipelinesForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return([]vcs.ProjectPipeline{&GitlabPipeline{&gogitlab.PipelineInfo{ID: 1}}}, nil).AnyTimes()
 	testSuite.MockGitClient.EXPECT().SetCommitStatus(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("could not commit status")).AnyTimes()
 	testSuite.InitTestSuite()
@@ -162,10 +176,7 @@ func TestAutoMergeApply(t *testing.T) {
 	r.updateCommitStatusForRun(context.Background(), &tfe.Run{
 		Status:     tfe.RunApplied,
 		HasChanges: true,
-	}, &runstream.TFRunMetadata{
-		Action:    "apply",
-		AutoMerge: true,
-	})
+	}, testAutoMergeRunMetadata())
 }
 
 func TestAutoMergeTargetedApply(t *testing.T) {
@@ -173,8 +184,6 @@ func TestAutoMergeTargetedApply(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
-
-	testSuite.MockGitClient.EXPECT().MergeMR(gomock.Any(), gomock.Any(), gomock.Any()).MaxTimes(0)
 
 	testSuite.MockGitClient.EXPECT().GetPipelinesForCommit(gomock.Any(), gomock.Any(), gomock.Any()).Return([]vcs.ProjectPipeline{&GitlabPipeline{&gogitlab.PipelineInfo{ID: 1}}}, nil).AnyTimes()
 	testSuite.MockGitClient.EXPECT().SetCommitStatus(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("could not commit status")).AnyTimes()
@@ -193,6 +202,111 @@ func TestAutoMergeTargetedApply(t *testing.T) {
 		Action:    "apply",
 		AutoMerge: true,
 	})
+}
+
+func TestAutoMergeWaitsForAggregateClaim(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
+
+	testSuite.MockStreamClient.EXPECT().RecordAutoMergeSuccess(gomock.Any()).Return(false, nil)
+	testSuite.MockStreamClient.EXPECT().RecordAutoMergeSuccess(gomock.Any()).Return(true, nil)
+	testSuite.MockGitClient.EXPECT().MergeMRAtSHA(gomock.Any(), 101, "zapier/tfbuddy", "commit-123").Return(nil)
+
+	r := &RunStatusUpdater{cfg: config.Config{AllowAutoMerge: true}, client: testSuite.MockGitClient, rs: testSuite.MockStreamClient}
+	r.mergeMRIfPossible(context.Background(), testAutoMergeRunMetadata())
+	r.mergeMRIfPossible(context.Background(), testAutoMergeRunMetadata())
+}
+
+func TestAutoMergeReleasesClaimWhenGitLabMergeFails(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
+	ref := runstream.AutoMergeRefForRun(testAutoMergeRunMetadata())
+
+	testSuite.MockStreamClient.EXPECT().RecordAutoMergeSuccess(ref).Return(true, nil)
+	testSuite.MockGitClient.EXPECT().
+		MergeMRAtSHA(gomock.Any(), 101, "zapier/tfbuddy", "commit-123").
+		Return(errors.New("merge failed"))
+	testSuite.MockStreamClient.EXPECT().ReleaseAutoMergeClaim(ref).Return(nil)
+
+	r := &RunStatusUpdater{cfg: config.Config{AllowAutoMerge: true}, client: testSuite.MockGitClient, rs: testSuite.MockStreamClient}
+	r.mergeMRIfPossible(context.Background(), testAutoMergeRunMetadata())
+}
+
+func TestAutoMergePermanentGitLabFailureIsNotRedelivered(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
+
+	testSuite.MockStreamClient.EXPECT().RecordAutoMergeSuccess(gomock.Any()).Return(true, nil)
+	testSuite.MockGitClient.EXPECT().
+		MergeMRAtSHA(gomock.Any(), 101, "zapier/tfbuddy", "commit-123").
+		Return(utils.CreatePermanentError(errors.New("SHA mismatch")))
+
+	r := &RunStatusUpdater{cfg: config.Config{AllowAutoMerge: true}, client: testSuite.MockGitClient, rs: testSuite.MockStreamClient}
+	if err := r.mergeMRIfPossible(context.Background(), testAutoMergeRunMetadata()); err != nil {
+		t.Fatalf("permanent merge rejection should be acknowledged, got %v", err)
+	}
+}
+
+func TestAutoMergeReleaseFailureDoesNotStormGitLab(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
+
+	testSuite.MockStreamClient.EXPECT().RecordAutoMergeSuccess(gomock.Any()).Return(true, nil)
+	testSuite.MockGitClient.EXPECT().
+		MergeMRAtSHA(gomock.Any(), 101, "zapier/tfbuddy", "commit-123").
+		Return(errors.New("GitLab unavailable"))
+	testSuite.MockStreamClient.EXPECT().
+		ReleaseAutoMergeClaim(gomock.Any()).
+		Return(errors.New("NATS unavailable"))
+
+	r := &RunStatusUpdater{cfg: config.Config{AllowAutoMerge: true}, client: testSuite.MockGitClient, rs: testSuite.MockStreamClient}
+	if err := r.mergeMRIfPossible(context.Background(), testAutoMergeRunMetadata()); err != nil {
+		t.Fatalf("unreleasable claim should be acknowledged to avoid a retry storm, got %v", err)
+	}
+}
+
+func TestAutoMergeWithoutAggregateStateDoesNotMerge(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
+
+	testSuite.MockStreamClient.EXPECT().
+		RecordAutoMergeSuccess(gomock.Any()).
+		Return(false, runstream.ErrAutoMergeStateNotFound)
+
+	r := &RunStatusUpdater{cfg: config.Config{AllowAutoMerge: true}, client: testSuite.MockGitClient, rs: testSuite.MockStreamClient}
+	r.mergeMRIfPossible(context.Background(), testAutoMergeRunMetadata())
+}
+
+func TestAutoMergeHonorsCurrentGlobalKillSwitch(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
+
+	r := &RunStatusUpdater{cfg: config.Config{AllowAutoMerge: false}, client: testSuite.MockGitClient, rs: testSuite.MockStreamClient}
+	if err := r.mergeMRIfPossible(context.Background(), testAutoMergeRunMetadata()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAutoMergeStateErrorIsReturnedForRedelivery(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
+	wantErr := errors.New("NATS unavailable")
+
+	testSuite.MockStreamClient.EXPECT().
+		RecordAutoMergeSuccess(gomock.Any()).
+		Return(false, wantErr)
+
+	r := &RunStatusUpdater{cfg: config.Config{AllowAutoMerge: true}, client: testSuite.MockGitClient, rs: testSuite.MockStreamClient}
+	if err := r.mergeMRIfPossible(context.Background(), testAutoMergeRunMetadata()); !errors.Is(err, wantErr) {
+		t.Fatalf("expected state error to be returned, got %v", err)
+	}
 }
 
 func TestPolicySoftFailPlanFailsPipelineWhenEnvTrue(t *testing.T) {

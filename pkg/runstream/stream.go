@@ -12,9 +12,10 @@ const RunMetadataKvBucket = "RUN_METADATA"
 
 type Stream struct {
 	//nc         *nats.Conn
-	js         nats.JetStreamContext
-	metadataKV nats.KeyValue
-	pollingKV  nats.KeyValue
+	js          nats.JetStreamContext
+	metadataKV  nats.KeyValue
+	pollingKV   nats.KeyValue
+	autoMergeKV nats.KeyValue
 }
 
 // NewStream wires up the runstream JetStream client. dedupWindow is the
@@ -27,11 +28,13 @@ func NewStream(js nats.JetStreamContext, dedupWindow time.Duration) StreamClient
 	configureTFRunPollingTaskStream(js)
 	kv, _ := configureTFRunMetadataKVStore(js)
 	pollingKV, _ := configureRunPollingKVStore(js)
+	autoMergeKV, _ := configureAutoMergeMetadataKVStore(js)
 
 	s := &Stream{
 		js,
 		kv,
 		pollingKV,
+		autoMergeKV,
 	}
 
 	s.startPollingTaskDispatcher()

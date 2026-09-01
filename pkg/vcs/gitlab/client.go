@@ -134,6 +134,24 @@ func (c *GitlabClient) MergeMR(ctx context.Context, mrIID int, project string) e
 	}, createBackOffWithRetries())
 }
 
+func (c *GitlabClient) MergeMRAtSHA(ctx context.Context, mrIID int, project, expectedSHA string) error {
+	_, span := otel.Tracer("TFC").Start(ctx, "MergeMRAtSHA")
+	defer span.End()
+	return backoff.Retry(func() error {
+		_, resp, err := c.client.MergeRequests.AcceptMergeRequest(project, mrIID, &gogitlab.AcceptMergeRequestOptions{
+			MergeWhenPipelineSucceeds: ptr(true),
+			SHA:                       &expectedSHA,
+		})
+		if resp == nil {
+			if err == nil {
+				return errors.New("GitLab merge response was nil")
+			}
+			return err
+		}
+		return utils.CreatePermanentHTTPError(resp.StatusCode, err)
+	}, createBackOffWithRetries())
+}
+
 // GetOldRunUrls crawls MR discussion threads authored by the bot, collects
 // previous TFC run URLs into a collapsible block, and (when
 // TFBUDDY_DELETE_OLD_COMMENTS is set) deletes entire discussion threads that
@@ -648,6 +666,9 @@ func (gE *GitlabMergeCommentEvent) GetDiscussionID() string {
 }
 func (gE *GitlabMergeCommentEvent) GetSHA() string {
 	return gE.MergeRequest.LastCommit.ID
+}
+func (gE *GitlabMergeCommentEvent) GetEventSequence() int64 {
+	return int64(gE.ObjectAttributes.ID)
 }
 func (gE *GitlabMergeCommentEvent) GetLastCommit() vcs.Commit {
 	return gE

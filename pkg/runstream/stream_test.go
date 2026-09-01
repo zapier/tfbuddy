@@ -24,6 +24,7 @@ func startTestNATS(t *testing.T) (*server.Server, string) {
 	opts := natstest.DefaultTestOptions
 	opts.Port = -1 // ask the OS for a free port
 	opts.JetStream = true
+	opts.StoreDir = t.TempDir()
 	srv := natstest.RunServer(&opts)
 	t.Cleanup(srv.Shutdown)
 

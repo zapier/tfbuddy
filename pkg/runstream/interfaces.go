@@ -12,6 +12,11 @@ type StreamClient interface {
 	PublishTFRunEvent(ctx context.Context, re RunEvent) error
 	AddRunMeta(rmd RunMetadata) error
 	GetRunMeta(runID string) (RunMetadata, error)
+	EnsureAutoMergeState(state *AutoMergeState) error
+	BeginAutoMergeApply(ref AutoMergeRef, workspaces []string) error
+	RegisterAutoMergeRun(ref AutoMergeRef) error
+	RecordAutoMergeSuccess(ref AutoMergeRef) (bool, error)
+	ReleaseAutoMergeClaim(ref AutoMergeRef) error
 	NewTFRunPollingTask(meta RunMetadata, delay time.Duration) RunPollingTask
 	SubscribeTFRunPollingTasks(cb func(task RunPollingTask) bool) (closer func(), err error)
 	SubscribeTFRunEvents(queue string, cb func(run RunEvent) bool) (closer func(), err error)
@@ -39,6 +44,8 @@ type RunMetadata interface {
 	GetOrganization() string
 	GetVcsProvider() string
 	GetAutoMerge() bool
+	GetAutoMergeGeneration() string
+	GetAutoMergeSequence() int64
 }
 
 type RunPollingTask interface {

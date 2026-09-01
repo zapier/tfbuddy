@@ -175,6 +175,9 @@ func (ts *TestSuite) InitTestSuite() {
 	ts.MockApiClient.EXPECT().AddTags(gomock.Any(), gomock.Any(), "tfbuddylock", "101").AnyTimes()
 
 	ts.MockStreamClient.EXPECT().AddRunMeta(gomock.Any()).AnyTimes()
+	ts.MockStreamClient.EXPECT().EnsureAutoMergeState(gomock.Any()).AnyTimes()
+	ts.MockStreamClient.EXPECT().BeginAutoMergeApply(gomock.Any(), gomock.Any()).AnyTimes()
+	ts.MockStreamClient.EXPECT().RegisterAutoMergeRun(gomock.Any()).AnyTimes()
 
 	ts.MockProject.EXPECT().GetPathWithNamespace().Return(ts.MetaData.ProjectNameNS).AnyTimes()
 

@@ -5,6 +5,7 @@
 //
 //	mockgen -source interfaces.go -destination=../mocks/mock_runstream.go -package=mocks github.com/zapier/tfbuddy/pkg/runstream
 //
+
 // Package mocks is a generated GoMock package.
 package mocks
 
@@ -52,6 +53,34 @@ func (m *MockStreamClient) AddRunMeta(rmd runstream.RunMetadata) error {
 func (mr *MockStreamClientMockRecorder) AddRunMeta(rmd any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddRunMeta", reflect.TypeOf((*MockStreamClient)(nil).AddRunMeta), rmd)
+}
+
+// BeginAutoMergeApply mocks base method.
+func (m *MockStreamClient) BeginAutoMergeApply(ref runstream.AutoMergeRef, workspaces []string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "BeginAutoMergeApply", ref, workspaces)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// BeginAutoMergeApply indicates an expected call of BeginAutoMergeApply.
+func (mr *MockStreamClientMockRecorder) BeginAutoMergeApply(ref, workspaces any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BeginAutoMergeApply", reflect.TypeOf((*MockStreamClient)(nil).BeginAutoMergeApply), ref, workspaces)
+}
+
+// EnsureAutoMergeState mocks base method.
+func (m *MockStreamClient) EnsureAutoMergeState(state *runstream.AutoMergeState) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "EnsureAutoMergeState", state)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// EnsureAutoMergeState indicates an expected call of EnsureAutoMergeState.
+func (mr *MockStreamClientMockRecorder) EnsureAutoMergeState(state any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnsureAutoMergeState", reflect.TypeOf((*MockStreamClient)(nil).EnsureAutoMergeState), state)
 }
 
 // GetRunMeta mocks base method.
@@ -109,6 +138,49 @@ func (m *MockStreamClient) PublishTFRunEvent(ctx context.Context, re runstream.R
 func (mr *MockStreamClientMockRecorder) PublishTFRunEvent(ctx, re any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PublishTFRunEvent", reflect.TypeOf((*MockStreamClient)(nil).PublishTFRunEvent), ctx, re)
+}
+
+// RecordAutoMergeSuccess mocks base method.
+func (m *MockStreamClient) RecordAutoMergeSuccess(ref runstream.AutoMergeRef) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RecordAutoMergeSuccess", ref)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RecordAutoMergeSuccess indicates an expected call of RecordAutoMergeSuccess.
+func (mr *MockStreamClientMockRecorder) RecordAutoMergeSuccess(ref any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RecordAutoMergeSuccess", reflect.TypeOf((*MockStreamClient)(nil).RecordAutoMergeSuccess), ref)
+}
+
+// RegisterAutoMergeRun mocks base method.
+func (m *MockStreamClient) RegisterAutoMergeRun(ref runstream.AutoMergeRef) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RegisterAutoMergeRun", ref)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RegisterAutoMergeRun indicates an expected call of RegisterAutoMergeRun.
+func (mr *MockStreamClientMockRecorder) RegisterAutoMergeRun(ref any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RegisterAutoMergeRun", reflect.TypeOf((*MockStreamClient)(nil).RegisterAutoMergeRun), ref)
+}
+
+// ReleaseAutoMergeClaim mocks base method.
+func (m *MockStreamClient) ReleaseAutoMergeClaim(ref runstream.AutoMergeRef) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReleaseAutoMergeClaim", ref)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ReleaseAutoMergeClaim indicates an expected call of ReleaseAutoMergeClaim.
+func (mr *MockStreamClientMockRecorder) ReleaseAutoMergeClaim(ref any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReleaseAutoMergeClaim", reflect.TypeOf((*MockStreamClient)(nil).ReleaseAutoMergeClaim), ref)
 }
 
 // SubscribeTFRunEvents mocks base method.
@@ -305,6 +377,34 @@ func (m *MockRunMetadata) GetAutoMerge() bool {
 func (mr *MockRunMetadataMockRecorder) GetAutoMerge() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAutoMerge", reflect.TypeOf((*MockRunMetadata)(nil).GetAutoMerge))
+}
+
+// GetAutoMergeGeneration mocks base method.
+func (m *MockRunMetadata) GetAutoMergeGeneration() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetAutoMergeGeneration")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetAutoMergeGeneration indicates an expected call of GetAutoMergeGeneration.
+func (mr *MockRunMetadataMockRecorder) GetAutoMergeGeneration() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAutoMergeGeneration", reflect.TypeOf((*MockRunMetadata)(nil).GetAutoMergeGeneration))
+}
+
+// GetAutoMergeSequence mocks base method.
+func (m *MockRunMetadata) GetAutoMergeSequence() int64 {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetAutoMergeSequence")
+	ret0, _ := ret[0].(int64)
+	return ret0
+}
+
+// GetAutoMergeSequence indicates an expected call of GetAutoMergeSequence.
+func (mr *MockRunMetadataMockRecorder) GetAutoMergeSequence() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAutoMergeSequence", reflect.TypeOf((*MockRunMetadata)(nil).GetAutoMergeSequence))
 }
 
 // GetCommitSHA mocks base method.

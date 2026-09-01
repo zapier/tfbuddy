@@ -234,6 +234,20 @@ func (mr *MockGitClientMockRecorder) MergeMR(ctx, mrIID, project any) *gomock.Ca
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MergeMR", reflect.TypeOf((*MockGitClient)(nil).MergeMR), ctx, mrIID, project)
 }
 
+// MergeMRAtSHA mocks base method.
+func (m *MockGitClient) MergeMRAtSHA(ctx context.Context, mrIID int, project, expectedSHA string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "MergeMRAtSHA", ctx, mrIID, project, expectedSHA)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// MergeMRAtSHA indicates an expected call of MergeMRAtSHA.
+func (mr *MockGitClientMockRecorder) MergeMRAtSHA(ctx, mrIID, project, expectedSHA any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MergeMRAtSHA", reflect.TypeOf((*MockGitClient)(nil).MergeMRAtSHA), ctx, mrIID, project, expectedSHA)
+}
+
 // ResolveMergeRequestDiscussion mocks base method.
 func (m *MockGitClient) ResolveMergeRequestDiscussion(arg0 context.Context, arg1 string, arg2 int, arg3 string) error {
 	m.ctrl.T.Helper()

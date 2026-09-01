@@ -117,11 +117,15 @@ type TFCTriggerOptions struct {
 	// DeliveryID is the upstream webhook delivery ID (X-GitHub-Delivery /
 	// X-Gitlab-Event-UUID). Used as the JetStream dedup anchor so retriggers
 	// are not silently dropped within the dedup window.
-	DeliveryID    string
-	Workspace     string `short:"w" long:"workspace" description:"A specific terraform Workspace to use" required:"false"`
-	TFVersion     string `short:"v" long:"tf_version" description:"A specific terraform version to use" required:"false"`
-	Target        string `short:"t" long:"target" description:"A specific terraform target to use" required:"false"`
-	AllowEmptyRun bool   `short:"e" long:"allow_empty_run" description:"A specific terraform AllowEmptyRun" required:"false"`
+	DeliveryID string
+	// AutoMergeGeneration groups every workspace run dispatched by one apply command.
+	AutoMergeGeneration string
+	// AutoMergeSequence is the monotonically increasing GitLab note ID.
+	AutoMergeSequence int64
+	Workspace         string `short:"w" long:"workspace" description:"A specific terraform Workspace to use" required:"false"`
+	TFVersion         string `short:"v" long:"tf_version" description:"A specific terraform version to use" required:"false"`
+	Target            string `short:"t" long:"target" description:"A specific terraform target to use" required:"false"`
+	AllowEmptyRun     bool   `short:"e" long:"allow_empty_run" description:"A specific terraform AllowEmptyRun" required:"false"`
 }
 
 func NewTFCTriggerConfig(opts *TFCTriggerOptions) (*TFCTriggerOptions, error) {
@@ -297,20 +301,21 @@ func (t *TFCTrigger) getLockingMR(ctx context.Context, workspace string) string 
 	return lockingMR
 }
 
-func (t *TFCTrigger) getTriggeredWorkspaces(ctx context.Context, modifiedFiles []string) ([]*TFCWorkspace, error) {
+func (t *TFCTrigger) getTriggeredWorkspaces(ctx context.Context, modifiedFiles []string) ([]*TFCWorkspace, []*TFCWorkspace, error) {
 	ctx, span := otel.Tracer(t.tracerName()).Start(ctx, "getTriggeredWorkspaces")
 	defer span.End()
 
 	cfg, err := getProjectConfigFile(ctx, t.gl, t)
 	if err != nil {
 		if t.GetTriggerSource() == CommentTrigger {
-			return nil, fmt.Errorf("could not read .tfbuddy.yml file for this repo. %w", err)
+			return nil, nil, fmt.Errorf("could not read .tfbuddy.yml file for this repo. %w", err)
 		}
 		// we got a webhook for a repo that has not enabled TFBuddy yet. Ignore.
 		log.Debug().Msg("ignoring TFC trigger for project, missing .tfbuddy.yaml")
-		return nil, nil
+		return nil, nil, nil
 	}
 
+	affectedWorkspaces := cfg.triggeredWorkspaces(modifiedFiles)
 	var triggeredWorkspaces []*TFCWorkspace
 	if t.GetWorkspace() != "" {
 		var providedWS *TFCWorkspace
@@ -322,14 +327,13 @@ func (t *TFCTrigger) getTriggeredWorkspaces(ctx context.Context, modifiedFiles [
 		}
 		if providedWS == nil {
 			log.Warn().Str("workspace_arg", t.GetWorkspace()).Msg("provided workspace not configured for project")
-			return nil, utils.CreatePermanentError(ErrWorkspaceNotDefined)
+			return nil, nil, utils.CreatePermanentError(ErrWorkspaceNotDefined)
 		}
 		triggeredWorkspaces = append(triggeredWorkspaces, providedWS)
 	} else {
-		// check the MR modified files list against the .tfbuddy.yaml configured directories
-		triggeredWorkspaces = cfg.triggeredWorkspaces(modifiedFiles)
+		triggeredWorkspaces = affectedWorkspaces
 	}
-	return triggeredWorkspaces, nil
+	return triggeredWorkspaces, affectedWorkspaces, nil
 }
 
 type ErroredWorkspace struct {
@@ -379,13 +383,13 @@ func (t *TFCTrigger) getModifiedWorkspacesOnTargetBranch(ctx context.Context, mr
 	}
 	return modifiedWSMap, err
 }
-func (t *TFCTrigger) getTriggeredWorkspacesForRequest(ctx context.Context, mr vcs.MR) ([]*TFCWorkspace, error) {
+func (t *TFCTrigger) getTriggeredWorkspacesForRequest(ctx context.Context, mr vcs.MR) ([]*TFCWorkspace, []*TFCWorkspace, error) {
 	ctx, span := otel.Tracer(t.tracerName()).Start(ctx, "getTriggeredWorkspacesForRequest")
 	defer span.End()
 
 	mrModifiedFiles, err := t.gl.GetMergeRequestModifiedFiles(ctx, mr.GetInternalID(), t.GetProjectNameWithNamespace())
 	if err != nil {
-		return nil, fmt.Errorf("failed to get a list of modified files. %w", err)
+		return nil, nil, fmt.Errorf("failed to get a list of modified files. %w", err)
 	}
 	log.Debug().Str("project", t.GetProjectNameWithNamespace()).Int("mergeRequestID", mr.GetInternalID()).Strs("modifiedFiles", mrModifiedFiles).Msg("modified files")
 	return t.getTriggeredWorkspaces(ctx, mrModifiedFiles)
@@ -409,6 +413,69 @@ func (t *TFCTrigger) cloneGitRepo(ctx context.Context, mr vcs.MR) (vcs.GitRepo, 
 	return repo, nil
 }
 
+func (t *TFCTrigger) ensureAutoMergeState(workspaces []*TFCWorkspace) error {
+	if t.GetVcsProvider() != "gitlab" || (t.GetAction() != PlanAction && t.GetAction() != ApplyAction) || len(workspaces) == 0 {
+		return nil
+	}
+
+	workspaceKeys := make([]string, 0, len(workspaces))
+	for _, workspace := range workspaces {
+		workspaceKeys = append(workspaceKeys, runstream.AutoMergeWorkspaceKey(workspace.Organization, workspace.Name))
+	}
+
+	return t.runstream.EnsureAutoMergeState(runstream.NewAutoMergeState(
+		t.GetVcsProvider(),
+		t.GetProjectNameWithNamespace(),
+		t.GetMergeRequestIID(),
+		t.GetCommitSHA(),
+		autoMergeEligible(t.appCfg, workspaces),
+		workspaceKeys,
+	))
+}
+
+func autoMergeEligible(appCfg config.Config, workspaces []*TFCWorkspace) bool {
+	if !appCfg.AllowAutoMerge || len(workspaces) == 0 {
+		return false
+	}
+	for _, workspace := range workspaces {
+		if !workspace.AutoMerge || workspace.Mode != "apply-before-merge" ||
+			!isWorkspaceAllowed(appCfg, workspace.Name, workspace.Organization) {
+			return false
+		}
+	}
+	return true
+}
+
+func (t *TFCTrigger) beginAutoMergeApply(workspaces []*TFCWorkspace) error {
+	if t.GetVcsProvider() != "gitlab" || t.GetAction() != ApplyAction || len(workspaces) == 0 {
+		return nil
+	}
+	if t.cfg.AutoMergeGeneration == "" {
+		switch {
+		case t.cfg.DeliveryID != "":
+			t.cfg.AutoMergeGeneration = t.cfg.DeliveryID
+		case t.cfg.AutoMergeSequence > 0:
+			t.cfg.AutoMergeGeneration = fmt.Sprintf("gitlab-note-%d", t.cfg.AutoMergeSequence)
+		default:
+			log.Warn().Msg("auto-merge disabled for apply without a stable GitLab delivery or note ID")
+			return nil
+		}
+	}
+
+	workspaceKeys := make([]string, 0, len(workspaces))
+	for _, workspace := range workspaces {
+		workspaceKeys = append(workspaceKeys, runstream.AutoMergeWorkspaceKey(workspace.Organization, workspace.Name))
+	}
+	return t.runstream.BeginAutoMergeApply(runstream.AutoMergeRef{
+		VcsProvider:  t.GetVcsProvider(),
+		Project:      t.GetProjectNameWithNamespace(),
+		MergeRequest: t.GetMergeRequestIID(),
+		CommitSHA:    t.GetCommitSHA(),
+		Generation:   t.cfg.AutoMergeGeneration,
+		Sequence:     t.cfg.AutoMergeSequence,
+	}, workspaceKeys)
+}
+
 // TriggerTFCEvents dispatches one run per touched workspace. The clone and
 // target-branch evaluation happen once per delivery so the fan-out path
 // doesn't redo MR-level work in every worker.
@@ -420,7 +487,7 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 	if err != nil {
 		return nil, fmt.Errorf("could not read MergeRequest data from VCS API: %w", err)
 	}
-	triggeredWorkspaces, err := t.getTriggeredWorkspacesForRequest(ctx, mr)
+	triggeredWorkspaces, affectedWorkspaces, err := t.getTriggeredWorkspacesForRequest(ctx, mr)
 	if err != nil {
 		return nil, fmt.Errorf("could not read triggered workspaces. %w", err)
 	}
@@ -449,6 +516,13 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 		if err := t.postUpdate(ctx, MRCommentTargetBranchEvalFailed); err != nil {
 			log.Error().Err(err).Msg("could not update MR with message")
 		}
+	}
+
+	if err := t.ensureAutoMergeState(affectedWorkspaces); err != nil {
+		return nil, fmt.Errorf("could not initialize auto-merge state: %w", err)
+	}
+	if err := t.beginAutoMergeApply(triggeredWorkspaces); err != nil {
+		return nil, fmt.Errorf("could not initialize apply generation: %w", err)
 	}
 
 	dispatch := t.runInline(mr, repo)
@@ -521,7 +595,7 @@ func (t *TFCTrigger) TriggerCleanupEvent(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("could not read MergeRequest data from VCS API: %w", err)
 	}
-	triggeredWorkspaces, err := t.getTriggeredWorkspacesForRequest(ctx, mr)
+	triggeredWorkspaces, _, err := t.getTriggeredWorkspacesForRequest(ctx, mr)
 	if err != nil {
 		return fmt.Errorf("could not determine workspaces for merge cleanup. %w", err)
 	}
@@ -773,6 +847,8 @@ func (t *TFCTrigger) publishRunToStream(ctx context.Context, run *tfe.Run, cfgWS
 		RootNoteID:                           rootNoteID,
 		VcsProvider:                          t.GetVcsProvider(),
 		AutoMerge:                            cfgWS.AutoMerge,
+		AutoMergeGeneration:                  t.cfg.AutoMergeGeneration,
+		AutoMergeSequence:                    t.cfg.AutoMergeSequence,
 	}
 	//disable Auto Merge and log if the mode is not apply-before-merge
 	if cfgWS.Mode != "apply-before-merge" && cfgWS.AutoMerge {
@@ -790,6 +866,11 @@ func (t *TFCTrigger) publishRunToStream(ctx context.Context, run *tfe.Run, cfgWS
 	err := t.runstream.AddRunMeta(rmd)
 	if err != nil {
 		return fmt.Errorf("could not publish Run metadata to event stream, updates may not be posted to MR. %w", err)
+	}
+	if t.GetVcsProvider() == "gitlab" && t.GetAction() == ApplyAction && t.cfg.Target == "" && t.cfg.AutoMergeGeneration != "" {
+		if err := t.runstream.RegisterAutoMergeRun(runstream.AutoMergeRefForRun(rmd)); err != nil {
+			return fmt.Errorf("could not register Run for auto-merge coordination. %w", err)
+		}
 	}
 
 	if run.ConfigurationVersion.Speculative {

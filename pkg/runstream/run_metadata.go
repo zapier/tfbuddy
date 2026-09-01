@@ -44,7 +44,9 @@ type TFRunMetadata struct {
 
 	VcsProvider string
 
-	AutoMerge bool
+	AutoMerge           bool
+	AutoMergeGeneration string
+	AutoMergeSequence   int64
 }
 
 func (r *TFRunMetadata) GetAction() string {
@@ -79,6 +81,12 @@ func (r *TFRunMetadata) GetVcsProvider() string {
 }
 func (r *TFRunMetadata) GetAutoMerge() bool {
 	return r.AutoMerge
+}
+func (r *TFRunMetadata) GetAutoMergeGeneration() string {
+	return r.AutoMergeGeneration
+}
+func (r *TFRunMetadata) GetAutoMergeSequence() int64 {
+	return r.AutoMergeSequence
 }
 func (s *Stream) AddRunMeta(rmd RunMetadata) error {
 	b, err := encodeTFRunMetadata(rmd)

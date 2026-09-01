@@ -90,6 +90,10 @@ func (e *NoteEventMsg) GetDeliveryID() string {
 	return e.DeliveryID
 }
 
+func (e *NoteEventMsg) GetEventSequence() int64 {
+	return e.Payload.GetEventSequence()
+}
+
 // ----------------------------------------------
 
 func mrEventsStreamSubject() string {

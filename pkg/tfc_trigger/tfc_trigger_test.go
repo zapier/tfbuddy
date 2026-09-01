@@ -338,11 +338,13 @@ func TestTFCEvents_MultiWorkspaceApply(t *testing.T) {
 			Name:         "service-tfbuddy",
 			Organization: "zapier-test",
 			Mode:         "apply-before-merge",
+			AutoMerge:    true,
 		}, {
 			Name:         "service-tfbuddy-staging",
 			Organization: "zapier-test",
 			Mode:         "apply-before-merge",
 			Dir:          "staging/",
+			AutoMerge:    true,
 		}}}
 
 	mockCtrl := gomock.NewController(t)
@@ -367,6 +369,29 @@ func TestTFCEvents_MultiWorkspaceApply(t *testing.T) {
 	}).Times(2)
 
 	testSuite.MockStreamClient.EXPECT().AddRunMeta(gomock.Any()).Times(2)
+	testSuite.MockStreamClient.EXPECT().EnsureAutoMergeState(gomock.Any()).DoAndReturn(func(state *runstream.AutoMergeState) error {
+		if !state.Eligible {
+			t.Error("expected aggregate auto-merge state to be eligible")
+		}
+		if state.CommitSHA != "abcd12233" || len(state.Workspaces) != 2 {
+			t.Errorf("unexpected aggregate state: %+v", state)
+		}
+		return nil
+	}).Times(1)
+	var applyGeneration string
+	testSuite.MockStreamClient.EXPECT().BeginAutoMergeApply(gomock.Any(), gomock.Any()).DoAndReturn(func(ref runstream.AutoMergeRef, workspaces []string) error {
+		applyGeneration = ref.Generation
+		if applyGeneration == "" || len(workspaces) != 2 {
+			t.Errorf("unexpected apply generation: ref=%+v workspaces=%v", ref, workspaces)
+		}
+		return nil
+	}).Times(1)
+	testSuite.MockStreamClient.EXPECT().RegisterAutoMergeRun(gomock.Any()).DoAndReturn(func(ref runstream.AutoMergeRef) error {
+		if ref.Generation == "" || ref.Generation != applyGeneration {
+			t.Errorf("run used wrong apply generation: %+v", ref)
+		}
+		return nil
+	}).Times(2)
 	testSuite.InitTestSuite()
 	testLogger := zltest.New(t)
 	log.Logger = log.Logger.Output(testLogger)
@@ -378,6 +403,9 @@ func TestTFCEvents_MultiWorkspaceApply(t *testing.T) {
 		ProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
 		MergeRequestIID:          testSuite.MetaData.MRIID,
 		TriggerSource:            tfc_trigger.CommentTrigger,
+		VcsProvider:              "gitlab",
+		DeliveryID:               "delivery-multi",
+		AutoMergeSequence:        100,
 	})
 	trigger := tfc_trigger.NewTFCTrigger(config.C, testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
 	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
@@ -409,6 +437,59 @@ func TestTFCEvents_MultiWorkspaceApply(t *testing.T) {
 		t.Fatal("expected workspaces service-tfbuddy & service-tfbuddy-staging", triggeredWS.Executed)
 	}
 
+}
+
+func TestTFCEvents_SingleWorkspaceApplyTracksAllAffectedWorkspaces(t *testing.T) {
+	ws := &tfc_trigger.ProjectConfig{
+		Workspaces: []*tfc_trigger.TFCWorkspace{
+			{Name: "service-tfbuddy", Organization: "zapier-test", Mode: "apply-before-merge", AutoMerge: true},
+			{Name: "service-tfbuddy-staging", Organization: "zapier-test", Mode: "apply-before-merge", Dir: "staging/", AutoMerge: true},
+		},
+	}
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: ws}, t)
+
+	testSuite.MockGitClient.EXPECT().
+		GetMergeRequestModifiedFiles(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS).
+		Return([]string{"main.tf", "staging/terraform.tf"}, nil)
+	testSuite.MockApiClient.EXPECT().
+		CreateRunFromSource(gomock.Any(), gomock.Any()).
+		Return(&tfe.Run{
+			ID: "run-one",
+			Workspace: &tfe.Workspace{
+				Name:         "service-tfbuddy",
+				Organization: &tfe.Organization{Name: "zapier-test"},
+			},
+			ConfigurationVersion: &tfe.ConfigurationVersion{Speculative: false},
+		}, nil).
+		Times(1)
+	testSuite.MockStreamClient.EXPECT().EnsureAutoMergeState(gomock.Any()).DoAndReturn(func(state *runstream.AutoMergeState) error {
+		if len(state.Workspaces) != 2 {
+			t.Errorf("workspace-scoped apply must retain all affected workspaces, got %+v", state.Workspaces)
+		}
+		return nil
+	}).Times(1)
+	testSuite.MockStreamClient.EXPECT().BeginAutoMergeApply(gomock.Any(), gomock.Len(1)).Times(1)
+	testSuite.MockStreamClient.EXPECT().RegisterAutoMergeRun(gomock.Any()).Times(1)
+	testSuite.InitTestSuite()
+
+	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
+		Action:                   tfc_trigger.ApplyAction,
+		Branch:                   testSuite.MetaData.SourceBranch,
+		CommitSHA:                "single-workspace-sha",
+		ProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
+		MergeRequestIID:          testSuite.MetaData.MRIID,
+		TriggerSource:            tfc_trigger.CommentTrigger,
+		VcsProvider:              "gitlab",
+		Workspace:                "service-tfbuddy",
+		DeliveryID:               "delivery-single",
+		AutoMergeSequence:        101,
+	})
+	trigger := tfc_trigger.NewTFCTrigger(config.C, testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	if _, err := trigger.TriggerTFCEvents(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestTFCEvents_SingleWorkspaceApplyError(t *testing.T) {

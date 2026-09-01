@@ -93,6 +93,12 @@ func (c *Client) MergeMR(ctx context.Context, mrIID int, project string) error {
 	}, createBackOffWithRetries())
 }
 
+// MergeMRAtSHA satisfies the shared VCS interface. GitHub auto-merge does not
+// use the GitLab-only aggregate coordinator, so preserve its existing behavior.
+func (c *Client) MergeMRAtSHA(ctx context.Context, mrIID int, project, _ string) error {
+	return c.MergeMR(ctx, mrIID, project)
+}
+
 // GetOldRunUrls crawls PR comments authored by the bot, collects previous TFC
 // run URLs into a collapsible block, and (when TFBUDDY_DELETE_OLD_COMMENTS is
 // set) deletes old comments that belong to the same workspace+action combination.

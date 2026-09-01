@@ -161,7 +161,9 @@ workspaces:
       - terraform/staging/**/*.tf
       - terraform/staging/{foo,bar}/**
       - terraform/staging/**/[^0-9]*
-    # Merge MR once all workspaces have been applied. This is enabled by default, and can be disabled globally by setting TFBUDDY_ALLOW_AUTO_MERGE to false
+    # For GitLab, merge the MR once every affected workspace has completed a
+    # successful, non-targeted apply for the current commit. This is enabled by
+    # default, and can be disabled globally with TFBUDDY_ALLOW_AUTO_MERGE=false.
     autoMerge: true
 ```
 
@@ -172,3 +174,14 @@ TF Buddy uses [doublestar](https://github.com/bmatcuk/doublestar#about) for its 
 * `terraform/staging/**/*.tf` - any Terraform files that have `terraform/staging` as an ancestor
 * `terraform/staging/{foo,bar}/**` - anything that has `terraform/staging/foo` or `terraform/staging/bar` as an ancestor
 * `terraform/staging/**/[^0-9]*` - anything that has `terraform/staging` as an ancestor and does _not_ start with an integer
+
+### GitLab auto-merge
+
+TFBuddy records the complete set of workspaces affected by each GitLab MR commit.
+It requests GitLab auto-merge only after the latest non-targeted apply run for
+every workspace succeeds. The merge request is pinned to that commit SHA, and
+GitLab still enforces approvals, conflicts, and required pipeline checks.
+
+Every affected workspace must use `mode: apply-before-merge` and have
+`autoMerge: true`. If any affected workspace disables auto-merge, TFBuddy will
+not auto-merge that commit. Targeted applies never satisfy the aggregate.

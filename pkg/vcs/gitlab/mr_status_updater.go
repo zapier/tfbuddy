@@ -10,6 +10,7 @@ import (
 	"github.com/hashicorp/go-tfe"
 	"github.com/rs/zerolog/log"
 	"github.com/zapier/tfbuddy/pkg/runstream"
+	"github.com/zapier/tfbuddy/pkg/utils"
 	"github.com/zapier/tfbuddy/pkg/vcs"
 	gogitlab "gitlab.com/gitlab-org/api/client-go"
 	"go.opentelemetry.io/otel"
@@ -18,7 +19,7 @@ import (
 // Sentinel error
 var errNoPipelineStatus = errors.New("nil pipeline status")
 
-func (p *RunStatusUpdater) updateCommitStatusForRun(ctx context.Context, run *tfe.Run, rmd runstream.RunMetadata) {
+func (p *RunStatusUpdater) updateCommitStatusForRun(ctx context.Context, run *tfe.Run, rmd runstream.RunMetadata) error {
 	ctx, span := otel.Tracer("TFC").Start(ctx, "updateCommitStatusForRun")
 	defer span.End()
 
@@ -45,11 +46,11 @@ func (p *RunStatusUpdater) updateCommitStatusForRun(ctx context.Context, run *tf
 	case tfe.RunApplied:
 		if len(run.TargetAddrs) > 0 {
 			p.updateStatus(ctx, gogitlab.Pending, "apply", rmd)
-			return
+			return nil
 		}
 		// The applying phase of a run has completed.
 		p.updateStatus(ctx, gogitlab.Success, "apply", rmd)
-		p.mergeMRIfPossible(ctx, rmd)
+		return p.mergeMRIfPossible(ctx, rmd)
 
 	case tfe.RunCanceled:
 		// The run has been discarded. This is a final state.
@@ -70,7 +71,7 @@ func (p *RunStatusUpdater) updateCommitStatusForRun(ctx context.Context, run *tf
 
 	case tfe.RunPlanned:
 		// this status is for Apply runs (as opposed to `RunPlannedAndFinished` below, so don't update the status.
-		return
+		return nil
 
 	case tfe.RunPlannedAndFinished:
 		// The completion of a run containing a plan only, or a run the produces a plan with no changes to apply.
@@ -82,7 +83,7 @@ func (p *RunStatusUpdater) updateCommitStatusForRun(ctx context.Context, run *tf
 		} else {
 			// if the apply returns no changes we can still go ahead and merge if auto-merge is enabled
 			if len(run.TargetAddrs) == 0 && rmd.GetAction() == runstream.ApplyAction {
-				p.mergeMRIfPossible(ctx, rmd)
+				return p.mergeMRIfPossible(ctx, rmd)
 			}
 		}
 
@@ -103,9 +104,10 @@ func (p *RunStatusUpdater) updateCommitStatusForRun(ctx context.Context, run *tf
 
 	default:
 		log.Debug().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Str("status", string(run.Status)).Msg("ignoring run status")
-		return
+		return nil
 	}
 
+	return nil
 }
 
 func (p *RunStatusUpdater) updateStatus(ctx context.Context, state gogitlab.BuildStateValue, action string, rmd runstream.RunMetadata) {
@@ -204,20 +206,56 @@ func (p *RunStatusUpdater) getLatestPipelineID(ctx context.Context, rmd runstrea
 	return ptr(selected.GetID())
 }
 
-func (p *RunStatusUpdater) mergeMRIfPossible(ctx context.Context, rmd runstream.RunMetadata) {
+func (p *RunStatusUpdater) mergeMRIfPossible(ctx context.Context, rmd runstream.RunMetadata) error {
 	ctx, span := otel.Tracer("TFC").Start(ctx, "mergeMRIfPossible")
 	defer span.End()
 
-	if !rmd.GetAutoMerge() {
-		return
+	if !p.cfg.AllowAutoMerge {
+		return nil
 	}
 
-	err := p.client.MergeMR(ctx, rmd.GetMRInternalID(), rmd.GetMRProjectNameWithNamespace())
+	ref := runstream.AutoMergeRefForRun(rmd)
+	shouldMerge, err := p.rs.RecordAutoMergeSuccess(ref)
+	if errors.Is(err, runstream.ErrAutoMergeStateNotFound) {
+		log.Warn().
+			Str("project", rmd.GetMRProjectNameWithNamespace()).
+			Int("mergeRequestID", rmd.GetMRInternalID()).
+			Str("commitSHA", rmd.GetCommitSHA()).
+			Msg("not auto-merging because no aggregate workspace state exists")
+		return nil
+	}
 	if err != nil {
 		span.RecordError(err)
+		log.Error().Err(err).
+			Str("project", rmd.GetMRProjectNameWithNamespace()).
+			Int("mergeRequestID", rmd.GetMRInternalID()).
+			Msg("could not update aggregate auto-merge state")
+		return err
 	}
-	log.Debug().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).AnErr("err", err).Msg("merge MR")
+	if !shouldMerge {
+		return nil
+	}
 
+	err = p.client.MergeMRAtSHA(ctx, rmd.GetMRInternalID(), rmd.GetMRProjectNameWithNamespace(), rmd.GetCommitSHA())
+	if err != nil {
+		span.RecordError(err)
+		if errors.Is(err, utils.ErrPermanent) {
+			log.Warn().Err(err).
+				Str("project", rmd.GetMRProjectNameWithNamespace()).
+				Int("mergeRequestID", rmd.GetMRInternalID()).
+				Msg("auto-merge rejected permanently by GitLab")
+			return nil
+		}
+		if releaseErr := p.rs.ReleaseAutoMergeClaim(ref); releaseErr != nil {
+			span.RecordError(releaseErr)
+			log.Error().Err(releaseErr).Msg("could not release failed auto-merge claim")
+			// The persisted claim makes redelivery unable to retry safely.
+			// ACK this event and require operator intervention rather than storm GitLab.
+			return nil
+		}
+	}
+	log.Debug().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Str("commitSHA", rmd.GetCommitSHA()).AnErr("err", err).Msg("merge MR")
+	return err
 }
 
 // configureBackOff returns a backoff configuration to use to retry requests
