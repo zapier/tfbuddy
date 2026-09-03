@@ -439,6 +439,76 @@ func TestTFCEvents_MultiWorkspaceApply(t *testing.T) {
 
 }
 
+func TestTFCEvents_MissingWorkspaceRemainsRequiredForAutoMerge(t *testing.T) {
+	ws := &tfc_trigger.ProjectConfig{
+		Workspaces: []*tfc_trigger.TFCWorkspace{
+			{Name: "existing-workspace", Organization: "zapier-test", Mode: "apply-before-merge", AutoMerge: true},
+			{Name: "not-created-yet", Organization: "zapier-test", Mode: "apply-before-merge", Dir: "new-service/", AutoMerge: true},
+		},
+	}
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: ws}, t)
+
+	testSuite.MockGitClient.EXPECT().
+		GetMergeRequestModifiedFiles(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS).
+		Return([]string{"main.tf", "new-service/main.tf"}, nil)
+	testSuite.MockApiClient.EXPECT().
+		GetWorkspaceByName(gomock.Any(), "zapier-test", "existing-workspace").
+		Return(&tfe.Workspace{ID: "existing-workspace"}, nil)
+	testSuite.MockApiClient.EXPECT().
+		GetWorkspaceByName(gomock.Any(), "zapier-test", "not-created-yet").
+		Return(nil, fmt.Errorf("workspace not found"))
+	testSuite.MockGitClient.EXPECT().
+		CreateMergeRequestDiscussion(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, gomock.Any()).
+		Return(testSuite.MockGitDisc, nil).
+		Times(1)
+	testSuite.MockApiClient.EXPECT().
+		CreateRunFromSource(gomock.Any(), gomock.Any()).
+		Return(&tfe.Run{
+			ID: "run-existing",
+			Workspace: &tfe.Workspace{
+				Name:         "existing-workspace",
+				Organization: &tfe.Organization{Name: "zapier-test"},
+			},
+			ConfigurationVersion: &tfe.ConfigurationVersion{Speculative: false},
+		}, nil)
+	testSuite.MockStreamClient.EXPECT().EnsureAutoMergeState(gomock.Any()).DoAndReturn(func(state *runstream.AutoMergeState) error {
+		if !state.Eligible {
+			t.Error("expected aggregate state to remain eligible once every workspace is eventually applied")
+		}
+		if len(state.Workspaces) != 2 {
+			t.Fatalf("missing TFC workspace must remain in aggregate state, got %+v", state.Workspaces)
+		}
+		if _, ok := state.Workspaces["zapier-test/not-created-yet"]; !ok {
+			t.Fatalf("not-yet-created workspace missing from aggregate state: %+v", state.Workspaces)
+		}
+		return nil
+	})
+	testSuite.InitTestSuite()
+
+	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
+		Action:                   tfc_trigger.PlanAction,
+		Branch:                   testSuite.MetaData.SourceBranch,
+		CommitSHA:                "bootstrap-workspace-sha",
+		ProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
+		MergeRequestIID:          testSuite.MetaData.MRIID,
+		TriggerSource:            tfc_trigger.CommentTrigger,
+		VcsProvider:              "gitlab",
+	})
+	trigger := tfc_trigger.NewTFCTrigger(config.C, testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	triggeredWS, err := trigger.TriggerTFCEvents(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(triggeredWS.Executed) != 1 || triggeredWS.Executed[0] != "existing-workspace" {
+		t.Fatalf("expected only existing workspace to execute, got %v", triggeredWS.Executed)
+	}
+	if len(triggeredWS.Errored) != 1 || triggeredWS.Errored[0].Name != "not-created-yet" {
+		t.Fatalf("expected missing workspace to remain errored, got %+v", triggeredWS.Errored)
+	}
+}
+
 func TestTFCEvents_SingleWorkspaceApplyTracksAllAffectedWorkspaces(t *testing.T) {
 	ws := &tfc_trigger.ProjectConfig{
 		Workspaces: []*tfc_trigger.TFCWorkspace{

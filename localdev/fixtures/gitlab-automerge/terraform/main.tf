@@ -34,17 +34,28 @@ locals {
   workspace_names = [
     for index in range(2) : "${random_pet.fixture.id}-${index + 1}"
   ]
+  delayed_workspace_name = "${random_pet.fixture.id}-delayed"
 
-  workspaces = [
-    for index, name in local.workspace_names : {
-      name         = name
+  workspaces = concat(
+    [
+      for index, name in local.workspace_names : {
+        name         = name
+        organization = var.tfc_organization
+        mode         = "apply-before-merge"
+        autoMerge    = true
+        dir          = "workspace-${index + 1}"
+        triggerDirs  = ["workspace-${index + 1}"]
+      }
+    ],
+    [{
+      name         = local.delayed_workspace_name
       organization = var.tfc_organization
       mode         = "apply-before-merge"
       autoMerge    = true
-      dir          = "workspace-${index + 1}"
-      triggerDirs  = ["workspace-${index + 1}"]
-    }
-  ]
+      dir          = "workspace-delayed"
+      triggerDirs  = ["workspace-delayed"]
+    }],
+  )
 
   repository_files = merge(
     {
@@ -67,6 +78,24 @@ locals {
     {
       for index, _ in local.workspace_names :
       "workspace-${index + 1}/main.tf" => <<-EOF
+        resource "random_pet" "fixture" {
+          length = 2
+        }
+      EOF
+    },
+    {
+      "workspace-delayed/terraform.tf" = <<-EOF
+        terraform {
+          backend "remote" {
+            organization = "${var.tfc_organization}"
+
+            workspaces {
+              name = "${local.delayed_workspace_name}"
+            }
+          }
+        }
+      EOF
+      "workspace-delayed/main.tf"      = <<-EOF
         resource "random_pet" "fixture" {
           length = 2
         }
@@ -150,6 +179,27 @@ resource "gitlab_repository_file" "test_change" {
   commit_message = "change workspace ${each.value}"
 }
 
+resource "gitlab_branch" "missing_workspace_test" {
+  name    = "test-missing-workspace"
+  ref     = "main"
+  project = gitlab_project.fixture.id
+
+  depends_on = [gitlab_repository_file.base]
+}
+
+resource "gitlab_repository_file" "missing_workspace_test" {
+  for_each = {
+    existing = "workspace-1"
+    delayed  = "workspace-delayed"
+  }
+
+  project        = gitlab_project.fixture.id
+  file_path      = "${each.value}/bootstrap-change.tf"
+  branch         = gitlab_branch.missing_workspace_test.name
+  content        = base64encode("resource \"random_uuid\" \"bootstrap_change\" {}")
+  commit_message = "change ${each.value}"
+}
+
 output "gitlab_project_name" {
   value = gitlab_project.fixture.path_with_namespace
 }
@@ -159,7 +209,7 @@ output "gitlab_project_url" {
 }
 
 output "tfc_workspaces" {
-  value = local.workspace_names
+  value = concat(local.workspace_names, [local.delayed_workspace_name])
 }
 
 output "tfc_workspace_urls" {
@@ -167,4 +217,8 @@ output "tfc_workspace_urls" {
     for workspace in tfe_workspace.fixture :
     "https://app.terraform.io/app/${workspace.organization}/workspaces/${workspace.name}"
   ]
+}
+
+output "delayed_workspace_name" {
+  value = local.delayed_workspace_name
 }
