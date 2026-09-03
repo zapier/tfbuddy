@@ -236,6 +236,19 @@ func (p *RunStatusUpdater) mergeMRIfPossible(ctx context.Context, rmd runstream.
 		return nil
 	}
 
+	comment := "All expected workspaces have been applied successfully. Auto-merging this MR."
+	if commentErr := p.client.CreateMergeRequestComment(
+		ctx,
+		rmd.GetMRInternalID(),
+		rmd.GetMRProjectNameWithNamespace(),
+		comment,
+	); commentErr != nil {
+		log.Warn().Err(commentErr).
+			Str("project", rmd.GetMRProjectNameWithNamespace()).
+			Int("mergeRequestID", rmd.GetMRInternalID()).
+			Msg("could not post auto-merge intent comment")
+	}
+
 	err = p.client.MergeMRAtSHA(ctx, rmd.GetMRInternalID(), rmd.GetMRProjectNameWithNamespace(), rmd.GetCommitSHA())
 	if err != nil {
 		span.RecordError(err)
