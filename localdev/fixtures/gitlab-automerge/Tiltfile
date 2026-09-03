@@ -253,43 +253,4 @@ local_resource(
   resource_deps=['tfbuddy', 'tf-gitlab-automerge-base'],
 )
 
-if 'delayed_workspace_name' in fixture_outputs:
-  delayed_workspace_name = fixture_outputs['delayed_workspace_name']
-  delayed_workspace_env = {
-    'TFC_TOKEN': os.getenv('TFC_TOKEN'),
-    'TF_VAR_ngrok_url': ngrok_url,
-    'TF_VAR_tfc_organization': os.getenv('TFC_ORGANIZATION'),
-    'TF_VAR_workspace_name': delayed_workspace_name,
-  }
-  local(
-    'terraform -chdir=./terraform/delayed-workspace init -upgrade',
-    env=delayed_workspace_env,
-    quiet=True,
-    echo_off=True,
-  )
-  if config.tilt_subcommand == 'down':
-    local(
-      'terraform -chdir=./terraform/delayed-workspace destroy -auto-approve',
-      env=delayed_workspace_env,
-    )
-  else:
-    local_resource(
-      'tf-create-delayed-workspace',
-      'terraform -chdir=./terraform/delayed-workspace apply -auto-approve',
-      env=delayed_workspace_env,
-      labels=['fixture'],
-      links=[
-        link(
-          'https://app.terraform.io/app/{}/workspaces/{}'.format(
-            os.getenv('TFC_ORGANIZATION'),
-            delayed_workspace_name,
-          ),
-          'Delayed TFC workspace',
-        ),
-      ],
-      resource_deps=['tf-gitlab-automerge-webhooks'],
-      trigger_mode=TRIGGER_MODE_MANUAL,
-      auto_init=False,
-    )
-
 display_port_forwards()
