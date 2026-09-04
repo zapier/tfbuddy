@@ -159,9 +159,7 @@ func (s *Stream) RecordAutoMergeSuccess(ref AutoMergeRef) (bool, error) {
 			workspace.RunID == "" || workspace.RunID != ref.RunID {
 			return false, false
 		}
-		if !workspace.Applied {
-			workspace.Applied = true
-		}
+		workspace.Applied = true
 		if !state.Eligible || state.MergeClaimed || !allWorkspacesApplied(state) {
 			return true, false
 		}
