@@ -92,6 +92,10 @@ func (w *GitlabEventWorker) processNoteEvent(ctx context.Context, event vcs.MRCo
 			w.postMessageToMergeRequest(ctx, event, ":no_entry: Apply failed. Merge Request has conflicts that need to be resolved.")
 			return proj, nil
 		}
+		// checkPipelineStatus posts its own reason, since it names the blocking job.
+		if !w.checkPipelineStatus(ctx, event, opts.TriggerOpts.CommitSHA) {
+			return proj, nil
+		}
 	case "lock":
 		log.Debug().Str("project", proj).Int("mergeRequestID", event.GetMR().GetInternalID()).Msg("Got TFC lock command")
 	case "plan":
@@ -167,4 +171,98 @@ func (w *GitlabEventWorker) postErrorToMergeRequest(ctx context.Context, event v
 	span.RecordError(err)
 
 	w.postMessageToMergeRequest(ctx, event, fmt.Sprintf(":fire: <br> Error: %v", err))
+}
+
+// nonBlockingJobStatuses are the GitLab job states that leave a pipeline
+// eligible for apply. "manual" and "skipped" jobs never run on their own, so
+// waiting on them would block forever; everything else (failed, canceled,
+// pending, running, created, ...) means the pipeline has not succeeded yet.
+var nonBlockingJobStatuses = map[string]bool{
+	"success": true,
+	"skipped": true,
+	"manual":  true,
+}
+
+// checkPipelineStatus reports whether the merge request pipeline for commitSHA
+// has succeeded, and posts the reason to the MR when it has not. It gates on
+// two things: TFBuddy's require-pipeline-success setting, and the GitLab
+// project's own only_allow_merge_if_pipeline_succeeds.
+//
+// TFBuddy's own TFC/* commit statuses are attached to that same pipeline, and
+// TFC/apply/<workspace> is pending exactly when an apply is due, so the gate
+// judges the pipeline's individual job statuses rather than its rolled-up
+// status. Otherwise the pending apply status would block the apply meant to
+// clear it.
+func (w *GitlabEventWorker) checkPipelineStatus(ctx context.Context, event vcs.MRCommentEvent, commitSHA string) bool {
+	if !w.cfg.RequirePipelineSuccess {
+		return true
+	}
+
+	ctx, span := otel.Tracer("hooks").Start(ctx, "checkPipelineStatus")
+	defer span.End()
+
+	proj := event.GetProject().GetPathWithNamespace()
+
+	// GitLab already records whether a red pipeline should stop a merge, so
+	// TFBuddy defers to that setting rather than making projects opt in twice.
+	settings, err := w.gl.GetProjectSettings(ctx, proj)
+	if err != nil {
+		w.postErrorToMergeRequest(ctx, event, fmt.Errorf("could not get project settings from GitlabAPI: %v", err))
+		return false
+	}
+	if !settings.OnlyAllowMergeIfPipelineSucceeds() {
+		log.Debug().Str("project", proj).Msg("project does not require pipelines to succeed, not gating apply")
+		return true
+	}
+
+	pipelines, err := w.gl.GetPipelinesForCommit(ctx, proj, commitSHA)
+	if err != nil {
+		w.postErrorToMergeRequest(ctx, event, fmt.Errorf("could not get pipelines for commit from GitlabAPI: %v", err))
+		return false
+	}
+
+	// Pipelines with source "external" are the ones GitLab creates implicitly for
+	// TFBuddy's own commit statuses, so they carry no CI of their own.
+	candidates := make([]vcs.ProjectPipeline, 0, len(pipelines))
+	for _, p := range pipelines {
+		if p.GetSource() != vcs.PipelineSourceExternal {
+			candidates = append(candidates, p)
+		}
+	}
+	pipeline := vcs.SelectPipelineForCommit(candidates)
+	if pipeline == nil {
+		log.Debug().Str("project", proj).Str("commitSHA", commitSHA).Msg("no CI pipeline for commit, not gating apply")
+		return true
+	}
+
+	statuses, err := w.gl.GetCommitJobStatuses(ctx, proj, commitSHA)
+	if err != nil {
+		w.postErrorToMergeRequest(ctx, event, fmt.Errorf("could not get commit statuses from GitlabAPI: %v", err))
+		return false
+	}
+
+	for _, status := range statuses {
+		if status.GetPipelineID() != pipeline.GetID() {
+			continue
+		}
+		if vcs.IsTFBuddyCommitStatus(status) || status.GetAllowFailure() {
+			continue
+		}
+		if nonBlockingJobStatuses[status.GetStatus()] {
+			continue
+		}
+
+		span.SetAttributes(
+			attribute.Int("pipeline_id", pipeline.GetID()),
+			attribute.String("blocking_job", status.GetName()),
+			attribute.String("blocking_job_status", status.GetStatus()),
+		)
+		w.postMessageToMergeRequest(ctx, event, fmt.Sprintf(
+			":no_entry: Apply failed. Pipeline %d (%s) has not succeeded (%s: %s).",
+			pipeline.GetID(), pipeline.GetStatus(), status.GetName(), status.GetStatus(),
+		))
+		return false
+	}
+
+	return true
 }

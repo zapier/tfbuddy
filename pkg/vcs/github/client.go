@@ -354,6 +354,16 @@ func (c *Client) GetPipelinesForCommit(ctx context.Context, projectWithNS string
 	return nil, nil
 }
 
+func (c *Client) GetCommitJobStatuses(ctx context.Context, projectWithNS string, commitSHA string) ([]vcs.CommitJobStatus, error) {
+	//TODO implement me
+	return nil, nil
+}
+
+func (c *Client) GetProjectSettings(ctx context.Context, projectWithNS string) (vcs.ProjectSettings, error) {
+	//TODO implement me
+	return nil, nil
+}
+
 func (c *Client) GetIssue(ctx context.Context, owner *gogithub.User, repo string, issueId int) (*gogithub.Issue, error) {
 	ctx, span := otel.Tracer("TFC").Start(ctx, "GetIssue")
 	defer span.End()

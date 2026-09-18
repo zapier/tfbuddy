@@ -497,6 +497,9 @@ func (gP *GitlabPipeline) GetSource() string {
 func (gP *GitlabPipeline) GetID() int {
 	return gP.ID
 }
+func (gP *GitlabPipeline) GetStatus() string {
+	return gP.Status
+}
 func (g *GitlabClient) GetPipelinesForCommit(ctx context.Context, project, commitSHA string) ([]vcs.ProjectPipeline, error) {
 	_, span := otel.Tracer("TFC").Start(ctx, "GetPipelinesForCommit")
 	defer span.End()
@@ -511,6 +514,85 @@ func (g *GitlabClient) GetPipelinesForCommit(ctx context.Context, project, commi
 		output := make([]vcs.ProjectPipeline, len(pipelines))
 		for idx, pipeline := range pipelines {
 			output[idx] = &GitlabPipeline{pipeline}
+		}
+		return output, nil
+	}, createBackOffWithRetries())
+}
+
+// commitStatusesPerPage is GitLab's maximum page size, keeping the number of
+// round trips down for pipelines with many jobs.
+const commitStatusesPerPage = 100
+
+// statusCodeOf reads the status code from a GitLab response that may be nil,
+// which happens when the request fails before a response is received.
+func statusCodeOf(resp *gogitlab.Response) int {
+	if resp == nil || resp.Response == nil {
+		return 0
+	}
+	return resp.StatusCode
+}
+
+type GitlabProjectSettings struct {
+	*gogitlab.Project
+}
+
+func (gP *GitlabProjectSettings) OnlyAllowMergeIfPipelineSucceeds() bool {
+	return gP.Project.OnlyAllowMergeIfPipelineSucceeds
+}
+
+func (g *GitlabClient) GetProjectSettings(ctx context.Context, project string) (vcs.ProjectSettings, error) {
+	_, span := otel.Tracer("TFC").Start(ctx, "GetProjectSettings")
+	defer span.End()
+
+	return backoff.RetryWithData(func() (vcs.ProjectSettings, error) {
+		proj, resp, err := g.client.Projects.GetProject(project, nil)
+		if err != nil {
+			return nil, utils.CreatePermanentHTTPError(statusCodeOf(resp), err)
+		}
+		return &GitlabProjectSettings{proj}, nil
+	}, createBackOffWithRetries())
+}
+
+type GitlabCommitJobStatus struct {
+	*gogitlab.CommitStatus
+}
+
+func (gS *GitlabCommitJobStatus) GetName() string {
+	return gS.Name
+}
+func (gS *GitlabCommitJobStatus) GetStatus() string {
+	return gS.Status
+}
+func (gS *GitlabCommitJobStatus) GetPipelineID() int {
+	return gS.PipelineId
+}
+func (gS *GitlabCommitJobStatus) GetAllowFailure() bool {
+	return gS.AllowFailure
+}
+
+// GetCommitJobStatuses returns the latest status per job name for a commit,
+// covering both the project's CI jobs and TFBuddy's own TFC/* external
+// statuses. It differs from GetCommitStatuses, which returns only the external
+// stage.
+func (g *GitlabClient) GetCommitJobStatuses(ctx context.Context, project, commitSHA string) ([]vcs.CommitJobStatus, error) {
+	_, span := otel.Tracer("TFC").Start(ctx, "GetCommitJobStatuses")
+	defer span.End()
+
+	return backoff.RetryWithData(func() ([]vcs.CommitJobStatus, error) {
+		// Paginate: a pipeline with more jobs than one page would otherwise hide a
+		// failing job, and the apply gate would let a red pipeline through.
+		var output []vcs.CommitJobStatus
+		for page := 1; page != 0; {
+			statuses, resp, err := g.client.Commits.GetCommitStatuses(project, commitSHA, &gogitlab.GetCommitStatusesOptions{
+				ListOptions: gogitlab.ListOptions{Page: page, PerPage: commitStatusesPerPage},
+			})
+			if err != nil {
+				return nil, utils.CreatePermanentHTTPError(statusCodeOf(resp), err)
+			}
+			for _, status := range statuses {
+				output = append(output, &GitlabCommitJobStatus{status})
+			}
+			page = resp.NextPage
 		}
 		return output, nil
 	}, createBackOffWithRetries())
