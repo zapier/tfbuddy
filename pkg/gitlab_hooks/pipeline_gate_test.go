@@ -27,11 +27,13 @@ type fakePipeline struct {
 	id     int
 	source string
 	status string
+	webURL string
 }
 
 func (f fakePipeline) GetID() int        { return f.id }
 func (f fakePipeline) GetSource() string { return f.source }
 func (f fakePipeline) GetStatus() string { return f.status }
+func (f fakePipeline) GetWebURL() string { return f.webURL }
 
 type fakeJobStatus struct {
 	name         string
@@ -84,7 +86,12 @@ func newGateFixture(t *testing.T, ctrl *gomock.Controller, requirePipelineSucces
 }
 
 func TestCheckPipelineStatus(t *testing.T) {
-	mrPipeline := fakePipeline{id: 900, source: vcs.PipelineSourceMergeRequestEvent, status: "running"}
+	mrPipeline := fakePipeline{
+		id:     900,
+		source: vcs.PipelineSourceMergeRequestEvent,
+		status: "running",
+		webURL: "https://gitlab.com/zapier/service-tf-buddy/-/pipelines/900",
+	}
 
 	tests := []struct {
 		name string
@@ -129,7 +136,7 @@ func TestCheckPipelineStatus(t *testing.T) {
 				fakeJobStatus{name: "lint", status: "failed", pipelineID: 900},
 			},
 			want:        false,
-			wantComment: ":no_entry: Apply failed. All jobs in pipeline 900 (running) must succeed before apply. Still waiting on: lint (failed).",
+			wantComment: ":no_entry: Apply failed. All jobs in [pipeline 900](https://gitlab.com/zapier/service-tf-buddy/-/pipelines/900) (running) must succeed before apply. Still waiting on: lint (failed).",
 		},
 		{
 			name:                             "running job blocks apply",
@@ -140,7 +147,7 @@ func TestCheckPipelineStatus(t *testing.T) {
 				fakeJobStatus{name: "build", status: "running", pipelineID: 900},
 			},
 			want:        false,
-			wantComment: ":no_entry: Apply failed. All jobs in pipeline 900 (running) must succeed before apply. Still waiting on: build (running).",
+			wantComment: ":no_entry: Apply failed. All jobs in [pipeline 900](https://gitlab.com/zapier/service-tf-buddy/-/pipelines/900) (running) must succeed before apply. Still waiting on: build (running).",
 		},
 		{
 			name:                             "pending job blocks apply",
@@ -151,7 +158,7 @@ func TestCheckPipelineStatus(t *testing.T) {
 				fakeJobStatus{name: "build", status: "pending", pipelineID: 900},
 			},
 			want:        false,
-			wantComment: ":no_entry: Apply failed. All jobs in pipeline 900 (running) must succeed before apply. Still waiting on: build (pending).",
+			wantComment: ":no_entry: Apply failed. All jobs in [pipeline 900](https://gitlab.com/zapier/service-tf-buddy/-/pipelines/900) (running) must succeed before apply. Still waiting on: build (pending).",
 		},
 		{
 			name:                             "canceled job blocks apply",
@@ -162,7 +169,7 @@ func TestCheckPipelineStatus(t *testing.T) {
 				fakeJobStatus{name: "build", status: "canceled", pipelineID: 900},
 			},
 			want:        false,
-			wantComment: ":no_entry: Apply failed. All jobs in pipeline 900 (running) must succeed before apply. Still waiting on: build (canceled).",
+			wantComment: ":no_entry: Apply failed. All jobs in [pipeline 900](https://gitlab.com/zapier/service-tf-buddy/-/pipelines/900) (running) must succeed before apply. Still waiting on: build (canceled).",
 		},
 		{
 			// The deadlock regression: TFBuddy's own pending apply status lives in
@@ -233,13 +240,13 @@ func TestCheckPipelineStatus(t *testing.T) {
 			requirePipelineSuccess:           true,
 			onlyAllowMergeIfPipelineSucceeds: true,
 			pipelines: []vcs.ProjectPipeline{
-				fakePipeline{id: 800, source: "push", status: "failed"},
+				fakePipeline{id: 800, source: "push", status: "failed", webURL: "https://gitlab.com/zapier/service-tf-buddy/-/pipelines/800"},
 			},
 			statuses: []vcs.CommitJobStatus{
 				fakeJobStatus{name: "build", status: "failed", pipelineID: 800},
 			},
 			want:        false,
-			wantComment: ":no_entry: Apply failed. All jobs in pipeline 800 (failed) must succeed before apply. Still waiting on: build (failed).",
+			wantComment: ":no_entry: Apply failed. All jobs in [pipeline 800](https://gitlab.com/zapier/service-tf-buddy/-/pipelines/800) (failed) must succeed before apply. Still waiting on: build (failed).",
 		},
 		{
 			// Naming only the first blocker invites a fix-one-rerun-repeat loop, so
@@ -254,7 +261,20 @@ func TestCheckPipelineStatus(t *testing.T) {
 				fakeJobStatus{name: "lint", status: "failed", pipelineID: 900},
 			},
 			want:        false,
-			wantComment: ":no_entry: Apply failed. All jobs in pipeline 900 (running) must succeed before apply. Still waiting on: lint (failed), unit (running).",
+			wantComment: ":no_entry: Apply failed. All jobs in [pipeline 900](https://gitlab.com/zapier/service-tf-buddy/-/pipelines/900) (running) must succeed before apply. Still waiting on: lint (failed), unit (running).",
+		},
+		{
+			name:                             "pipeline without a web URL is named without a link",
+			requirePipelineSuccess:           true,
+			onlyAllowMergeIfPipelineSucceeds: true,
+			pipelines: []vcs.ProjectPipeline{
+				fakePipeline{id: 901, source: vcs.PipelineSourceMergeRequestEvent, status: "failed"},
+			},
+			statuses: []vcs.CommitJobStatus{
+				fakeJobStatus{name: "lint", status: "failed", pipelineID: 901},
+			},
+			want:        false,
+			wantComment: ":no_entry: Apply failed. All jobs in pipeline 901 (failed) must succeed before apply. Still waiting on: lint (failed).",
 		},
 		{
 			// GitLab already knows whether a red pipeline should stop a merge.
@@ -358,7 +378,7 @@ func TestProcessNoteEventApplyBlockedByPipeline(t *testing.T) {
 	mockGitClient.EXPECT().
 		GetPipelinesForCommit(gomock.Any(), gateProject, gateCommitSHA).
 		Return([]vcs.ProjectPipeline{
-			fakePipeline{id: 900, source: vcs.PipelineSourceMergeRequestEvent, status: "failed"},
+			fakePipeline{id: 900, source: vcs.PipelineSourceMergeRequestEvent, status: "failed", webURL: "https://gitlab.com/zapier/service-tf-buddy/-/pipelines/900"},
 		}, nil)
 	mockGitClient.EXPECT().
 		GetCommitJobStatuses(gomock.Any(), gateProject, gateCommitSHA).
@@ -367,7 +387,7 @@ func TestProcessNoteEventApplyBlockedByPipeline(t *testing.T) {
 		}, nil)
 	mockGitClient.EXPECT().
 		CreateMergeRequestComment(gomock.Any(), gateMRIID, gateProject,
-			":no_entry: Apply failed. All jobs in pipeline 900 (failed) must succeed before apply. Still waiting on: lint (failed).").
+			":no_entry: Apply failed. All jobs in [pipeline 900](https://gitlab.com/zapier/service-tf-buddy/-/pipelines/900) (failed) must succeed before apply. Still waiting on: lint (failed).").
 		Return(nil)
 
 	project := mocks.NewMockProject(ctrl)

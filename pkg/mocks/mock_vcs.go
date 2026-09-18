@@ -1044,6 +1044,20 @@ func (mr *MockProjectPipelineMockRecorder) GetStatus() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetStatus", reflect.TypeOf((*MockProjectPipeline)(nil).GetStatus))
 }
 
+// GetWebURL mocks base method.
+func (m *MockProjectPipeline) GetWebURL() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetWebURL")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetWebURL indicates an expected call of GetWebURL.
+func (mr *MockProjectPipelineMockRecorder) GetWebURL() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetWebURL", reflect.TypeOf((*MockProjectPipeline)(nil).GetWebURL))
+}
+
 // MockProjectSettings is a mock of ProjectSettings interface.
 type MockProjectSettings struct {
 	ctrl     *gomock.Controller

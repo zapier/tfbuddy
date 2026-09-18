@@ -270,11 +270,12 @@ func (w *GitlabEventWorker) checkPipelineStatus(ctx context.Context, event vcs.M
 	span.SetAttributes(
 		attribute.Int("pipeline_id", pipeline.GetID()),
 		attribute.String("pipeline_status", pipeline.GetStatus()),
+		attribute.String("pipeline_url", pipeline.GetWebURL()),
 		attribute.StringSlice("blocking_jobs", blocking),
 	)
 	w.postMessageToMergeRequest(ctx, event, fmt.Sprintf(
-		":no_entry: Apply failed. All jobs in pipeline %d (%s) must succeed before apply. Still waiting on: %s.",
-		pipeline.GetID(), pipeline.GetStatus(), strings.Join(blocking, ", "),
+		":no_entry: Apply failed. All jobs in %s (%s) must succeed before apply. Still waiting on: %s.",
+		vcs.DescribePipeline(pipeline), pipeline.GetStatus(), strings.Join(blocking, ", "),
 	))
 	return false
 }

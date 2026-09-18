@@ -79,6 +79,8 @@ type ProjectPipeline interface {
 	GetSource() string
 	GetID() int
 	GetStatus() string
+	// GetWebURL returns the pipeline's browser URL, which may be empty.
+	GetWebURL() string
 }
 
 // ProjectSettings exposes the repository settings TFBuddy reads to decide how

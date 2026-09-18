@@ -127,7 +127,7 @@ check on the pipeline's overall status would therefore block every apply.
 Every outstanding job is named in the comment, not just the first, so all of
 them must be green before the apply is accepted:
 
-> :no_entry: Apply failed. All jobs in pipeline 900 (running) must succeed before apply. Still waiting on: lint (failed), unit (running).
+> :no_entry: Apply failed. All jobs in [pipeline 900](https://gitlab.com/acme/infra/-/pipelines/900) (running) must succeed before apply. Still waiting on: lint (failed), unit (running).
 
 These jobs never block an apply:
 

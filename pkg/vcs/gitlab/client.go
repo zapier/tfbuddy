@@ -501,6 +501,9 @@ func (gP *GitlabPipeline) GetID() int {
 func (gP *GitlabPipeline) GetStatus() string {
 	return gP.Status
 }
+func (gP *GitlabPipeline) GetWebURL() string {
+	return gP.WebURL
+}
 func (g *GitlabClient) GetPipelinesForCommit(ctx context.Context, project, commitSHA string) ([]vcs.ProjectPipeline, error) {
 	_, span := otel.Tracer("TFC").Start(ctx, "GetPipelinesForCommit")
 	defer span.End()

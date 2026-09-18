@@ -1,6 +1,9 @@
 package vcs
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 const (
 	// PipelineSourceMergeRequestEvent is the GitLab pipeline source for pipelines
@@ -31,6 +34,15 @@ func SelectPipelineForCommit(pipelines []ProjectPipeline) ProjectPipeline {
 		return pipelines[0]
 	}
 	return nil
+}
+
+// DescribePipeline renders a pipeline for a merge request comment, as a
+// markdown link when GitLab supplied a URL and as plain text when it did not.
+func DescribePipeline(p ProjectPipeline) string {
+	if url := p.GetWebURL(); url != "" {
+		return fmt.Sprintf("[pipeline %d](%s)", p.GetID(), url)
+	}
+	return fmt.Sprintf("pipeline %d", p.GetID())
 }
 
 // IsTFBuddyCommitStatus reports whether a commit status was published by
