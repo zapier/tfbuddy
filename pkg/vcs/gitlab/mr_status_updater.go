@@ -192,8 +192,8 @@ func (p *RunStatusUpdater) getLatestPipelineID(ctx context.Context, rmd runstrea
 		return nil
 	}
 	log.Trace().Interface("pipelines", pipelines).Msg("retrieved pipelines for commit")
-	// Prefers the merge request pipeline, and otherwise falls back to the last
-	// pipeline in the list when GitLab reports no merge request pipeline.
+	// Prefers the merge request pipeline, and otherwise falls back to the newest
+	// pipeline when GitLab reports no merge request pipeline.
 	selected := vcs.SelectPipelineForCommit(pipelines)
 	if selected == nil {
 		return nil

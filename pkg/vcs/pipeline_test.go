@@ -32,12 +32,22 @@ func TestSelectPipelineForCommit(t *testing.T) {
 			wantID: 2,
 		},
 		{
-			name: "falls back to the last pipeline when none is a merge request pipeline",
+			// GitLab lists pipelines newest first (order_by=id, sort=desc), so the
+			// fallback has to take the head of the list, not the tail.
+			name: "falls back to the newest pipeline when none is a merge request pipeline",
 			pipelines: []ProjectPipeline{
+				stubPipeline{id: 9, source: "push"},
+				stubPipeline{id: 5, source: "schedule"},
 				stubPipeline{id: 1, source: "push"},
-				stubPipeline{id: 2, source: "schedule"},
 			},
-			wantID: 2,
+			wantID: 9,
+		},
+		{
+			name: "single non merge request pipeline",
+			pipelines: []ProjectPipeline{
+				stubPipeline{id: 3, source: "push"},
+			},
+			wantID: 3,
 		},
 	}
 

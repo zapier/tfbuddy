@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -66,7 +67,7 @@ func (c *GitlabClient) ResolveMergeRequestDiscussion(ctx context.Context, projec
 
 	return backoff.Retry(func() error {
 		_, resp, err := c.client.Discussions.ResolveMergeRequestDiscussion(projectWithNamespace, mrIID, discussionID, &gogitlab.ResolveMergeRequestDiscussionOptions{Resolved: ptr(true)})
-		return utils.CreatePermanentHTTPError(resp.StatusCode, err)
+		return utils.CreatePermanentHTTPError(statusCodeOf(resp), err)
 	}, createBackOffWithRetries())
 }
 
@@ -107,7 +108,7 @@ func (c *GitlabClient) SetCommitStatus(ctx context.Context, projectWithNS string
 
 	return backoff.RetryWithData(func() (vcs.CommitStatus, error) {
 		commitStatus, resp, err := c.client.Commits.SetCommitStatus(projectWithNS, commitSHA, status.(*GitlabCommitStatusOptions).SetCommitStatusOptions)
-		return &GitlabCommitStatus{commitStatus}, utils.CreatePermanentHTTPError(resp.StatusCode, err)
+		return &GitlabCommitStatus{commitStatus}, utils.CreatePermanentHTTPError(statusCodeOf(resp), err)
 	}, createBackOffWithRetries())
 }
 
@@ -117,7 +118,7 @@ func (c *GitlabClient) GetCommitStatuses(ctx context.Context, projectID, commitS
 
 	statuses, err := backoff.RetryWithData(func() ([]*gogitlab.CommitStatus, error) {
 		statuses, resp, err := c.client.Commits.GetCommitStatuses(projectID, commitSHA, &gogitlab.GetCommitStatusesOptions{Stage: &glExternalStageName})
-		return statuses, utils.CreatePermanentHTTPError(resp.StatusCode, err)
+		return statuses, utils.CreatePermanentHTTPError(statusCodeOf(resp), err)
 	}, createBackOffWithRetries())
 	if err != nil {
 		log.Fatal().Msgf("could not get commit statuses: %v\n", err)
@@ -130,7 +131,7 @@ func (c *GitlabClient) MergeMR(ctx context.Context, mrIID int, project string) e
 	defer span.End()
 	return backoff.Retry(func() error {
 		_, resp, err := c.client.MergeRequests.AcceptMergeRequest(project, mrIID, &gogitlab.AcceptMergeRequestOptions{})
-		return utils.CreatePermanentHTTPError(resp.StatusCode, err)
+		return utils.CreatePermanentHTTPError(statusCodeOf(resp), err)
 	}, createBackOffWithRetries())
 }
 
@@ -147,7 +148,7 @@ func (c *GitlabClient) GetOldRunUrls(ctx context.Context, mrIID int, project str
 
 	discussions, err := backoff.RetryWithData(func() ([]*gogitlab.Discussion, error) {
 		discussions, resp, err := c.client.Discussions.ListMergeRequestDiscussions(project, mrIID, &gogitlab.ListMergeRequestDiscussionsOptions{})
-		return discussions, utils.CreatePermanentHTTPError(resp.StatusCode, err)
+		return discussions, utils.CreatePermanentHTTPError(statusCodeOf(resp), err)
 	}, createBackOffWithRetries())
 	if err != nil {
 		return "", utils.CreatePermanentError(err)
@@ -155,7 +156,7 @@ func (c *GitlabClient) GetOldRunUrls(ctx context.Context, mrIID int, project str
 
 	currentUser, err := backoff.RetryWithData(func() (*gogitlab.User, error) {
 		currentUser, resp, err := c.client.Users.CurrentUser()
-		return currentUser, utils.CreatePermanentHTTPError(resp.StatusCode, err)
+		return currentUser, utils.CreatePermanentHTTPError(statusCodeOf(resp), err)
 	}, createBackOffWithRetries())
 	if err != nil {
 		return "", utils.CreatePermanentError(err)
@@ -227,7 +228,7 @@ func (c *GitlabClient) GetOldRunUrls(ctx context.Context, mrIID int, project str
 				log.Debug().Str("projectID", project).Int("mrIID", mrIID).Str("workspace", workspace).Str("action", action).Msgf("deleting note %d", noteID)
 				err := backoff.Retry(func() error {
 					resp, err := c.client.Notes.DeleteMergeRequestNote(project, mrIID, noteID)
-					return utils.CreatePermanentHTTPError(resp.StatusCode, err)
+					return utils.CreatePermanentHTTPError(statusCodeOf(resp), err)
 				}, createBackOffWithRetries())
 				if err != nil {
 					log.Warn().Err(err).Int("noteID", noteID).Msg("could not delete note, skipping")
@@ -257,7 +258,7 @@ func (c *GitlabClient) CreateMergeRequestComment(ctx context.Context, mrIID int,
 		return backoff.Retry(func() error {
 			log.Debug().Str("projectID", projectID).Int("mrIID", mrIID).Msg("posting Gitlab comment")
 			_, resp, err := c.client.Notes.CreateMergeRequestNote(projectID, mrIID, &gogitlab.CreateMergeRequestNoteOptions{Body: &comment})
-			return utils.CreatePermanentHTTPError(resp.StatusCode, err)
+			return utils.CreatePermanentHTTPError(statusCodeOf(resp), err)
 		}, createBackOffWithRetries())
 	}
 	return utils.CreatePermanentError(errors.New("comment is empty"))
@@ -299,7 +300,7 @@ func (c *GitlabClient) CreateMergeRequestDiscussion(ctx context.Context, mrIID i
 		dis, resp, err := c.client.Discussions.CreateMergeRequestDiscussion(project, mrIID, &gogitlab.CreateMergeRequestDiscussionOptions{
 			Body: &comment,
 		})
-		return &GitlabMRDiscussion{dis}, utils.CreatePermanentHTTPError(resp.StatusCode, err)
+		return &GitlabMRDiscussion{dis}, utils.CreatePermanentHTTPError(statusCodeOf(resp), err)
 	}, createBackOffWithRetries())
 }
 
@@ -321,7 +322,7 @@ func (c *GitlabClient) UpdateMergeRequestDiscussionNote(ctx context.Context, mrI
 				Body: &comment,
 			})
 
-		return &GitlabMRNote{note}, utils.CreatePermanentHTTPError(resp.StatusCode, err)
+		return &GitlabMRNote{note}, utils.CreatePermanentHTTPError(statusCodeOf(resp), err)
 	}, createBackOffWithRetries())
 }
 
@@ -335,7 +336,7 @@ func (c *GitlabClient) AddMergeRequestDiscussionReply(ctx context.Context, mrIID
 			log.Debug().Str("project", project).Int("mrIID", mrIID).Msg("posting Gitlab discussion reply")
 			note, resp, err := c.client.Discussions.AddMergeRequestDiscussionNote(project, mrIID, discussionID, &gogitlab.AddMergeRequestDiscussionNoteOptions{Body: &comment})
 
-			return &GitlabMRNote{note}, utils.CreatePermanentHTTPError(resp.StatusCode, err)
+			return &GitlabMRNote{note}, utils.CreatePermanentHTTPError(statusCodeOf(resp), err)
 		}, createBackOffWithRetries())
 	}
 	return nil, utils.CreatePermanentError(errors.New("comment is empty"))
@@ -349,7 +350,7 @@ func (c *GitlabClient) ResolveMergeRequestDiscussionReply(ctx context.Context, m
 	return backoff.Retry(func() error {
 		log.Debug().Str("project", project).Int("mrIID", mrIID).Msg("posting Gitlab discussion reply")
 		_, resp, err := c.client.Discussions.ResolveMergeRequestDiscussion(project, mrIID, discussionID, &gogitlab.ResolveMergeRequestDiscussionOptions{Resolved: &resolved})
-		return utils.CreatePermanentHTTPError(resp.StatusCode, err)
+		return utils.CreatePermanentHTTPError(statusCodeOf(resp), err)
 	}, createBackOffWithRetries())
 }
 
@@ -363,7 +364,7 @@ func (g *GitlabClient) GetRepoFile(ctx context.Context, project, file, ref strin
 	}
 	return backoff.RetryWithData(func() ([]byte, error) {
 		b, resp, err := g.client.RepositoryFiles.GetRawFile(project, file, &gogitlab.GetRawFileOptions{Ref: &ref})
-		return b, utils.CreatePermanentHTTPError(resp.StatusCode, err)
+		return b, utils.CreatePermanentHTTPError(statusCodeOf(resp), err)
 	}, createBackOffWithRetries())
 }
 
@@ -389,7 +390,7 @@ func (g *GitlabClient) GetMergeRequestModifiedFiles(ctx context.Context, mrIID i
 				projectID, mrIID, &opts,
 			)
 			if err != nil {
-				return nil, utils.CreatePermanentHTTPError(resp.StatusCode, err)
+				return nil, utils.CreatePermanentHTTPError(statusCodeOf(resp), err)
 			}
 
 			for _, f := range diffs {
@@ -463,7 +464,7 @@ func (g *GitlabClient) GetMergeRequest(ctx context.Context, mrIID int, project s
 				IncludeRebaseInProgress:     ptr(true),
 			},
 		)
-		return &GitlabMR{mr}, utils.CreatePermanentHTTPError(resp.StatusCode, err)
+		return &GitlabMR{mr}, utils.CreatePermanentHTTPError(statusCodeOf(resp), err)
 	}, createBackOffWithRetries())
 }
 
@@ -483,7 +484,7 @@ func (g *GitlabClient) GetMergeRequestApprovals(ctx context.Context, mrIID int, 
 			project,
 			mrIID,
 		)
-		return &GitlabMRApproval{approvals}, utils.CreatePermanentHTTPError(resp.StatusCode, err)
+		return &GitlabMRApproval{approvals}, utils.CreatePermanentHTTPError(statusCodeOf(resp), err)
 	}, createBackOffWithRetries())
 }
 
@@ -509,7 +510,7 @@ func (g *GitlabClient) GetPipelinesForCommit(ctx context.Context, project, commi
 			SHA: &commitSHA,
 		})
 		if err != nil {
-			return nil, utils.CreatePermanentHTTPError(resp.StatusCode, err)
+			return nil, utils.CreatePermanentHTTPError(statusCodeOf(resp), err)
 		}
 		output := make([]vcs.ProjectPipeline, len(pipelines))
 		for idx, pipeline := range pipelines {
@@ -524,10 +525,15 @@ func (g *GitlabClient) GetPipelinesForCommit(ctx context.Context, project, commi
 const commitStatusesPerPage = 100
 
 // statusCodeOf reads the status code from a GitLab response that may be nil,
-// which happens when the request fails before a response is received.
+// which happens when a request fails before any response is received.
+//
+// Such a failure reports StatusServiceUnavailable rather than 0, because
+// utils.CreatePermanentHTTPError treats anything below 400 as "no error" and
+// would otherwise discard the transport error entirely, leaving callers with a
+// nil value and a nil error.
 func statusCodeOf(resp *gogitlab.Response) int {
 	if resp == nil || resp.Response == nil {
-		return 0
+		return http.StatusServiceUnavailable
 	}
 	return resp.StatusCode
 }

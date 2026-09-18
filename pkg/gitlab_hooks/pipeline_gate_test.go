@@ -129,7 +129,7 @@ func TestCheckPipelineStatus(t *testing.T) {
 				fakeJobStatus{name: "lint", status: "failed", pipelineID: 900},
 			},
 			want:        false,
-			wantComment: ":no_entry: Apply failed. Pipeline 900 (running) has not succeeded (lint: failed).",
+			wantComment: ":no_entry: Apply failed. All jobs in pipeline 900 (running) must succeed before apply. Still waiting on: lint (failed).",
 		},
 		{
 			name:                             "running job blocks apply",
@@ -140,7 +140,7 @@ func TestCheckPipelineStatus(t *testing.T) {
 				fakeJobStatus{name: "build", status: "running", pipelineID: 900},
 			},
 			want:        false,
-			wantComment: ":no_entry: Apply failed. Pipeline 900 (running) has not succeeded (build: running).",
+			wantComment: ":no_entry: Apply failed. All jobs in pipeline 900 (running) must succeed before apply. Still waiting on: build (running).",
 		},
 		{
 			name:                             "pending job blocks apply",
@@ -151,7 +151,7 @@ func TestCheckPipelineStatus(t *testing.T) {
 				fakeJobStatus{name: "build", status: "pending", pipelineID: 900},
 			},
 			want:        false,
-			wantComment: ":no_entry: Apply failed. Pipeline 900 (running) has not succeeded (build: pending).",
+			wantComment: ":no_entry: Apply failed. All jobs in pipeline 900 (running) must succeed before apply. Still waiting on: build (pending).",
 		},
 		{
 			name:                             "canceled job blocks apply",
@@ -162,7 +162,7 @@ func TestCheckPipelineStatus(t *testing.T) {
 				fakeJobStatus{name: "build", status: "canceled", pipelineID: 900},
 			},
 			want:        false,
-			wantComment: ":no_entry: Apply failed. Pipeline 900 (running) has not succeeded (build: canceled).",
+			wantComment: ":no_entry: Apply failed. All jobs in pipeline 900 (running) must succeed before apply. Still waiting on: build (canceled).",
 		},
 		{
 			// The deadlock regression: TFBuddy's own pending apply status lives in
@@ -239,7 +239,22 @@ func TestCheckPipelineStatus(t *testing.T) {
 				fakeJobStatus{name: "build", status: "failed", pipelineID: 800},
 			},
 			want:        false,
-			wantComment: ":no_entry: Apply failed. Pipeline 800 (failed) has not succeeded (build: failed).",
+			wantComment: ":no_entry: Apply failed. All jobs in pipeline 800 (failed) must succeed before apply. Still waiting on: build (failed).",
+		},
+		{
+			// Naming only the first blocker invites a fix-one-rerun-repeat loop, so
+			// every outstanding job is listed, sorted for a stable message.
+			name:                             "every blocking job is listed, sorted by name",
+			requirePipelineSuccess:           true,
+			onlyAllowMergeIfPipelineSucceeds: true,
+			pipelines:                        []vcs.ProjectPipeline{mrPipeline},
+			statuses: []vcs.CommitJobStatus{
+				fakeJobStatus{name: "unit", status: "running", pipelineID: 900},
+				fakeJobStatus{name: "build", status: "success", pipelineID: 900},
+				fakeJobStatus{name: "lint", status: "failed", pipelineID: 900},
+			},
+			want:        false,
+			wantComment: ":no_entry: Apply failed. All jobs in pipeline 900 (running) must succeed before apply. Still waiting on: lint (failed), unit (running).",
 		},
 		{
 			// GitLab already knows whether a red pipeline should stop a merge.
@@ -316,10 +331,13 @@ func TestCheckPipelineStatus(t *testing.T) {
 // TestProcessNoteEventApplyBlockedByPipeline checks the gate is actually wired
 // into the apply command path, and that a blocked apply never reaches TFC.
 func TestProcessNoteEventApplyBlockedByPipeline(t *testing.T) {
+	// Registered before t.Setenv so it runs after the environment is restored:
+	// cleanups run last-in-first-out, whereas a defer would reload while the
+	// test values are still set and leave global config.C polluted.
+	t.Cleanup(config.Reload)
 	t.Setenv("TFBUDDY_GITLAB_PROJECT_ALLOW_LIST", "zapier/")
 	t.Setenv("TFBUDDY_REQUIRE_PIPELINE_SUCCESS", "true")
 	config.Reload()
-	defer config.Reload()
 
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -349,7 +367,7 @@ func TestProcessNoteEventApplyBlockedByPipeline(t *testing.T) {
 		}, nil)
 	mockGitClient.EXPECT().
 		CreateMergeRequestComment(gomock.Any(), gateMRIID, gateProject,
-			":no_entry: Apply failed. Pipeline 900 (failed) has not succeeded (lint: failed).").
+			":no_entry: Apply failed. All jobs in pipeline 900 (failed) must succeed before apply. Still waiting on: lint (failed).").
 		Return(nil)
 
 	project := mocks.NewMockProject(ctrl)

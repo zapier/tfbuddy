@@ -112,3 +112,38 @@ func TestGetProjectSettingsReadsOnlyAllowMergeIfPipelineSucceeds(t *testing.T) {
 		})
 	}
 }
+
+// TestTransportErrorsSurfaceAsErrors guards the nil-response path: GitLab
+// returns a nil *Response when the request fails before headers arrive, and a
+// status code of 0 would make CreatePermanentHTTPError swallow the error.
+func TestTransportErrorsSurfaceAsErrors(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	unreachableURL := srv.URL
+	srv.Close()
+
+	client := newTestClient(t, unreachableURL)
+
+	t.Run("GetProjectSettings", func(t *testing.T) {
+		settings, err := client.GetProjectSettings(context.Background(), testProject)
+		if err == nil {
+			t.Fatalf("expected an error for an unreachable host, got settings=%v err=nil", settings)
+		}
+		if settings != nil {
+			t.Errorf("expected nil settings alongside the error, got %v", settings)
+		}
+	})
+
+	t.Run("GetCommitJobStatuses", func(t *testing.T) {
+		statuses, err := client.GetCommitJobStatuses(context.Background(), testProject, "abc123")
+		if err == nil {
+			t.Fatalf("expected an error for an unreachable host, got %d statuses and err=nil", len(statuses))
+		}
+	})
+
+	t.Run("GetPipelinesForCommit", func(t *testing.T) {
+		pipelines, err := client.GetPipelinesForCommit(context.Background(), testProject, "abc123")
+		if err == nil {
+			t.Fatalf("expected an error for an unreachable host, got %d pipelines and err=nil", len(pipelines))
+		}
+	})
+}

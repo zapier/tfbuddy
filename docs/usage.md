@@ -124,6 +124,11 @@ publishes its own `TFC/<action>/<workspace>` commit statuses into that same
 pipeline, and `TFC/apply/<workspace>` is pending exactly when an apply is due. A
 check on the pipeline's overall status would therefore block every apply.
 
+Every outstanding job is named in the comment, not just the first, so all of
+them must be green before the apply is accepted:
+
+> :no_entry: Apply failed. All jobs in pipeline 900 (running) must succeed before apply. Still waiting on: lint (failed), unit (running).
+
 These jobs never block an apply:
 
 * TFBuddy's own `TFC/*` statuses.

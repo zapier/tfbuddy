@@ -16,8 +16,11 @@ const (
 )
 
 // SelectPipelineForCommit returns the pipeline that represents CI for a commit:
-// the merge request pipeline when the commit has one, otherwise the last
-// pipeline listed. It returns nil for an empty list.
+// the merge request pipeline when the commit has one, otherwise the newest
+// pipeline. It returns nil for an empty list.
+//
+// GitLab lists pipelines newest first (order_by=id, sort=desc by default), so
+// the fallback is the head of the list.
 func SelectPipelineForCommit(pipelines []ProjectPipeline) ProjectPipeline {
 	for _, p := range pipelines {
 		if p.GetSource() == PipelineSourceMergeRequestEvent {
@@ -25,7 +28,7 @@ func SelectPipelineForCommit(pipelines []ProjectPipeline) ProjectPipeline {
 		}
 	}
 	if len(pipelines) > 0 {
-		return pipelines[len(pipelines)-1]
+		return pipelines[0]
 	}
 	return nil
 }

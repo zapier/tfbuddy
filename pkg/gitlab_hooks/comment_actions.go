@@ -3,6 +3,8 @@ package gitlab_hooks
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/rs/zerolog/log"
 	"github.com/zapier/tfbuddy/pkg/allow_list"
@@ -211,7 +213,7 @@ func (w *GitlabEventWorker) checkPipelineStatus(ctx context.Context, event vcs.M
 		return false
 	}
 	if !settings.OnlyAllowMergeIfPipelineSucceeds() {
-		log.Debug().Str("project", proj).Msg("project does not require pipelines to succeed, not gating apply")
+		log.Warn().Str("project", proj).Msg("require-pipeline-success is enabled but the project does not set only_allow_merge_if_pipeline_succeeds, not gating apply")
 		return true
 	}
 
@@ -241,6 +243,10 @@ func (w *GitlabEventWorker) checkPipelineStatus(ctx context.Context, event vcs.M
 		return false
 	}
 
+	// Collect every outstanding job rather than returning on the first. Naming
+	// one blocker reads as though it is the only one, which invites a
+	// fix-one-rerun-repeat loop when several jobs are red.
+	var blocking []string
 	for _, status := range statuses {
 		if status.GetPipelineID() != pipeline.GetID() {
 			continue
@@ -251,18 +257,24 @@ func (w *GitlabEventWorker) checkPipelineStatus(ctx context.Context, event vcs.M
 		if nonBlockingJobStatuses[status.GetStatus()] {
 			continue
 		}
-
-		span.SetAttributes(
-			attribute.Int("pipeline_id", pipeline.GetID()),
-			attribute.String("blocking_job", status.GetName()),
-			attribute.String("blocking_job_status", status.GetStatus()),
-		)
-		w.postMessageToMergeRequest(ctx, event, fmt.Sprintf(
-			":no_entry: Apply failed. Pipeline %d (%s) has not succeeded (%s: %s).",
-			pipeline.GetID(), pipeline.GetStatus(), status.GetName(), status.GetStatus(),
-		))
-		return false
+		blocking = append(blocking, fmt.Sprintf("%s (%s)", status.GetName(), status.GetStatus()))
+	}
+	if len(blocking) == 0 {
+		return true
 	}
 
-	return true
+	// Sort so the message is stable regardless of the order GitLab returns
+	// statuses in, which keeps repeated comments comparable.
+	sort.Strings(blocking)
+
+	span.SetAttributes(
+		attribute.Int("pipeline_id", pipeline.GetID()),
+		attribute.String("pipeline_status", pipeline.GetStatus()),
+		attribute.StringSlice("blocking_jobs", blocking),
+	)
+	w.postMessageToMergeRequest(ctx, event, fmt.Sprintf(
+		":no_entry: Apply failed. All jobs in pipeline %d (%s) must succeed before apply. Still waiting on: %s.",
+		pipeline.GetID(), pipeline.GetStatus(), strings.Join(blocking, ", "),
+	))
+	return false
 }
