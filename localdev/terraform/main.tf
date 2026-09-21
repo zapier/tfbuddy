@@ -1,18 +1,18 @@
 locals {
-  tfbuddy_base_url = chomp(var.ngrok_url)
-
   child_tfvars = <<EOF
 parent_vars = {
   ngrok_url="${var.ngrok_url}",
   random_pet="${random_pet.random_name.id}",
   tfc_organization="${tfe_workspace.test.organization}",
-  tfc_workspace="${tfe_workspace.test.name}"
+  tfc_workspace="${tfe_workspace.test.name}",
+  tfc_workspace_id="${tfe_workspace.test.id}"
 }
 EOF
 
   child_tf_dirs = [
     "gitlab",
-    "github"
+    "github",
+    "notification"
   ]
 }
 
@@ -44,24 +44,10 @@ https://app.terraform.io/app/${tfe_workspace.test.organization}/workspaces/${tfe
 EOF
 }
 
-resource "tfe_notification_configuration" "test" {
-  count = length(var.ngrok_url) > 0 ? 1 : 0
-
-  name             = "tfbuddy-localdev"
-  enabled          = true
-  destination_type = "generic"
-  triggers = [
-    "run:created",
-    "run:planning",
-    "run:errored",
-    "run:needs_attention",
-    "run:applying",
-    "run:completed"
-  ]
-
-  url          = "${local.tfbuddy_base_url}/hooks/tfc/notification"
-  workspace_id = tfe_workspace.test.id
-}
+# The notification configuration lives in ./notification, which is applied after
+# TFBuddy is up. Creating it makes TFC send a verification request that TFBuddy
+# has to be serving to answer, and TFBuddy cannot start until this workspace
+# exists.
 
 resource "local_file" "child_tfvars" {
   for_each = toset(local.child_tf_dirs)
