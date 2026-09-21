@@ -33,6 +33,8 @@ spec:
               value: "true"
             - name: TFBUDDY_FAIL_CI_ON_SENTINEL_SOFT_FAIL
               value: "true"
+            - name: TFBUDDY_REQUIRE_PIPELINE_SUCCESS
+              value: "true"
             - name: TFBUDDY_OTEL_COLLECTOR_HOST
               valueFrom:
                 fieldRef:
