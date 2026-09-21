@@ -16,6 +16,9 @@ type GitClient interface {
 	ResolveMergeRequestDiscussion(context.Context, string, int, string) error
 	AddMergeRequestDiscussionReply(ctx context.Context, mrIID int, project, discussionID, comment string) (MRNote, error)
 	SetCommitStatus(ctx context.Context, projectWithNS string, commitSHA string, status CommitStatusOptions) (CommitStatus, error)
+	// SetMergeRequestStatus publishes a commit status without a TFC run, used
+	// to gate the merge when tfbuddy refuses to run a workspace.
+	SetMergeRequestStatus(ctx context.Context, projectWithNS string, commitSHA string, name string, state string, description string, targetURL string) error
 	GetPipelinesForCommit(ctx context.Context, projectWithNS string, commitSHA string) ([]ProjectPipeline, error)
 	GetCommitJobStatuses(ctx context.Context, projectWithNS string, commitSHA string) ([]CommitJobStatus, error)
 	GetProjectSettings(ctx context.Context, projectWithNS string) (ProjectSettings, error)

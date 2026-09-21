@@ -364,6 +364,11 @@ func (c *Client) SetCommitStatus(ctx context.Context, projectWithNS string, comm
 	return nil, nil
 }
 
+func (c *Client) SetMergeRequestStatus(ctx context.Context, projectWithNS, commitSHA, name, state, description, targetURL string) error {
+	//TODO implement me
+	return nil
+}
+
 func (c *Client) GetPipelinesForCommit(ctx context.Context, projectWithNS string, commitSHA string) ([]vcs.ProjectPipeline, error) {
 	//TODO implement me
 	return nil, nil

@@ -111,6 +111,28 @@ func (c *GitlabClient) SetCommitStatus(ctx context.Context, projectWithNS string
 	}, createBackOffWithRetries())
 }
 
+// SetMergeRequestStatus publishes a commit status without attaching a pipeline
+// ID. Commit-level status is enough to gate the merge and skips the 30s
+// pipeline-lookup backoff used by run-status updates.
+func (c *GitlabClient) SetMergeRequestStatus(ctx context.Context, projectWithNS, commitSHA, name, state, description, targetURL string) error {
+	_, span := otel.Tracer("TFC").Start(ctx, "SetMergeRequestStatus")
+	defer span.End()
+
+	opts := &gogitlab.SetCommitStatusOptions{
+		Name:    ptr(name),
+		Context: ptr(name),
+		State:   gogitlab.BuildStateValue(state),
+	}
+	if description != "" {
+		opts.Description = ptr(description)
+	}
+	if targetURL != "" {
+		opts.TargetURL = ptr(targetURL)
+	}
+	_, err := c.SetCommitStatus(ctx, projectWithNS, commitSHA, &GitlabCommitStatusOptions{opts})
+	return err
+}
+
 func (c *GitlabClient) GetCommitStatuses(ctx context.Context, projectID, commitSHA string) []*gogitlab.CommitStatus {
 	_, span := otel.Tracer("TFC").Start(ctx, "GetCommitStatuses")
 	defer span.End()

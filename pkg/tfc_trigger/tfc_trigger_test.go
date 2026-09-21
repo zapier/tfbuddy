@@ -544,6 +544,18 @@ func TestTFCEvents_WorkspaceApplyModifiedBothSrcDstBranches(t *testing.T) {
 	testSuite.MockGitRepo.EXPECT().GetModifiedFileNamesBetweenCommits(testSuite.MetaData.CommonSHA, "main").Return([]string{"terraform.tf"}, nil)
 	testSuite.MockGitClient.EXPECT().GetMergeRequestModifiedFiles(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS).Return([]string{"main.tf"}, nil)
 
+	// Blocked workspaces must publish a failing commit status for both plan
+	// and apply so GitLab's required-status check actually gates the merge.
+	commitSHA := "abcd12233"
+	testSuite.MockGitClient.EXPECT().SetMergeRequestStatus(
+		gomock.Any(), testSuite.MetaData.ProjectNameNS, commitSHA,
+		fmt.Sprintf("TFC/plan/%s", mocks.TF_WORKSPACE_NAME), "failed", gomock.Any(), "",
+	).Return(nil)
+	testSuite.MockGitClient.EXPECT().SetMergeRequestStatus(
+		gomock.Any(), testSuite.MetaData.ProjectNameNS, commitSHA,
+		fmt.Sprintf("TFC/apply/%s", mocks.TF_WORKSPACE_NAME), "failed", gomock.Any(), "",
+	).Return(nil)
+
 	mockStreamClient := mocks.NewMockStreamClient(mockCtrl)
 
 	testSuite.InitTestSuite()
@@ -554,7 +566,7 @@ func TestTFCEvents_WorkspaceApplyModifiedBothSrcDstBranches(t *testing.T) {
 	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
 		Action:                   tfc_trigger.ApplyAction,
 		Branch:                   testSuite.MetaData.SourceBranch,
-		CommitSHA:                "abcd12233",
+		CommitSHA:                commitSHA,
 		ProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
 		MergeRequestIID:          testSuite.MetaData.MRIID,
 		TriggerSource:            tfc_trigger.CommentTrigger,
