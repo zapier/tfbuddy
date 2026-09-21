@@ -304,4 +304,28 @@ k8s_resource(
   labels=["tfbuddy"]
 )
 
+# /////////////////////////////////////////////////////////////////////////////
+# T F C  N O T I F I C A T I O N
+# /////////////////////////////////////////////////////////////////////////////
+
+# Creating the TFC notification configuration makes Terraform Cloud send a
+# verification request to TFBuddy, so it has to apply once TFBuddy is serving.
+# It is a separate root module from 'tf-tfc' because the workspace it points at
+# has to exist before TFBuddy can be configured.
+local_terraform_resource(
+  'tf-tfc-notification',
+  dir='./localdev/terraform/notification',
+  env={
+    'TFC_TOKEN': os.getenv('TFC_TOKEN'),
+  },
+  deps=[
+    './localdev/terraform/terraform.tfstate',
+    './localdev/terraform/notification/*.tf',
+  ],
+  resource_deps=[
+    'tfbuddy',
+  ],
+  labels=['tfc']
+)
+
 display_port_forwards()

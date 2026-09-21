@@ -36,33 +36,35 @@ const (
 	KeyTFCRateLimitRPS            = "tfc-rate-limit-rps"
 	KeyTFCRateLimitBurst          = "tfc-rate-limit-burst"
 	KeyJetStreamDedupWindow       = "jetstream-dedup-window"
+	KeyRequirePipelineSuccess     = "require-pipeline-success"
 )
 
 type Config struct {
-	LogLevel                   string   `mapstructure:"log-level"`
-	DevMode                    bool     `mapstructure:"dev-mode"`
-	OTELEnabled                bool     `mapstructure:"otel-enabled"`
-	OTELCollectorHost          string   `mapstructure:"otel-collector-host"`
-	OTELCollectorPort          string   `mapstructure:"otel-collector-port"`
-	GitlabHookSecretKey        string   `mapstructure:"gitlab-hook-secret-key"`
-	GithubHookSecretKey        string   `mapstructure:"github-hook-secret-key"`
-	DefaultTFCOrganization     string   `mapstructure:"default-tfc-organization"`
-	WorkspaceAllowList         []string `mapstructure:"workspace-allow-list"`
-	WorkspaceDenyList          []string `mapstructure:"workspace-deny-list"`
-	AllowAutoMerge             bool     `mapstructure:"allow-auto-merge"`
-	FailCIOnSentinelSoftFail   bool     `mapstructure:"fail-ci-on-sentinel-soft-fail"`
-	DeleteOldComments          bool     `mapstructure:"delete-old-comments"`
-	NATSServiceURL             string   `mapstructure:"nats-service-url"`
-	GitlabProjectAllowList     []string `mapstructure:"gitlab-project-allow-list"`
-	LegacyProjectAllowList     []string `mapstructure:"project-allow-list"`
-	GithubRepoAllowList        []string `mapstructure:"github-repo-allow-list"`
-	GithubCloneDepth           int      `mapstructure:"github-clone-depth"`
-	GitlabCloneDepth           int      `mapstructure:"gitlab-clone-depth"`
-	WorkspaceFanoutEnabled     bool     `mapstructure:"workspace-fanout-enabled"`
-	WorkspaceJetStreamReplicas int      `mapstructure:"workspace-jetstream-replicas"`
+	LogLevel                   string        `mapstructure:"log-level"`
+	DevMode                    bool          `mapstructure:"dev-mode"`
+	OTELEnabled                bool          `mapstructure:"otel-enabled"`
+	OTELCollectorHost          string        `mapstructure:"otel-collector-host"`
+	OTELCollectorPort          string        `mapstructure:"otel-collector-port"`
+	GitlabHookSecretKey        string        `mapstructure:"gitlab-hook-secret-key"`
+	GithubHookSecretKey        string        `mapstructure:"github-hook-secret-key"`
+	DefaultTFCOrganization     string        `mapstructure:"default-tfc-organization"`
+	WorkspaceAllowList         []string      `mapstructure:"workspace-allow-list"`
+	WorkspaceDenyList          []string      `mapstructure:"workspace-deny-list"`
+	AllowAutoMerge             bool          `mapstructure:"allow-auto-merge"`
+	FailCIOnSentinelSoftFail   bool          `mapstructure:"fail-ci-on-sentinel-soft-fail"`
+	DeleteOldComments          bool          `mapstructure:"delete-old-comments"`
+	NATSServiceURL             string        `mapstructure:"nats-service-url"`
+	GitlabProjectAllowList     []string      `mapstructure:"gitlab-project-allow-list"`
+	LegacyProjectAllowList     []string      `mapstructure:"project-allow-list"`
+	GithubRepoAllowList        []string      `mapstructure:"github-repo-allow-list"`
+	GithubCloneDepth           int           `mapstructure:"github-clone-depth"`
+	GitlabCloneDepth           int           `mapstructure:"gitlab-clone-depth"`
+	WorkspaceFanoutEnabled     bool          `mapstructure:"workspace-fanout-enabled"`
+	WorkspaceJetStreamReplicas int           `mapstructure:"workspace-jetstream-replicas"`
 	TFCRateLimitRPS            int           `mapstructure:"tfc-rate-limit-rps"`
 	TFCRateLimitBurst          int           `mapstructure:"tfc-rate-limit-burst"`
 	JetStreamDedupWindow       time.Duration `mapstructure:"jetstream-dedup-window"`
+	RequirePipelineSuccess     bool          `mapstructure:"require-pipeline-success"`
 }
 
 var C Config
@@ -105,6 +107,7 @@ var bindings = []binding{
 	// re-fire (e.g. TFC firing multiple notification triggers across a long
 	// planning phase), short enough that JetStream's interest store stays bounded.
 	{key: KeyJetStreamDedupWindow, defaultValue: 30 * time.Minute, description: "Window during which JetStream remembers a Nats-Msg-Id to dedupe republishes. Applied to RUN_EVENTS and TFBUDDY_WORKSPACE_TRIGGERS streams. Accepts a Go duration string (e.g. 30m, 1h)."},
+	{key: KeyRequirePipelineSuccess, defaultValue: false, description: "Refuse `tfc apply` while the merge request pipeline for the commit has a job that has not succeeded. Only takes effect for GitLab projects that also set `only_allow_merge_if_pipeline_succeeds`. TFBuddy's own TFC/* commit statuses are ignored, so a pending apply status does not block itself."},
 }
 
 func init() {

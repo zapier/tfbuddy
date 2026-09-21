@@ -30,8 +30,11 @@ func CreatePermanentError(err error) error {
 }
 
 // CreatePermanentHTTPError will return a permanent error if the status code it's not a retryable status code.
+//
+// A statusCode of 0 means the request produced no response at all, so the
+// error is reported rather than treated as a success.
 func CreatePermanentHTTPError(statusCode int, err error) error {
-	if err == nil || statusCode < 400 {
+	if err == nil || (statusCode > 0 && statusCode < 400) {
 		return nil
 	}
 	switch statusCode {

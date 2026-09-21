@@ -17,6 +17,30 @@ locals {
     ]
   })
 
+  # Fixture CI for exercising TFBuddy's require-pipeline-success gate. The gate
+  # reads the individual job statuses of the merge request pipeline, so this
+  # only runs for merge request pipelines and not for branch pushes.
+  #
+  # The job fails by default, which is what makes `tfc apply` refuse. Set the
+  # CI/CD variable TFBUDDY_CI_RESULT to "success" and re-run the pipeline to
+  # check that apply is allowed again.
+  gitlab_ci_yml = <<EOF
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+ci-gate:
+  image: alpine:3.20
+  script:
+    - |
+      if [ "$TFBUDDY_CI_RESULT" = "success" ]; then
+        echo "green: tfc apply should be allowed"
+      else
+        echo "red on purpose: tfc apply should be refused"
+        exit 1
+      fi
+EOF
+
   terraform_tf = <<EOF
 terraform {
 
@@ -112,8 +136,9 @@ EOF
 
 output "files" {
   value = {
-    ".tfbuddy.yaml" = local.tfbuddy_yaml,
-    "terraform.tf"  = local.terraform_tf,
-    "main.tf"       = local.main_tf
+    ".tfbuddy.yaml"  = local.tfbuddy_yaml,
+    ".gitlab-ci.yml" = local.gitlab_ci_yml,
+    "terraform.tf"   = local.terraform_tf,
+    "main.tf"        = local.main_tf
   }
 }

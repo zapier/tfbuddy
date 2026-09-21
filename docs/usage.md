@@ -73,6 +73,7 @@ The full list of supported environment variables and flags is described below:
 |`TFBUDDY_TFC_RATE_LIMIT_RPS`|`--tfc-rate-limit-rps`|Client-side rate limit (requests per second) for the Terraform Cloud API. Tuned to match TFC's documented per-token limit and prevent 429s when many workspaces are triggered concurrently.|`30`|
 |`TFBUDDY_TFC_RATE_LIMIT_BURST`|`--tfc-rate-limit-burst`|Burst capacity for the TFC API token-bucket rate limiter.|`30`|
 |`TFBUDDY_JETSTREAM_DEDUP_WINDOW`|`--jetstream-dedup-window`|Window during which JetStream remembers a Nats-Msg-Id to dedupe republishes. Applied to RUN_EVENTS and TFBUDDY_WORKSPACE_TRIGGERS streams. Accepts a Go duration string (e.g. 30m, 1h).|`30m0s`|
+|`TFBUDDY_REQUIRE_PIPELINE_SUCCESS`|`--require-pipeline-success`|Refuse `tfc apply` while the merge request pipeline for the commit has a job that has not succeeded. Only takes effect for GitLab projects that also set `only_allow_merge_if_pipeline_succeeds`. TFBuddy's own TFC/* commit statuses are ignored, so a pending apply status does not block itself.|`false`|
 <!-- END GENERATED CONFIGURATION -->
 
 For sensitive environment variables use `secrets.envs` which can contain a list of key/value pairs
@@ -102,6 +103,43 @@ ingress:
 ```
 
 For `nats` helm specific configurations go [here](https://github.com/nats-io/k8s/tree/main/helm/charts/nats#jetstream)
+
+##### Requiring a green pipeline before apply
+
+Set `TFBUDDY_REQUIRE_PIPELINE_SUCCESS=true` to make TFBuddy refuse `tfc apply`
+while CI for the merge request commit has not succeeded. This works the same way
+as the existing approval and merge-conflict checks: TFBuddy posts the reason as a
+merge request comment and does not start a Terraform Cloud run.
+
+The gate only applies to GitLab projects that have **Settings > Merge requests >
+Pipelines must succeed** turned on (`only_allow_merge_if_pipeline_succeeds` in
+the API). GitLab already records whether a red pipeline should stop a merge, so
+TFBuddy reads that setting instead of asking projects to opt in twice. Projects
+that leave it off are never gated, whatever `TFBUDDY_REQUIRE_PIPELINE_SUCCESS`
+is set to.
+
+TFBuddy looks at the individual job statuses in the merge request pipeline for
+the commit, not the pipeline's overall status. It has to, because TFBuddy
+publishes its own `TFC/<action>/<workspace>` commit statuses into that same
+pipeline, and `TFC/apply/<workspace>` is pending exactly when an apply is due. A
+check on the pipeline's overall status would therefore block every apply.
+
+Every outstanding job is named in the comment, not just the first, so all of
+them must be green before the apply is accepted:
+
+> :no_entry: Apply failed. All jobs in [pipeline 900](https://gitlab.com/acme/infra/-/pipelines/900) (running) must succeed before apply. Still waiting on: lint (failed), unit (running).
+
+These jobs never block an apply:
+
+* TFBuddy's own `TFC/*` statuses.
+* Jobs marked `allow_failure: true`.
+* Jobs in the `success`, `skipped`, or `manual` states.
+* Jobs belonging to a different pipeline for the same commit.
+
+If the commit has no pipeline other than the external one GitLab creates for
+TFBuddy's own statuses, there is no CI to wait on and the apply proceeds.
+
+This setting applies to GitLab only. The GitHub path is unaffected.
 
 ##### .tfbuddy.yaml
 

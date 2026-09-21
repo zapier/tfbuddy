@@ -17,6 +17,8 @@ type GitClient interface {
 	AddMergeRequestDiscussionReply(ctx context.Context, mrIID int, project, discussionID, comment string) (MRNote, error)
 	SetCommitStatus(ctx context.Context, projectWithNS string, commitSHA string, status CommitStatusOptions) (CommitStatus, error)
 	GetPipelinesForCommit(ctx context.Context, projectWithNS string, commitSHA string) ([]ProjectPipeline, error)
+	GetCommitJobStatuses(ctx context.Context, projectWithNS string, commitSHA string) ([]CommitJobStatus, error)
+	GetProjectSettings(ctx context.Context, projectWithNS string) (ProjectSettings, error)
 	GetOldRunUrls(ctx context.Context, mrIID int, project string, rootCommentID int, workspace string, action string) (string, error)
 	MergeMR(ctx context.Context, mrIID int, project string) error
 }
@@ -76,6 +78,25 @@ type CommitStatus interface {
 type ProjectPipeline interface {
 	GetSource() string
 	GetID() int
+	GetStatus() string
+	// GetWebURL returns the pipeline's browser URL, which may be empty.
+	GetWebURL() string
+}
+
+// ProjectSettings exposes the repository settings TFBuddy reads to decide how
+// strict to be, rather than duplicating them in TFBuddy's own configuration.
+type ProjectSettings interface {
+	OnlyAllowMergeIfPipelineSucceeds() bool
+}
+
+// CommitJobStatus is a single entry in a commit's status list: either a real CI
+// job or an external status posted through the commit status API (which is how
+// TFBuddy publishes its own TFC/* statuses).
+type CommitJobStatus interface {
+	GetName() string
+	GetStatus() string
+	GetPipelineID() int
+	GetAllowFailure() bool
 }
 
 type Project interface {

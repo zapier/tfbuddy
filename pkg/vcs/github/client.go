@@ -26,6 +26,21 @@ import (
 // ensure type complies with interface
 var _ vcs.GitClient = (*Client)(nil)
 
+// permanentError classifies a GitHub API error by the response it came with.
+// The response may be nil, which happens when a request fails before any
+// response is received, so the status code is read defensively here rather
+// than at each call site.
+func permanentError(resp *gogithub.Response, err error) error {
+	if err == nil {
+		return nil
+	}
+	statusCode := 0
+	if resp != nil && resp.Response != nil {
+		statusCode = resp.StatusCode
+	}
+	return utils.CreatePermanentHTTPError(statusCode, err)
+}
+
 type Client struct {
 	client *gogithub.Client
 	ctx    context.Context
@@ -74,7 +89,7 @@ func (c *Client) MergeMR(ctx context.Context, mrIID int, project string) error {
 	}
 	return backoff.Retry(func() error {
 		_, resp, err := c.client.PullRequests.Merge(c.ctx, projectParts[0], projectParts[1], mrIID, "", nil)
-		return utils.CreatePermanentHTTPError(resp.StatusCode, err)
+		return permanentError(resp, err)
 	}, createBackOffWithRetries())
 }
 
@@ -93,7 +108,7 @@ func (c *Client) GetOldRunUrls(ctx context.Context, prID int, fullName string, r
 	}
 	comments, err := backoff.RetryWithData(func() ([]*gogithub.IssueComment, error) {
 		comments, resp, err := c.client.Issues.ListComments(c.ctx, projectParts[0], projectParts[1], prID, &gogithub.IssueListCommentsOptions{})
-		return comments, utils.CreatePermanentHTTPError(resp.StatusCode, err)
+		return comments, permanentError(resp, err)
 	}, createBackOffWithRetries())
 	if err != nil {
 		return "", err
@@ -101,7 +116,7 @@ func (c *Client) GetOldRunUrls(ctx context.Context, prID int, fullName string, r
 
 	currentUser, err := backoff.RetryWithData(func() (*gogithub.User, error) {
 		u, resp, err := c.client.Users.Get(context.Background(), "")
-		return u, utils.CreatePermanentHTTPError(resp.StatusCode, err)
+		return u, permanentError(resp, err)
 	}, createBackOffWithRetries())
 	if err != nil {
 		return "", err
@@ -153,7 +168,7 @@ func (c *Client) GetOldRunUrls(ctx context.Context, prID int, fullName string, r
 			log.Debug().Str("workspace", workspace).Str("action", action).Msgf("Deleting comment %d", commentID)
 			if err := backoff.Retry(func() error {
 				resp, err := c.client.Issues.DeleteComment(c.ctx, projectParts[0], projectParts[1], commentID)
-				return utils.CreatePermanentHTTPError(resp.StatusCode, err)
+				return permanentError(resp, err)
 			}, createBackOffWithRetries()); err != nil {
 				return "", err
 			}
@@ -214,7 +229,7 @@ func (c *Client) GetRepoFile(ctx context.Context, fullName string, file string, 
 	return backoff.RetryWithData(func() ([]byte, error) {
 		fileContent, _, resp, err := c.client.Repositories.GetContents(c.ctx, parts[0], parts[1], file, &gogithub.RepositoryContentGetOptions{Ref: ref})
 		if err != nil {
-			return nil, utils.CreatePermanentHTTPError(resp.StatusCode, err)
+			return nil, permanentError(resp, err)
 		}
 
 		contents, err := fileContent.GetContent()
@@ -247,7 +262,7 @@ func (c *Client) GetMergeRequestModifiedFiles(ctx context.Context, prID int, ful
 			}
 			files, resp, err := c.client.PullRequests.ListFiles(c.ctx, parts[0], parts[1], prID, &opts)
 			if err != nil {
-				return nil, utils.CreatePermanentHTTPError(resp.StatusCode, err)
+				return nil, permanentError(resp, err)
 			}
 			modifiedFiles := make([]string, len(files))
 			for i, file := range files {
@@ -272,7 +287,7 @@ func (c *Client) CloneMergeRequest(ctx context.Context, project string, mr vcs.M
 
 	repo, err := backoff.RetryWithData(func() (*gogithub.Repository, error) {
 		r, resp, err := c.client.Repositories.Get(ctx, parts[0], parts[1])
-		return r, utils.CreatePermanentHTTPError(resp.StatusCode, err)
+		return r, permanentError(resp, err)
 	}, createBackOffWithRetries())
 	if err != nil {
 		return nil, err
@@ -354,6 +369,16 @@ func (c *Client) GetPipelinesForCommit(ctx context.Context, projectWithNS string
 	return nil, nil
 }
 
+func (c *Client) GetCommitJobStatuses(ctx context.Context, projectWithNS string, commitSHA string) ([]vcs.CommitJobStatus, error) {
+	//TODO implement me
+	return nil, nil
+}
+
+func (c *Client) GetProjectSettings(ctx context.Context, projectWithNS string) (vcs.ProjectSettings, error) {
+	//TODO implement me
+	return nil, nil
+}
+
 func (c *Client) GetIssue(ctx context.Context, owner *gogithub.User, repo string, issueId int) (*gogithub.Issue, error) {
 	ctx, span := otel.Tracer("TFC").Start(ctx, "GetIssue")
 	defer span.End()
@@ -364,7 +389,7 @@ func (c *Client) GetIssue(ctx context.Context, owner *gogithub.User, repo string
 	}
 	return backoff.RetryWithData(func() (*gogithub.Issue, error) {
 		iss, resp, err := c.client.Issues.Get(ctx, owName, repo, issueId)
-		return iss, utils.CreatePermanentHTTPError(resp.StatusCode, err)
+		return iss, permanentError(resp, err)
 	}, createBackOffWithRetries())
 }
 
@@ -378,7 +403,7 @@ func (c *Client) GetPullRequest(ctx context.Context, fullName string, prID int) 
 	}
 	return backoff.RetryWithData(func() (*GithubPR, error) {
 		pr, resp, err := c.client.PullRequests.Get(ctx, parts[0], parts[1], prID)
-		return &GithubPR{pr}, utils.CreatePermanentHTTPError(resp.StatusCode, err)
+		return &GithubPR{pr}, permanentError(resp, err)
 	}, createBackOffWithRetries())
 }
 
@@ -400,7 +425,7 @@ func (c *Client) PostIssueComment(ctx context.Context, prId int, fullName string
 			log.Error().Err(err).Msg("github client: could not post issue comment")
 		}
 
-		return iss, utils.CreatePermanentHTTPError(resp.StatusCode, err)
+		return iss, permanentError(resp, err)
 	}, createBackOffWithRetries())
 }
 
@@ -419,7 +444,7 @@ func (c *Client) PostPullRequestComment(ctx context.Context, owner, repo string,
 		if err != nil {
 			log.Error().Err(err).Msg("could not post pull request comment")
 		}
-		return utils.CreatePermanentHTTPError(resp.StatusCode, err)
+		return permanentError(resp, err)
 	}, createBackOffWithRetries())
 }
 

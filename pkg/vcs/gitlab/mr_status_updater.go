@@ -10,6 +10,7 @@ import (
 	"github.com/hashicorp/go-tfe"
 	"github.com/rs/zerolog/log"
 	"github.com/zapier/tfbuddy/pkg/runstream"
+	"github.com/zapier/tfbuddy/pkg/vcs"
 	gogitlab "gitlab.com/gitlab-org/api/client-go"
 	"go.opentelemetry.io/otel"
 )
@@ -154,8 +155,11 @@ func (p *RunStatusUpdater) updateStatus(ctx context.Context, state gogitlab.Buil
 	log.Debug().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Interface("commit_status", cs.Info()).Msg("updated Commit Status")
 }
 
+// statusName builds the commit status name TFBuddy publishes. The
+// vcs.CommitStatusPrefix prefix is what lets the apply gate tell TFBuddy's own
+// statuses apart from a project's CI jobs, so the two must stay in step.
 func statusName(ws, action string) *string {
-	return ptr(fmt.Sprintf("TFC/%v/%s", action, ws))
+	return ptr(fmt.Sprintf("%s%v/%s", vcs.CommitStatusPrefix, action, ws))
 }
 
 func descriptionForState(state gogitlab.BuildStateValue) *string {
@@ -188,18 +192,16 @@ func (p *RunStatusUpdater) getLatestPipelineID(ctx context.Context, rmd runstrea
 		return nil
 	}
 	log.Trace().Interface("pipelines", pipelines).Msg("retrieved pipelines for commit")
-	if len(pipelines) > 0 {
-		for _, p := range pipelines {
-			if p.GetSource() == "merge_request_event" {
-				return ptr(p.GetID())
-			}
-		}
-		// Fallback behavior if Gitlab doesn't find any merge request pipelines
-		// Returns last pipeline ID in the pipelines list
-		log.Debug().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Msg("No merge request pipeline ID found for the commit. Using latest pipeline ID as fallback...")
-		return ptr(pipelines[len(pipelines)-1].GetID())
+	// Prefers the merge request pipeline, and otherwise falls back to the newest
+	// pipeline when GitLab reports no merge request pipeline.
+	selected := vcs.SelectPipelineForCommit(pipelines)
+	if selected == nil {
+		return nil
 	}
-	return nil
+	if selected.GetSource() != vcs.PipelineSourceMergeRequestEvent {
+		log.Debug().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Msg("No merge request pipeline ID found for the commit. Using latest pipeline ID as fallback...")
+	}
+	return ptr(selected.GetID())
 }
 
 func (p *RunStatusUpdater) mergeMRIfPossible(ctx context.Context, rmd runstream.RunMetadata) {

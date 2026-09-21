@@ -5,6 +5,7 @@
 //
 //	mockgen -source interfaces.go -destination=../mocks/mock_vcs.go -package=mocks github.com/zapier/tfbuddy/pkg/vcs
 //
+
 // Package mocks is a generated GoMock package.
 package mocks
 
@@ -20,6 +21,7 @@ import (
 type MockGitClient struct {
 	ctrl     *gomock.Controller
 	recorder *MockGitClientMockRecorder
+	isgomock struct{}
 }
 
 // MockGitClientMockRecorder is the mock recorder for MockGitClient.
@@ -98,6 +100,21 @@ func (mr *MockGitClientMockRecorder) CreateMergeRequestDiscussion(ctx, mrID, ful
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateMergeRequestDiscussion", reflect.TypeOf((*MockGitClient)(nil).CreateMergeRequestDiscussion), ctx, mrID, fullPath, comment)
 }
 
+// GetCommitJobStatuses mocks base method.
+func (m *MockGitClient) GetCommitJobStatuses(ctx context.Context, projectWithNS, commitSHA string) ([]vcs.CommitJobStatus, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetCommitJobStatuses", ctx, projectWithNS, commitSHA)
+	ret0, _ := ret[0].([]vcs.CommitJobStatus)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetCommitJobStatuses indicates an expected call of GetCommitJobStatuses.
+func (mr *MockGitClientMockRecorder) GetCommitJobStatuses(ctx, projectWithNS, commitSHA any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCommitJobStatuses", reflect.TypeOf((*MockGitClient)(nil).GetCommitJobStatuses), ctx, projectWithNS, commitSHA)
+}
+
 // GetMergeRequest mocks base method.
 func (m *MockGitClient) GetMergeRequest(arg0 context.Context, arg1 int, arg2 string) (vcs.DetailedMR, error) {
 	m.ctrl.T.Helper()
@@ -144,7 +161,7 @@ func (mr *MockGitClientMockRecorder) GetMergeRequestModifiedFiles(ctx, mrIID, pr
 }
 
 // GetOldRunUrls mocks base method.
-func (m *MockGitClient) GetOldRunUrls(ctx context.Context, mrIID int, project string, rootCommentID int, workspace string, action string) (string, error) {
+func (m *MockGitClient) GetOldRunUrls(ctx context.Context, mrIID int, project string, rootCommentID int, workspace, action string) (string, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetOldRunUrls", ctx, mrIID, project, rootCommentID, workspace, action)
 	ret0, _ := ret[0].(string)
@@ -171,6 +188,21 @@ func (m *MockGitClient) GetPipelinesForCommit(ctx context.Context, projectWithNS
 func (mr *MockGitClientMockRecorder) GetPipelinesForCommit(ctx, projectWithNS, commitSHA any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPipelinesForCommit", reflect.TypeOf((*MockGitClient)(nil).GetPipelinesForCommit), ctx, projectWithNS, commitSHA)
+}
+
+// GetProjectSettings mocks base method.
+func (m *MockGitClient) GetProjectSettings(ctx context.Context, projectWithNS string) (vcs.ProjectSettings, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetProjectSettings", ctx, projectWithNS)
+	ret0, _ := ret[0].(vcs.ProjectSettings)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetProjectSettings indicates an expected call of GetProjectSettings.
+func (mr *MockGitClientMockRecorder) GetProjectSettings(ctx, projectWithNS any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetProjectSettings", reflect.TypeOf((*MockGitClient)(nil).GetProjectSettings), ctx, projectWithNS)
 }
 
 // GetRepoFile mocks base method.
@@ -250,6 +282,7 @@ func (mr *MockGitClientMockRecorder) UpdateMergeRequestDiscussionNote(ctx, mrIID
 type MockGitRepo struct {
 	ctrl     *gomock.Controller
 	recorder *MockGitRepoMockRecorder
+	isgomock struct{}
 }
 
 // MockGitRepoMockRecorder is the mock recorder for MockGitRepo.
@@ -331,6 +364,7 @@ func (mr *MockGitRepoMockRecorder) GetModifiedFileNamesBetweenCommits(oldest, ne
 type MockMRApproved struct {
 	ctrl     *gomock.Controller
 	recorder *MockMRApprovedMockRecorder
+	isgomock struct{}
 }
 
 // MockMRApprovedMockRecorder is the mock recorder for MockMRApproved.
@@ -368,6 +402,7 @@ func (mr *MockMRApprovedMockRecorder) IsApproved() *gomock.Call {
 type MockMRDiscussion struct {
 	ctrl     *gomock.Controller
 	recorder *MockMRDiscussionMockRecorder
+	isgomock struct{}
 }
 
 // MockMRDiscussionMockRecorder is the mock recorder for MockMRDiscussion.
@@ -405,6 +440,7 @@ func (mr *MockMRDiscussionMockRecorder) GetDiscussionID() *gomock.Call {
 type MockMRDiscussionNotes struct {
 	ctrl     *gomock.Controller
 	recorder *MockMRDiscussionNotesMockRecorder
+	isgomock struct{}
 }
 
 // MockMRDiscussionNotesMockRecorder is the mock recorder for MockMRDiscussionNotes.
@@ -456,6 +492,7 @@ func (mr *MockMRDiscussionNotesMockRecorder) GetMRNotes() *gomock.Call {
 type MockMRNote struct {
 	ctrl     *gomock.Controller
 	recorder *MockMRNoteMockRecorder
+	isgomock struct{}
 }
 
 // MockMRNoteMockRecorder is the mock recorder for MockMRNote.
@@ -493,6 +530,7 @@ func (mr *MockMRNoteMockRecorder) GetNoteID() *gomock.Call {
 type MockDetailedMR struct {
 	ctrl     *gomock.Controller
 	recorder *MockDetailedMRMockRecorder
+	isgomock struct{}
 }
 
 // MockDetailedMRMockRecorder is the mock recorder for MockDetailedMR.
@@ -526,20 +564,6 @@ func (mr *MockDetailedMRMockRecorder) GetAuthor() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAuthor", reflect.TypeOf((*MockDetailedMR)(nil).GetAuthor))
 }
 
-// GetState mocks base method.
-func (m *MockDetailedMR) GetState() string {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetState")
-	ret0, _ := ret[0].(string)
-	return ret0
-}
-
-// GetState indicates an expected call of GetState.
-func (mr *MockDetailedMRMockRecorder) GetState() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetState", reflect.TypeOf((*MockDetailedMR)(nil).GetState))
-}
-
 // GetInternalID mocks base method.
 func (m *MockDetailedMR) GetInternalID() int {
 	m.ctrl.T.Helper()
@@ -566,6 +590,20 @@ func (m *MockDetailedMR) GetSourceBranch() string {
 func (mr *MockDetailedMRMockRecorder) GetSourceBranch() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSourceBranch", reflect.TypeOf((*MockDetailedMR)(nil).GetSourceBranch))
+}
+
+// GetState mocks base method.
+func (m *MockDetailedMR) GetState() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetState")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetState indicates an expected call of GetState.
+func (mr *MockDetailedMRMockRecorder) GetState() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetState", reflect.TypeOf((*MockDetailedMR)(nil).GetState))
 }
 
 // GetTargetBranch mocks base method.
@@ -628,6 +666,7 @@ func (mr *MockDetailedMRMockRecorder) HasConflicts() *gomock.Call {
 type MockMR struct {
 	ctrl     *gomock.Controller
 	recorder *MockMRMockRecorder
+	isgomock struct{}
 }
 
 // MockMRMockRecorder is the mock recorder for MockMR.
@@ -707,6 +746,7 @@ func (mr *MockMRMockRecorder) GetTargetBranch() *gomock.Call {
 type MockMRBranches struct {
 	ctrl     *gomock.Controller
 	recorder *MockMRBranchesMockRecorder
+	isgomock struct{}
 }
 
 // MockMRBranchesMockRecorder is the mock recorder for MockMRBranches.
@@ -758,6 +798,7 @@ func (mr *MockMRBranchesMockRecorder) GetTargetBranch() *gomock.Call {
 type MockMRAuthor struct {
 	ctrl     *gomock.Controller
 	recorder *MockMRAuthorMockRecorder
+	isgomock struct{}
 }
 
 // MockMRAuthorMockRecorder is the mock recorder for MockMRAuthor.
@@ -795,6 +836,7 @@ func (mr *MockMRAuthorMockRecorder) GetUsername() *gomock.Call {
 type MockCommitStatusOptions struct {
 	ctrl     *gomock.Controller
 	recorder *MockCommitStatusOptionsMockRecorder
+	isgomock struct{}
 }
 
 // MockCommitStatusOptionsMockRecorder is the mock recorder for MockCommitStatusOptions.
@@ -902,6 +944,7 @@ func (mr *MockCommitStatusOptionsMockRecorder) GetTargetURL() *gomock.Call {
 type MockCommitStatus struct {
 	ctrl     *gomock.Controller
 	recorder *MockCommitStatusMockRecorder
+	isgomock struct{}
 }
 
 // MockCommitStatusMockRecorder is the mock recorder for MockCommitStatus.
@@ -939,6 +982,7 @@ func (mr *MockCommitStatusMockRecorder) Info() *gomock.Call {
 type MockProjectPipeline struct {
 	ctrl     *gomock.Controller
 	recorder *MockProjectPipelineMockRecorder
+	isgomock struct{}
 }
 
 // MockProjectPipelineMockRecorder is the mock recorder for MockProjectPipeline.
@@ -986,10 +1030,157 @@ func (mr *MockProjectPipelineMockRecorder) GetSource() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSource", reflect.TypeOf((*MockProjectPipeline)(nil).GetSource))
 }
 
+// GetStatus mocks base method.
+func (m *MockProjectPipeline) GetStatus() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetStatus")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetStatus indicates an expected call of GetStatus.
+func (mr *MockProjectPipelineMockRecorder) GetStatus() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetStatus", reflect.TypeOf((*MockProjectPipeline)(nil).GetStatus))
+}
+
+// GetWebURL mocks base method.
+func (m *MockProjectPipeline) GetWebURL() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetWebURL")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetWebURL indicates an expected call of GetWebURL.
+func (mr *MockProjectPipelineMockRecorder) GetWebURL() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetWebURL", reflect.TypeOf((*MockProjectPipeline)(nil).GetWebURL))
+}
+
+// MockProjectSettings is a mock of ProjectSettings interface.
+type MockProjectSettings struct {
+	ctrl     *gomock.Controller
+	recorder *MockProjectSettingsMockRecorder
+	isgomock struct{}
+}
+
+// MockProjectSettingsMockRecorder is the mock recorder for MockProjectSettings.
+type MockProjectSettingsMockRecorder struct {
+	mock *MockProjectSettings
+}
+
+// NewMockProjectSettings creates a new mock instance.
+func NewMockProjectSettings(ctrl *gomock.Controller) *MockProjectSettings {
+	mock := &MockProjectSettings{ctrl: ctrl}
+	mock.recorder = &MockProjectSettingsMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockProjectSettings) EXPECT() *MockProjectSettingsMockRecorder {
+	return m.recorder
+}
+
+// OnlyAllowMergeIfPipelineSucceeds mocks base method.
+func (m *MockProjectSettings) OnlyAllowMergeIfPipelineSucceeds() bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "OnlyAllowMergeIfPipelineSucceeds")
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// OnlyAllowMergeIfPipelineSucceeds indicates an expected call of OnlyAllowMergeIfPipelineSucceeds.
+func (mr *MockProjectSettingsMockRecorder) OnlyAllowMergeIfPipelineSucceeds() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OnlyAllowMergeIfPipelineSucceeds", reflect.TypeOf((*MockProjectSettings)(nil).OnlyAllowMergeIfPipelineSucceeds))
+}
+
+// MockCommitJobStatus is a mock of CommitJobStatus interface.
+type MockCommitJobStatus struct {
+	ctrl     *gomock.Controller
+	recorder *MockCommitJobStatusMockRecorder
+	isgomock struct{}
+}
+
+// MockCommitJobStatusMockRecorder is the mock recorder for MockCommitJobStatus.
+type MockCommitJobStatusMockRecorder struct {
+	mock *MockCommitJobStatus
+}
+
+// NewMockCommitJobStatus creates a new mock instance.
+func NewMockCommitJobStatus(ctrl *gomock.Controller) *MockCommitJobStatus {
+	mock := &MockCommitJobStatus{ctrl: ctrl}
+	mock.recorder = &MockCommitJobStatusMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockCommitJobStatus) EXPECT() *MockCommitJobStatusMockRecorder {
+	return m.recorder
+}
+
+// GetAllowFailure mocks base method.
+func (m *MockCommitJobStatus) GetAllowFailure() bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetAllowFailure")
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// GetAllowFailure indicates an expected call of GetAllowFailure.
+func (mr *MockCommitJobStatusMockRecorder) GetAllowFailure() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAllowFailure", reflect.TypeOf((*MockCommitJobStatus)(nil).GetAllowFailure))
+}
+
+// GetName mocks base method.
+func (m *MockCommitJobStatus) GetName() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetName")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetName indicates an expected call of GetName.
+func (mr *MockCommitJobStatusMockRecorder) GetName() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetName", reflect.TypeOf((*MockCommitJobStatus)(nil).GetName))
+}
+
+// GetPipelineID mocks base method.
+func (m *MockCommitJobStatus) GetPipelineID() int {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetPipelineID")
+	ret0, _ := ret[0].(int)
+	return ret0
+}
+
+// GetPipelineID indicates an expected call of GetPipelineID.
+func (mr *MockCommitJobStatusMockRecorder) GetPipelineID() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPipelineID", reflect.TypeOf((*MockCommitJobStatus)(nil).GetPipelineID))
+}
+
+// GetStatus mocks base method.
+func (m *MockCommitJobStatus) GetStatus() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetStatus")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetStatus indicates an expected call of GetStatus.
+func (mr *MockCommitJobStatusMockRecorder) GetStatus() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetStatus", reflect.TypeOf((*MockCommitJobStatus)(nil).GetStatus))
+}
+
 // MockProject is a mock of Project interface.
 type MockProject struct {
 	ctrl     *gomock.Controller
 	recorder *MockProjectMockRecorder
+	isgomock struct{}
 }
 
 // MockProjectMockRecorder is the mock recorder for MockProject.
@@ -1027,6 +1218,7 @@ func (mr *MockProjectMockRecorder) GetPathWithNamespace() *gomock.Call {
 type MockMRCommentEvent struct {
 	ctrl     *gomock.Controller
 	recorder *MockMRCommentEventMockRecorder
+	isgomock struct{}
 }
 
 // MockMRCommentEventMockRecorder is the mock recorder for MockMRCommentEvent.
@@ -1106,6 +1298,7 @@ func (mr *MockMRCommentEventMockRecorder) GetProject() *gomock.Call {
 type MockMRAttributes struct {
 	ctrl     *gomock.Controller
 	recorder *MockMRAttributesMockRecorder
+	isgomock struct{}
 }
 
 // MockMRAttributesMockRecorder is the mock recorder for MockMRAttributes.
@@ -1171,6 +1364,7 @@ func (mr *MockMRAttributesMockRecorder) GetType() *gomock.Call {
 type MockCommit struct {
 	ctrl     *gomock.Controller
 	recorder *MockCommitMockRecorder
+	isgomock struct{}
 }
 
 // MockCommitMockRecorder is the mock recorder for MockCommit.
