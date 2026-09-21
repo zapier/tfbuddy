@@ -21,6 +21,7 @@ resource "gitlab_repository_file" "terraform_tf" {
   file_path      = "terraform.tf"
   branch         = "main"
   content        = base64encode(module.vcs_files.files["terraform.tf"])
+  encoding       = "base64"
   commit_message = "add terraform.tf file"
 }
 
@@ -29,6 +30,7 @@ resource "gitlab_repository_file" "tfbuddy_yaml" {
   file_path      = ".tfbuddy.yaml"
   branch         = "main"
   content        = base64encode(module.vcs_files.files[".tfbuddy.yaml"])
+  encoding       = "base64"
   commit_message = "add .tfbuddy.yaml file"
 
   depends_on = [gitlab_repository_file.terraform_tf]
@@ -50,6 +52,7 @@ resource "gitlab_repository_file" "main_tf" {
   file_path      = "main.tf"
   branch         = gitlab_branch.test_change.name
   content        = base64encode(module.vcs_files.files["main.tf"])
+  encoding       = "base64"
   commit_message = "add main.tf file"
   depends_on = [
     gitlab_repository_file.terraform_tf,
