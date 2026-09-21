@@ -114,8 +114,8 @@ func TestGetProjectSettingsReadsOnlyAllowMergeIfPipelineSucceeds(t *testing.T) {
 }
 
 // TestTransportErrorsSurfaceAsErrors guards the nil-response path: GitLab
-// returns a nil *Response when the request fails before headers arrive, and a
-// status code of 0 would make CreatePermanentHTTPError swallow the error.
+// returns a nil *Response when the request fails before headers arrive, which
+// must surface as an error rather than a nil value with a nil error.
 func TestTransportErrorsSurfaceAsErrors(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	unreachableURL := srv.URL
