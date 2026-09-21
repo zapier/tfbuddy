@@ -27,6 +27,10 @@ type GitlabClient struct {
 	cfg       config.Config
 }
 
+func (c *GitlabClient) SupportsAggregateAutoMerge() bool {
+	return true
+}
+
 const DefaultMaxRetries = 3
 
 func createBackOffWithRetries() backoff.BackOff {

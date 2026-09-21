@@ -253,6 +253,9 @@ func (p *RunStatusUpdater) mergeMRIfPossible(ctx context.Context, rmd runstream.
 	if err != nil {
 		span.RecordError(err)
 		if errors.Is(err, utils.ErrPermanent) {
+			// Keep the claim set. Redelivery cannot make a permanent rejection
+			// succeed, and releasing it would let duplicate events repeatedly
+			// submit the same rejected merge request.
 			log.Warn().Err(err).
 				Str("project", rmd.GetMRProjectNameWithNamespace()).
 				Int("mergeRequestID", rmd.GetMRInternalID()).

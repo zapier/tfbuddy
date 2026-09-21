@@ -12,9 +12,12 @@ import (
 )
 
 const (
+	// AutoMergeMetadataKvBucket stores aggregate state for each VCS change and commit.
 	AutoMergeMetadataKvBucket = "AUTO_MERGE_METADATA"
-	autoMergeStateTTL         = 30 * 24 * time.Hour
-	autoMergeCASRetries       = 20
+	// autoMergeStateTTL bounds storage for changes that are abandoned without merging.
+	autoMergeStateTTL = 30 * 24 * time.Hour
+	// autoMergeCASRetries limits retries when concurrent workspace events update one state.
+	autoMergeCASRetries = 20
 )
 
 var ErrAutoMergeStateNotFound = errors.New("auto-merge state not found")
@@ -22,34 +25,48 @@ var ErrAutoMergeStateNotFound = errors.New("auto-merge state not found")
 // AutoMergeWorkspaceState tracks the newest apply run for one workspace.
 // Applied is only true when that exact run completed successfully without targets.
 type AutoMergeWorkspaceState struct {
+	// Generation identifies the apply command that dispatched this workspace run.
 	Generation string `json:"generation,omitempty"`
-	Sequence   int64  `json:"sequence,omitempty"`
-	RunID      string `json:"run_id,omitempty"`
-	Applied    bool   `json:"applied"`
+	// Sequence orders apply commands so older deliveries cannot replace newer state.
+	Sequence int64 `json:"sequence,omitempty"`
+	// RunID identifies the current non-targeted TFC apply for this generation.
+	RunID string `json:"run_id,omitempty"`
+	// Applied records whether RunID completed successfully.
+	Applied bool `json:"applied"`
 }
 
 // AutoMergeState coordinates all workspaces affected by one MR commit.
 type AutoMergeState struct {
-	VcsProvider  string                              `json:"vcs_provider"`
-	Project      string                              `json:"project"`
-	MergeRequest int                                 `json:"merge_request"`
-	CommitSHA    string                              `json:"commit_sha"`
-	Eligible     bool                                `json:"eligible"`
-	Workspaces   map[string]*AutoMergeWorkspaceState `json:"workspaces"`
-	MergeClaimed bool                                `json:"merge_claimed"`
+	// VcsProvider and Project identify the repository containing the change.
+	VcsProvider string `json:"vcs_provider"`
+	Project     string `json:"project"`
+	// MergeRequest and CommitSHA pin this state to one immutable change revision.
+	MergeRequest int    `json:"merge_request"`
+	CommitSHA    string `json:"commit_sha"`
+	// Eligible is true only when every affected workspace opted into auto-merge.
+	Eligible bool `json:"eligible"`
+	// Workspaces tracks the current apply state of every affected workspace.
+	Workspaces map[string]*AutoMergeWorkspaceState `json:"workspaces"`
+	// MergeClaimed atomically grants one worker permission to request the merge.
+	MergeClaimed bool `json:"merge_claimed"`
 }
 
 // AutoMergeRef identifies one workspace apply within an MR commit.
 type AutoMergeRef struct {
+	// VcsProvider, Project, MergeRequest, and CommitSHA locate aggregate state.
 	VcsProvider  string
 	Project      string
 	MergeRequest int
 	CommitSHA    string
+	// Organization and Workspace select one workspace within the aggregate.
 	Organization string
 	Workspace    string
-	RunID        string
-	Generation   string
-	Sequence     int64
+	// RunID identifies the TFC apply reporting an event.
+	RunID string
+	// Generation identifies the apply command that dispatched RunID.
+	Generation string
+	// Sequence rejects events from an older apply command.
+	Sequence int64
 }
 
 func AutoMergeRefForRun(run RunMetadata) AutoMergeRef {

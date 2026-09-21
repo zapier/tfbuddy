@@ -26,6 +26,10 @@ import (
 // ensure type complies with interface
 var _ vcs.GitClient = (*Client)(nil)
 
+func (c *Client) SupportsAggregateAutoMerge() bool {
+	return false
+}
+
 // permanentError classifies a GitHub API error by the response it came with.
 // The response may be nil, which happens when a request fails before any
 // response is received, so the status code is read defensively here rather

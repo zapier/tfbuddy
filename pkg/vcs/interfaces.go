@@ -5,6 +5,7 @@ import "context"
 //go:generate mockgen -source interfaces.go -destination=../mocks/mock_vcs.go -package=mocks github.com/zapier/tfbuddy/pkg/vcs
 
 type GitClient interface {
+	SupportsAggregateAutoMerge() bool
 	GetMergeRequestApprovals(ctx context.Context, id int, project string) (MRApproved, error)
 	CreateMergeRequestComment(ctx context.Context, id int, fullPath string, comment string) error
 	CreateMergeRequestDiscussion(ctx context.Context, mrID int, fullPath string, comment string) (MRDiscussionNotes, error)

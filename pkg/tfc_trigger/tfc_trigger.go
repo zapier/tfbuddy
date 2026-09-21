@@ -414,7 +414,8 @@ func (t *TFCTrigger) cloneGitRepo(ctx context.Context, mr vcs.MR) (vcs.GitRepo, 
 }
 
 func (t *TFCTrigger) ensureAutoMergeState(workspaces []*TFCWorkspace) error {
-	if t.GetVcsProvider() != "gitlab" || (t.GetAction() != PlanAction && t.GetAction() != ApplyAction) || len(workspaces) == 0 {
+	if t.GetVcsProvider() == "" || !t.gl.SupportsAggregateAutoMerge() ||
+		(t.GetAction() != PlanAction && t.GetAction() != ApplyAction) || len(workspaces) == 0 {
 		return nil
 	}
 
@@ -447,7 +448,8 @@ func autoMergeEligible(appCfg config.Config, workspaces []*TFCWorkspace) bool {
 }
 
 func (t *TFCTrigger) beginAutoMergeApply(workspaces []*TFCWorkspace) error {
-	if t.GetVcsProvider() != "gitlab" || t.GetAction() != ApplyAction || len(workspaces) == 0 {
+	if t.GetVcsProvider() == "" || !t.gl.SupportsAggregateAutoMerge() ||
+		t.GetAction() != ApplyAction || len(workspaces) == 0 {
 		return nil
 	}
 	if t.cfg.AutoMergeGeneration == "" {
