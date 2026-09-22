@@ -1,0 +1,40 @@
+name: tag new release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Two dispatches racing each other would compute the same version twice
+concurrency:
+  group: tag-new-release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: checkout the source code
+        uses: actions/checkout@v4
+        with:
+          # semantic-release needs the full history and all tags to work out
+          # the previous release and the commits since then
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Computes the next version from the conventional commits since the last
+      # tag, pushes the tag and publishes the GitHub release. Building and
+      # pushing the image is still a manual dispatch of on_tag.yaml, because a
+      # release created with GITHUB_TOKEN does not fire the release event.
+      - name: run semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npx --yes \
+            -p semantic-release@24 \
+            -p conventional-changelog-conventionalcommits@8 \
+            semantic-release
