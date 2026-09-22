@@ -67,6 +67,22 @@ func (p *RunStatusUpdater) postRunStatusComment(ctx context.Context, run *tfe.Ru
 			log.Error().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Str("discussionID", rmd.GetDiscussionID()).Err(err).Msg("Could not mark MR discussion thread as resolved.")
 		}
 	}
+
+	if run.Status == tfe.RunApplied && rmd.GetAction() == runstream.ApplyAction && len(run.TargetAddrs) == 0 {
+		if err := p.client.ResolveMergeRequestDiscussions(
+			ctx,
+			rmd.GetMRProjectNameWithNamespace(),
+			rmd.GetMRInternalID(),
+			run.Workspace.Name,
+			runstream.PlanAction,
+		); err != nil {
+			log.Error().Str("project", rmd.GetMRProjectNameWithNamespace()).
+				Int("mergeRequestID", rmd.GetMRInternalID()).
+				Str("workspace", run.Workspace.Name).
+				Err(err).
+				Msg("Could not resolve completed plan discussions.")
+		}
+	}
 }
 
 func (p *RunStatusUpdater) postComment(ctx context.Context, commentBody, projectID string, mrIID int, discussionID string) error {

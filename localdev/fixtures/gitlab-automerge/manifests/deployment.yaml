@@ -1,0 +1,12 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tfbuddy
+spec:
+  template:
+    spec:
+      containers:
+        - name: tfbuddy
+          env:
+            - name: TFBUDDY_ALLOW_AUTO_MERGE
+              value: "true"

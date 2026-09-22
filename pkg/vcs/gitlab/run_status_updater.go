@@ -55,6 +55,10 @@ func (p *RunStatusUpdater) eventStreamCallback(re runstream.RunEvent) bool {
 	run.Status = tfe.RunStatus(re.GetNewStatus())
 
 	p.postRunStatusComment(ctx, run, re.GetMetadata())
-	p.updateCommitStatusForRun(ctx, run, re.GetMetadata())
+	if err := p.updateCommitStatusForRun(ctx, run, re.GetMetadata()); err != nil {
+		span.RecordError(err)
+		log.Error().Err(err).Str("runID", re.GetRunID()).Msg("could not reconcile auto-merge state")
+		return false
+	}
 	return true
 }

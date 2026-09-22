@@ -5,6 +5,7 @@ import "context"
 //go:generate mockgen -source interfaces.go -destination=../mocks/mock_vcs.go -package=mocks github.com/zapier/tfbuddy/pkg/vcs
 
 type GitClient interface {
+	SupportsAggregateAutoMerge() bool
 	GetMergeRequestApprovals(ctx context.Context, id int, project string) (MRApproved, error)
 	CreateMergeRequestComment(ctx context.Context, id int, fullPath string, comment string) error
 	CreateMergeRequestDiscussion(ctx context.Context, mrID int, fullPath string, comment string) (MRDiscussionNotes, error)
@@ -14,6 +15,7 @@ type GitClient interface {
 	CloneMergeRequest(context.Context, string, MR, string) (GitRepo, error)
 	UpdateMergeRequestDiscussionNote(ctx context.Context, mrIID, noteID int, project, discussionID, comment string) (MRNote, error)
 	ResolveMergeRequestDiscussion(context.Context, string, int, string) error
+	ResolveMergeRequestDiscussions(ctx context.Context, project string, mrIID int, workspace, action string) error
 	AddMergeRequestDiscussionReply(ctx context.Context, mrIID int, project, discussionID, comment string) (MRNote, error)
 	SetCommitStatus(ctx context.Context, projectWithNS string, commitSHA string, status CommitStatusOptions) (CommitStatus, error)
 	GetPipelinesForCommit(ctx context.Context, projectWithNS string, commitSHA string) ([]ProjectPipeline, error)
@@ -21,6 +23,7 @@ type GitClient interface {
 	GetProjectSettings(ctx context.Context, projectWithNS string) (ProjectSettings, error)
 	GetOldRunUrls(ctx context.Context, mrIID int, project string, rootCommentID int, workspace string, action string) (string, error)
 	MergeMR(ctx context.Context, mrIID int, project string) error
+	MergeMRAtSHA(ctx context.Context, mrIID int, project, expectedSHA string) error
 }
 type GitRepo interface {
 	FetchUpstreamBranch(string) error

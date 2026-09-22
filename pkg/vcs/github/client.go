@@ -26,6 +26,10 @@ import (
 // ensure type complies with interface
 var _ vcs.GitClient = (*Client)(nil)
 
+func (c *Client) SupportsAggregateAutoMerge() bool {
+	return false
+}
+
 // permanentError classifies a GitHub API error by the response it came with.
 // The response may be nil, which happens when a request fails before any
 // response is received, so the status code is read defensively here rather
@@ -91,6 +95,12 @@ func (c *Client) MergeMR(ctx context.Context, mrIID int, project string) error {
 		_, resp, err := c.client.PullRequests.Merge(c.ctx, projectParts[0], projectParts[1], mrIID, "", nil)
 		return permanentError(resp, err)
 	}, createBackOffWithRetries())
+}
+
+// MergeMRAtSHA satisfies the shared VCS interface. GitHub auto-merge does not
+// use the GitLab-only aggregate coordinator, so preserve its existing behavior.
+func (c *Client) MergeMRAtSHA(ctx context.Context, mrIID int, project, _ string) error {
+	return c.MergeMR(ctx, mrIID, project)
 }
 
 // GetOldRunUrls crawls PR comments authored by the bot, collects previous TFC
@@ -347,6 +357,10 @@ func (c *Client) UpdateMergeRequestDiscussionNote(ctx context.Context, mrIID, no
 
 func (c *Client) ResolveMergeRequestDiscussion(ctx context.Context, s string, i int, s2 string) error {
 	// This is a NoOp on GitHub
+	return nil
+}
+
+func (c *Client) ResolveMergeRequestDiscussions(context.Context, string, int, string, string) error {
 	return nil
 }
 

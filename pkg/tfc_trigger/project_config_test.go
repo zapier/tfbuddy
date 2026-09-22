@@ -12,6 +12,40 @@ import (
 	"github.com/kr/pretty"
 )
 
+func TestAutoMergeEligibleRequiresEveryWorkspace(t *testing.T) {
+	base := config.Config{AllowAutoMerge: true}
+	eligible := []*TFCWorkspace{
+		{Name: "one", Organization: "zapier", Mode: "apply-before-merge", AutoMerge: true},
+		{Name: "two", Organization: "zapier", Mode: "apply-before-merge", AutoMerge: true},
+	}
+	if !autoMergeEligible(base, eligible) {
+		t.Fatal("expected all enabled apply-before-merge workspaces to be eligible")
+	}
+
+	tests := []struct {
+		name       string
+		cfg        config.Config
+		workspaces []*TFCWorkspace
+	}{
+		{name: "globally disabled", cfg: config.Config{}, workspaces: eligible},
+		{name: "one workspace disabled", cfg: base, workspaces: []*TFCWorkspace{
+			{Name: "one", Organization: "zapier", Mode: "apply-before-merge", AutoMerge: true},
+			{Name: "two", Organization: "zapier", Mode: "apply-before-merge", AutoMerge: false},
+		}},
+		{name: "wrong mode", cfg: base, workspaces: []*TFCWorkspace{
+			{Name: "one", Organization: "zapier", Mode: "merge-before-apply", AutoMerge: true},
+		}},
+		{name: "empty workspace set", cfg: base},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if autoMergeEligible(test.cfg, test.workspaces) {
+				t.Fatal("expected auto-merge to be ineligible")
+			}
+		})
+	}
+}
+
 func TestProjectConfig_workspaceForDir(t *testing.T) {
 	type fields struct {
 		Workspaces []*TFCWorkspace

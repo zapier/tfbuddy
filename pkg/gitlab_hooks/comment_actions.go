@@ -22,6 +22,10 @@ type deliveryIDProvider interface {
 	GetDeliveryID() string
 }
 
+type eventSequenceProvider interface {
+	GetEventSequence() int64
+}
+
 // processNoteEvent processes GitLab Webhooks for Note events
 // In the Gitlab API, MR comments are called Notes
 func (w *GitlabEventWorker) processNoteEvent(ctx context.Context, event vcs.MRCommentEvent) (projectName string, err error) {
@@ -54,6 +58,9 @@ func (w *GitlabEventWorker) processNoteEvent(ctx context.Context, event vcs.MRCo
 	opts.TriggerOpts.VcsProvider = "gitlab"
 	if dp, ok := event.(deliveryIDProvider); ok {
 		opts.TriggerOpts.DeliveryID = dp.GetDeliveryID()
+	}
+	if sp, ok := event.(eventSequenceProvider); ok {
+		opts.TriggerOpts.AutoMergeSequence = sp.GetEventSequence()
 	}
 
 	cfg, err := tfc_trigger.NewTFCTriggerConfig(opts.TriggerOpts)

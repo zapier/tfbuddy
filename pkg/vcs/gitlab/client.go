@@ -27,6 +27,10 @@ type GitlabClient struct {
 	cfg       config.Config
 }
 
+func (c *GitlabClient) SupportsAggregateAutoMerge() bool {
+	return true
+}
+
 const DefaultMaxRetries = 3
 
 func createBackOffWithRetries() backoff.BackOff {
@@ -68,6 +72,52 @@ func (c *GitlabClient) ResolveMergeRequestDiscussion(ctx context.Context, projec
 		_, resp, err := c.client.Discussions.ResolveMergeRequestDiscussion(projectWithNamespace, mrIID, discussionID, &gogitlab.ResolveMergeRequestDiscussionOptions{Resolved: ptr(true)})
 		return permanentError(resp, err)
 	}, createBackOffWithRetries())
+}
+
+func (c *GitlabClient) ResolveMergeRequestDiscussions(
+	ctx context.Context,
+	project string,
+	mrIID int,
+	workspace string,
+	action string,
+) error {
+	discussions, err := backoff.RetryWithData(func() ([]*gogitlab.Discussion, error) {
+		discussions, resp, err := c.client.Discussions.ListMergeRequestDiscussions(
+			project,
+			mrIID,
+			&gogitlab.ListMergeRequestDiscussionsOptions{},
+		)
+		return discussions, permanentError(resp, err)
+	}, createBackOffWithRetries())
+	if err != nil {
+		return err
+	}
+
+	currentUser, err := backoff.RetryWithData(func() (*gogitlab.User, error) {
+		currentUser, resp, err := c.client.Users.CurrentUser()
+		return currentUser, permanentError(resp, err)
+	}, createBackOffWithRetries())
+	if err != nil {
+		return err
+	}
+
+	var resolveErr error
+	for _, discussion := range discussions {
+		if len(discussion.Notes) == 0 {
+			continue
+		}
+		rootNote := discussion.Notes[0]
+		noteWorkspace, noteAction, found := utils.ParseTFBuddyMarker(rootNote.Body)
+		if rootNote.Author.Username != currentUser.Username || !found ||
+			noteWorkspace != workspace || noteAction != action ||
+			!rootNote.Resolvable || rootNote.Resolved {
+			continue
+		}
+		if err := c.ResolveMergeRequestDiscussion(ctx, project, mrIID, discussion.ID); err != nil {
+			resolveErr = errors.Join(resolveErr, err)
+		}
+	}
+	return resolveErr
 }
 
 type GitlabCommitStatusOptions struct {
@@ -131,6 +181,24 @@ func (c *GitlabClient) MergeMR(ctx context.Context, mrIID int, project string) e
 	return backoff.Retry(func() error {
 		_, resp, err := c.client.MergeRequests.AcceptMergeRequest(project, mrIID, &gogitlab.AcceptMergeRequestOptions{})
 		return permanentError(resp, err)
+	}, createBackOffWithRetries())
+}
+
+func (c *GitlabClient) MergeMRAtSHA(ctx context.Context, mrIID int, project, expectedSHA string) error {
+	_, span := otel.Tracer("TFC").Start(ctx, "MergeMRAtSHA")
+	defer span.End()
+	return backoff.Retry(func() error {
+		_, resp, err := c.client.MergeRequests.AcceptMergeRequest(project, mrIID, &gogitlab.AcceptMergeRequestOptions{
+			MergeWhenPipelineSucceeds: ptr(true),
+			SHA:                       &expectedSHA,
+		})
+		if resp == nil {
+			if err == nil {
+				return errors.New("GitLab merge response was nil")
+			}
+			return err
+		}
+		return utils.CreatePermanentHTTPError(resp.StatusCode, err)
 	}, createBackOffWithRetries())
 }
 
@@ -648,6 +716,9 @@ func (gE *GitlabMergeCommentEvent) GetDiscussionID() string {
 }
 func (gE *GitlabMergeCommentEvent) GetSHA() string {
 	return gE.MergeRequest.LastCommit.ID
+}
+func (gE *GitlabMergeCommentEvent) GetEventSequence() int64 {
+	return int64(gE.ObjectAttributes.ID)
 }
 func (gE *GitlabMergeCommentEvent) GetLastCommit() vcs.Commit {
 	return gE
