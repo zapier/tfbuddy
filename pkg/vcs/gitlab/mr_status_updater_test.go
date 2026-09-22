@@ -228,6 +228,7 @@ func TestAutoMergeWaitsForAggregateClaim(t *testing.T) {
 		testSuite.MockStreamClient.EXPECT().RecordAutoMergeSuccess(gomock.Any()).Return(true, nil),
 		expectAutoMergeIntentComment(testSuite),
 		testSuite.MockGitClient.EXPECT().MergeMRAtSHA(gomock.Any(), 101, "zapier/tfbuddy", "commit-123").Return(nil),
+		testSuite.MockStreamClient.EXPECT().RecordAutoMergeRequested(gomock.Any()).Return(nil),
 	)
 
 	r := &RunStatusUpdater{cfg: config.Config{AllowAutoMerge: true}, client: testSuite.MockGitClient, rs: testSuite.MockStreamClient}

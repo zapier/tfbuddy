@@ -112,6 +112,81 @@ func newTestClient(t *testing.T, serverURL string) *GitlabClient {
 	return &GitlabClient{client: glClient, token: "test-token", tokenUser: botUsername, cfg: config.C}
 }
 
+func TestResolveMergeRequestDiscussions_OnlyResolvesMatchingBotPlan(t *testing.T) {
+	var resolved []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.RawPath
+		if path == "" {
+			path = r.URL.Path
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(path, "/discussions"):
+			json.NewEncoder(w).Encode([]map[string]interface{}{
+				{
+					"id": "matching-plan",
+					"notes": []map[string]interface{}{{
+						"id": 1, "body": buildSeedBody("workspace-a", "plan", "org"),
+						"author":     map[string]interface{}{"username": botUsername},
+						"resolvable": true, "resolved": false,
+					}},
+				},
+				{
+					"id": "matching-apply",
+					"notes": []map[string]interface{}{{
+						"id": 2, "body": buildSeedBody("workspace-a", "apply", "org"),
+						"author":     map[string]interface{}{"username": botUsername},
+						"resolvable": true, "resolved": false,
+					}},
+				},
+				{
+					"id": "other-workspace",
+					"notes": []map[string]interface{}{{
+						"id": 3, "body": buildSeedBody("workspace-b", "plan", "org"),
+						"author":     map[string]interface{}{"username": botUsername},
+						"resolvable": true, "resolved": false,
+					}},
+				},
+				{
+					"id": "human-plan",
+					"notes": []map[string]interface{}{{
+						"id": 4, "body": buildSeedBody("workspace-a", "plan", "org"),
+						"author":     map[string]interface{}{"username": "reviewer"},
+						"resolvable": true, "resolved": false,
+					}},
+				},
+				{
+					"id": "already-resolved",
+					"notes": []map[string]interface{}{{
+						"id": 5, "body": buildSeedBody("workspace-a", "plan", "org"),
+						"author":     map[string]interface{}{"username": botUsername},
+						"resolvable": true, "resolved": true,
+					}},
+				},
+			})
+		case r.Method == http.MethodGet && strings.HasSuffix(path, "/user"):
+			json.NewEncoder(w).Encode(map[string]interface{}{"id": 1, "username": botUsername})
+		case r.Method == http.MethodPut && strings.Contains(path, "/discussions/"):
+			resolved = append(resolved, path[strings.LastIndex(path, "/")+1:])
+			json.NewEncoder(w).Encode(map[string]interface{}{"id": resolved[len(resolved)-1]})
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server.URL)
+	if err := client.ResolveMergeRequestDiscussions(
+		context.Background(), testProject, testMRIID, "workspace-a", "plan",
+	); err != nil {
+		t.Fatal(err)
+	}
+	if len(resolved) != 1 || resolved[0] != "matching-plan" {
+		t.Fatalf("resolved discussions = %v, want [matching-plan]", resolved)
+	}
+}
+
 func TestGetOldRunUrls_SingleWorkspace_DeletesOlderPlanKeepsNewest(t *testing.T) {
 	t.Setenv("TFBUDDY_DELETE_OLD_COMMENTS", "true")
 	config.Reload()

@@ -17,6 +17,8 @@ type StreamClient interface {
 	RegisterAutoMergeRun(ref AutoMergeRef) error
 	RecordAutoMergeSuccess(ref AutoMergeRef) (bool, error)
 	ReleaseAutoMergeClaim(ref AutoMergeRef) error
+	RecordAutoMergeRequested(ref AutoMergeRef) error
+	FinalizeAutoMerge(ref AutoMergeRef, merged bool) (AutoMergeResult, bool, error)
 	NewTFRunPollingTask(meta RunMetadata, delay time.Duration) RunPollingTask
 	SubscribeTFRunPollingTasks(cb func(task RunPollingTask) bool) (closer func(), err error)
 	SubscribeTFRunEvents(queue string, cb func(run RunEvent) bool) (closer func(), err error)

@@ -74,6 +74,52 @@ func (c *GitlabClient) ResolveMergeRequestDiscussion(ctx context.Context, projec
 	}, createBackOffWithRetries())
 }
 
+func (c *GitlabClient) ResolveMergeRequestDiscussions(
+	ctx context.Context,
+	project string,
+	mrIID int,
+	workspace string,
+	action string,
+) error {
+	discussions, err := backoff.RetryWithData(func() ([]*gogitlab.Discussion, error) {
+		discussions, resp, err := c.client.Discussions.ListMergeRequestDiscussions(
+			project,
+			mrIID,
+			&gogitlab.ListMergeRequestDiscussionsOptions{},
+		)
+		return discussions, permanentError(resp, err)
+	}, createBackOffWithRetries())
+	if err != nil {
+		return err
+	}
+
+	currentUser, err := backoff.RetryWithData(func() (*gogitlab.User, error) {
+		currentUser, resp, err := c.client.Users.CurrentUser()
+		return currentUser, permanentError(resp, err)
+	}, createBackOffWithRetries())
+	if err != nil {
+		return err
+	}
+
+	var resolveErr error
+	for _, discussion := range discussions {
+		if len(discussion.Notes) == 0 {
+			continue
+		}
+		rootNote := discussion.Notes[0]
+		noteWorkspace, noteAction, found := utils.ParseTFBuddyMarker(rootNote.Body)
+		if rootNote.Author.Username != currentUser.Username || !found ||
+			noteWorkspace != workspace || noteAction != action ||
+			!rootNote.Resolvable || rootNote.Resolved {
+			continue
+		}
+		if err := c.ResolveMergeRequestDiscussion(ctx, project, mrIID, discussion.ID); err != nil {
+			resolveErr = errors.Join(resolveErr, err)
+		}
+	}
+	return resolveErr
+}
+
 type GitlabCommitStatusOptions struct {
 	*gogitlab.SetCommitStatusOptions
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/go-git/go-git/v5/storage/memory"
 	tfe "github.com/hashicorp/go-tfe"
 	"github.com/stretchr/testify/assert"
+	"github.com/zapier/tfbuddy/pkg/runstream"
 	tfc_trigger "github.com/zapier/tfbuddy/pkg/tfc_trigger"
 	vcs "github.com/zapier/tfbuddy/pkg/vcs"
 	gomock "go.uber.org/mock/gomock"
@@ -170,6 +171,7 @@ func (ts *TestSuite) InitTestSuite() {
 	ts.MockGitClient.EXPECT().CloneMergeRequest(gomock.Any(), ts.MetaData.ProjectNameNS, gomock.Any(), gomock.Any()).Return(ts.MockGitRepo, nil).AnyTimes()
 	ts.MockGitClient.EXPECT().CreateMergeRequestDiscussion(gomock.Any(), ts.MetaData.MRIID, ts.MetaData.ProjectNameNS, &RegexMatcher{regex: regexp.MustCompile(`Starting TFC apply for Workspace: ` + "`" + `([A-Za-z0-9\-]){1,}/([A-Za-z0-9\-]){1,}` + "`" + `\.\n<!-- tfbuddy:ws=.+:action=.+ -->`)}).Return(ts.MockGitDisc, nil).AnyTimes()
 	ts.MockGitClient.EXPECT().SupportsAggregateAutoMerge().Return(true).AnyTimes()
+	ts.MockGitClient.EXPECT().ResolveMergeRequestDiscussions(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
 	ts.MockApiClient.EXPECT().GetWorkspaceByName(gomock.Any(), gomock.Any(), gomock.Any()).Return(&tfe.Workspace{ID: "service-tfbuddy"}, nil).AnyTimes()
 	ts.MockApiClient.EXPECT().GetTagsByQuery(gomock.Any(), gomock.Any(), "tfbuddylock").AnyTimes()
@@ -179,6 +181,8 @@ func (ts *TestSuite) InitTestSuite() {
 	ts.MockStreamClient.EXPECT().EnsureAutoMergeState(gomock.Any()).AnyTimes()
 	ts.MockStreamClient.EXPECT().BeginAutoMergeApply(gomock.Any(), gomock.Any()).AnyTimes()
 	ts.MockStreamClient.EXPECT().RegisterAutoMergeRun(gomock.Any()).AnyTimes()
+	ts.MockStreamClient.EXPECT().RecordAutoMergeRequested(gomock.Any()).AnyTimes()
+	ts.MockStreamClient.EXPECT().FinalizeAutoMerge(gomock.Any(), gomock.Any()).Return(runstream.AutoMergeResult(""), false, nil).AnyTimes()
 
 	ts.MockProject.EXPECT().GetPathWithNamespace().Return(ts.MetaData.ProjectNameNS).AnyTimes()
 

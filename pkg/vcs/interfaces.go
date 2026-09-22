@@ -15,6 +15,7 @@ type GitClient interface {
 	CloneMergeRequest(context.Context, string, MR, string) (GitRepo, error)
 	UpdateMergeRequestDiscussionNote(ctx context.Context, mrIID, noteID int, project, discussionID, comment string) (MRNote, error)
 	ResolveMergeRequestDiscussion(context.Context, string, int, string) error
+	ResolveMergeRequestDiscussions(ctx context.Context, project string, mrIID int, workspace, action string) error
 	AddMergeRequestDiscussionReply(ctx context.Context, mrIID int, project, discussionID, comment string) (MRNote, error)
 	SetCommitStatus(ctx context.Context, projectWithNS string, commitSHA string, status CommitStatusOptions) (CommitStatus, error)
 	GetPipelinesForCommit(ctx context.Context, projectWithNS string, commitSHA string) ([]ProjectPipeline, error)

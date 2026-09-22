@@ -148,6 +148,54 @@ func TestAutoMergeRejectsStaleRunAndCommit(t *testing.T) {
 	}
 }
 
+func TestFinalizeAutoMergeRecordsTerminalResultOnce(t *testing.T) {
+	tests := []struct {
+		name           string
+		merged         bool
+		mergeRequested bool
+		want           AutoMergeResult
+	}{
+		{name: "auto merged", merged: true, mergeRequested: true, want: AutoMergeResultAutoMerged},
+		{name: "manually merged", merged: true, want: AutoMergeResultManuallyMerged},
+		{name: "closed unmerged", want: AutoMergeResultClosedUnmerged},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stream := newTestAutoMergeStream(t)
+			ref := autoMergeTestRef("one", "run-one", tt.name)
+			key := AutoMergeWorkspaceKey(ref.Organization, ref.Workspace)
+			if err := stream.EnsureAutoMergeState(NewAutoMergeState(
+				ref.VcsProvider, ref.Project, ref.MergeRequest, ref.CommitSHA, true, []string{key},
+			)); err != nil {
+				t.Fatal(err)
+			}
+			if tt.mergeRequested {
+				if err := stream.RegisterAutoMergeRun(ref); err != nil {
+					t.Fatal(err)
+				}
+				if claimed, err := stream.RecordAutoMergeSuccess(ref); err != nil || !claimed {
+					t.Fatalf("expected merge claim, claimed=%v err=%v", claimed, err)
+				}
+				if err := stream.RecordAutoMergeRequested(ref); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			result, finalized, err := stream.FinalizeAutoMerge(ref, tt.merged)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !finalized || result != tt.want {
+				t.Fatalf("got result=%q finalized=%v, want result=%q finalized=true", result, finalized, tt.want)
+			}
+			if _, finalized, err := stream.FinalizeAutoMerge(ref, tt.merged); err != nil || finalized {
+				t.Fatalf("duplicate webhook finalized again, finalized=%v err=%v", finalized, err)
+			}
+		})
+	}
+}
+
 func TestApplyGenerationInvalidatesWholeSelectedSetAtomically(t *testing.T) {
 	stream := newTestAutoMergeStream(t)
 	const commitSHA = "generation"

@@ -22,6 +22,14 @@ const (
 
 var ErrAutoMergeStateNotFound = errors.New("auto-merge state not found")
 
+type AutoMergeResult string
+
+const (
+	AutoMergeResultAutoMerged     AutoMergeResult = "auto_merged"
+	AutoMergeResultManuallyMerged AutoMergeResult = "manually_merged"
+	AutoMergeResultClosedUnmerged AutoMergeResult = "closed_unmerged"
+)
+
 // AutoMergeWorkspaceState tracks the newest apply run for one workspace.
 // Applied is only true when that exact run completed successfully without targets.
 type AutoMergeWorkspaceState struct {
@@ -49,6 +57,10 @@ type AutoMergeState struct {
 	Workspaces map[string]*AutoMergeWorkspaceState `json:"workspaces"`
 	// MergeClaimed atomically grants one worker permission to request the merge.
 	MergeClaimed bool `json:"merge_claimed"`
+	// MergeRequested records that the VCS accepted TFBuddy's merge request.
+	MergeRequested bool `json:"merge_requested"`
+	// Finalized prevents duplicate terminal VCS webhooks from recording a result twice.
+	Finalized bool `json:"finalized"`
 }
 
 // AutoMergeRef identifies one workspace apply within an MR commit.
@@ -194,6 +206,37 @@ func (s *Stream) ReleaseAutoMergeClaim(ref AutoMergeRef) error {
 		return true, false
 	})
 	return err
+}
+
+func (s *Stream) RecordAutoMergeRequested(ref AutoMergeRef) error {
+	_, err := s.updateAutoMergeAggregate(ref, func(state *AutoMergeState) (bool, bool, error) {
+		if !state.MergeClaimed || state.MergeRequested {
+			return false, false, nil
+		}
+		state.MergeRequested = true
+		return true, false, nil
+	})
+	return err
+}
+
+func (s *Stream) FinalizeAutoMerge(ref AutoMergeRef, merged bool) (AutoMergeResult, bool, error) {
+	var result AutoMergeResult
+	finalized, err := s.updateAutoMergeAggregate(ref, func(state *AutoMergeState) (bool, bool, error) {
+		if !state.Eligible || state.Finalized {
+			return false, false, nil
+		}
+		switch {
+		case !merged:
+			result = AutoMergeResultClosedUnmerged
+		case state.MergeRequested:
+			result = AutoMergeResultAutoMerged
+		default:
+			result = AutoMergeResultManuallyMerged
+		}
+		state.Finalized = true
+		return true, true, nil
+	})
+	return result, finalized, err
 }
 
 type autoMergeMutation func(*AutoMergeState, *AutoMergeWorkspaceState) (changed bool, claim bool)

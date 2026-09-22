@@ -360,6 +360,10 @@ func (c *Client) ResolveMergeRequestDiscussion(ctx context.Context, s string, i 
 	return nil
 }
 
+func (c *Client) ResolveMergeRequestDiscussions(context.Context, string, int, string, string) error {
+	return nil
+}
+
 func (c *Client) AddMergeRequestDiscussionReply(ctx context.Context, prID int, fullName, discussionID, comment string) (vcs.MRNote, error) {
 	ctx, span := otel.Tracer("TFC").Start(ctx, "AddMergeRequestDiscussionReply")
 	defer span.End()

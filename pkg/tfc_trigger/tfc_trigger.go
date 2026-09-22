@@ -174,11 +174,16 @@ var (
 			"runType",
 		},
 	)
+	autoMergeResults = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "tfbuddy_auto_merge_results",
+		Help: "Count of terminal results for eligible auto-merge changes",
+	}, []string{"provider", "result"})
 )
 
 func init() {
 	r := prometheus.DefaultRegisterer
 	r.MustRegister(tfcRunsStarted)
+	r.MustRegister(autoMergeResults)
 }
 
 func (t *TFCTrigger) SetMergeRequestRootNoteID(id int64) {
@@ -597,6 +602,7 @@ func (t *TFCTrigger) TriggerCleanupEvent(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("could not read MergeRequest data from VCS API: %w", err)
 	}
+	t.recordAutoMergeResult(mr)
 	triggeredWorkspaces, _, err := t.getTriggeredWorkspacesForRequest(ctx, mr)
 	if err != nil {
 		return fmt.Errorf("could not determine workspaces for merge cleanup. %w", err)
@@ -652,6 +658,32 @@ func (t *TFCTrigger) TriggerCleanupEvent(ctx context.Context) error {
 		return fmt.Errorf("could not create MR discussion thread for TFC run status updates. %w", err)
 	}
 	return nil
+}
+
+func (t *TFCTrigger) recordAutoMergeResult(mr vcs.DetailedMR) {
+	if t.GetVcsProvider() == "" || !t.gl.SupportsAggregateAutoMerge() {
+		return
+	}
+	ref := runstream.AutoMergeRef{
+		VcsProvider:  t.GetVcsProvider(),
+		Project:      t.GetProjectNameWithNamespace(),
+		MergeRequest: t.GetMergeRequestIID(),
+		CommitSHA:    t.GetCommitSHA(),
+	}
+	result, finalized, err := t.runstream.FinalizeAutoMerge(ref, mr.GetState() == "merged")
+	if errors.Is(err, runstream.ErrAutoMergeStateNotFound) {
+		return
+	}
+	if err != nil {
+		log.Error().Err(err).
+			Str("project", t.GetProjectNameWithNamespace()).
+			Int("mergeRequestID", t.GetMergeRequestIID()).
+			Msg("could not finalize auto-merge result")
+		return
+	}
+	if finalized {
+		autoMergeResults.WithLabelValues(t.GetVcsProvider(), string(result)).Inc()
+	}
 }
 
 func (t *TFCTrigger) LockUnlockWorkspace(ws *tfe.Workspace, mr vcs.DetailedMR, lock bool) error {

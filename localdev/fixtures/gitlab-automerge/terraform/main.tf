@@ -107,8 +107,10 @@ resource "tfe_notification_configuration" "fixture" {
 }
 
 resource "gitlab_project" "fixture" {
-  name                   = random_pet.fixture.id
-  initialize_with_readme = true
+  name                                             = random_pet.fixture.id
+  initialize_with_readme                           = true
+  only_allow_merge_if_all_discussions_are_resolved = true
+  only_allow_merge_if_pipeline_succeeds            = true
 }
 
 resource "gitlab_project_hook" "fixture" {

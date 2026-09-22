@@ -269,6 +269,12 @@ func (p *RunStatusUpdater) mergeMRIfPossible(ctx context.Context, rmd runstream.
 			// ACK this event and require operator intervention rather than storm GitLab.
 			return nil
 		}
+	} else if stateErr := p.rs.RecordAutoMergeRequested(ref); stateErr != nil {
+		span.RecordError(stateErr)
+		log.Error().Err(stateErr).
+			Str("project", rmd.GetMRProjectNameWithNamespace()).
+			Int("mergeRequestID", rmd.GetMRInternalID()).
+			Msg("merge was accepted but auto-merge state could not record the request")
 	}
 	log.Debug().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Str("commitSHA", rmd.GetCommitSHA()).AnErr("err", err).Msg("merge MR")
 	return err

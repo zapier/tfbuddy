@@ -262,6 +262,20 @@ func (mr *MockGitClientMockRecorder) ResolveMergeRequestDiscussion(arg0, arg1, a
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResolveMergeRequestDiscussion", reflect.TypeOf((*MockGitClient)(nil).ResolveMergeRequestDiscussion), arg0, arg1, arg2, arg3)
 }
 
+// ResolveMergeRequestDiscussions mocks base method.
+func (m *MockGitClient) ResolveMergeRequestDiscussions(ctx context.Context, project string, mrIID int, workspace, action string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ResolveMergeRequestDiscussions", ctx, project, mrIID, workspace, action)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ResolveMergeRequestDiscussions indicates an expected call of ResolveMergeRequestDiscussions.
+func (mr *MockGitClientMockRecorder) ResolveMergeRequestDiscussions(ctx, project, mrIID, workspace, action any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResolveMergeRequestDiscussions", reflect.TypeOf((*MockGitClient)(nil).ResolveMergeRequestDiscussions), ctx, project, mrIID, workspace, action)
+}
+
 // SetCommitStatus mocks base method.
 func (m *MockGitClient) SetCommitStatus(ctx context.Context, projectWithNS, commitSHA string, status vcs.CommitStatusOptions) (vcs.CommitStatus, error) {
 	m.ctrl.T.Helper()
