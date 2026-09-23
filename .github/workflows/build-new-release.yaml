@@ -1,9 +1,15 @@
-name: release new version
+name: build new release
 
 on:
-  workflow_dispatch:
   release:
     types: [published]
+  # Called by on_dispatch_release.yaml, which knows the tag before it exists
+  workflow_call:
+    inputs:
+      git_tag:
+        description: tag to build and push the image for
+        required: true
+        type: string
 
 jobs:
   release:
@@ -27,8 +33,14 @@ jobs:
 
       - name: extract tag and sha
         run: |
+          # A caller passes the tag in, because the ref is still the branch at
+          # that point. The release event carries it in the ref.
+          GIT_RELEASE_TAG="${{ inputs.git_tag }}"
+          if [ -z "$GIT_RELEASE_TAG" ]; then
+            GIT_RELEASE_TAG="${GITHUB_REF#refs/*/}"
+          fi
           echo "GIT_SHA_SHORT=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
-          echo "GIT_RELEASE_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+          echo "GIT_RELEASE_TAG=$GIT_RELEASE_TAG" >> $GITHUB_ENV
           echo "GIT_REPO_OWNER_LC=${GITHUB_REPOSITORY_OWNER,,}" >> $GITHUB_ENV
 
       - name: login to registry

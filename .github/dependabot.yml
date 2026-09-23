@@ -1,0 +1,14 @@
+version: 2
+
+updates:
+  # Dependabot security updates pick up the commit-message prefix from the
+  # matching ecosystem entry, which keeps their PR titles passing the
+  # conventional title check. open-pull-requests-limit: 0 leaves version
+  # updates off, so PR volume is unchanged - raise it to turn them on.
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    commit-message:
+      prefix: chore

@@ -71,3 +71,6 @@ build/
 go.work
 go.work.sum
 ngrok.url
+
+# Node modules for the release tooling in package.json
+node_modules/

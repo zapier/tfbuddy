@@ -1,0 +1,78 @@
+name: Release New Version
+
+on:
+  workflow_dispatch:
+
+# Each job grants itself only what it needs, so the release tooling never
+# holds the package scope and the image build never holds the repo scope
+permissions: {}
+
+# Two dispatches racing each other would compute the same version twice
+concurrency:
+  group: tag-new-release
+  cancel-in-progress: false
+
+jobs:
+  # Work out the version first, so the image can be built and pushed before
+  # anything user visible exists. A failure here leaves no tag and no release.
+  next-version:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.dry-run.outputs.new_release_git_tag }}
+    steps:
+      - name: checkout the source code
+        uses: actions/checkout@v4
+        with:
+          # semantic-release needs the full history and all tags to work out
+          # the previous release and the commits since then
+          fetch-depth: 0
+
+      # The output is empty when the commits since the last tag do not
+      # warrant a release, which skips the two jobs below
+      - name: work out the next version
+        id: dry-run
+        uses: cycjimmy/semantic-release-action@b12c8f6015dc215fe37bc154d4ad456dd3833c90 # v6.0.0
+        with:
+          semantic_version: 24.2.9
+          extra_plugins: conventional-changelog-conventionalcommits@8.0.0
+          dry_run: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Reuses the build that the release event already runs. It is not only the
+  # image: earthly +release also builds +release-helm, which creates a chart
+  # release with cr upload and pushes the index to gh-pages, so this needs to
+  # write the repository as well as the packages.
+  build:
+    needs: next-version
+    if: needs.next-version.outputs.tag != ''
+    permissions:
+      contents: write
+      packages: write
+    uses: ./.github/workflows/build-new-release.yaml
+    secrets: inherit
+    with:
+      git_tag: ${{ needs.next-version.outputs.tag }}
+
+  # Only once the image is pushed: tag the commit and publish the release
+  release:
+    needs: [next-version, build]
+    if: needs.next-version.outputs.tag != ''
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: checkout the source code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: tag the commit and publish the release
+        uses: cycjimmy/semantic-release-action@b12c8f6015dc215fe37bc154d4ad456dd3833c90 # v6.0.0
+        with:
+          semantic_version: 24.2.9
+          extra_plugins: conventional-changelog-conventionalcommits@8.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
