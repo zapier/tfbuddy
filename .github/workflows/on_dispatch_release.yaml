@@ -20,7 +20,7 @@ jobs:
     permissions:
       contents: read
     outputs:
-      version: ${{ steps.dry-run.outputs.version }}
+      tag: ${{ steps.dry-run.outputs.new_release_git_tag }}
     steps:
       - name: checkout the source code
         uses: actions/checkout@v4
@@ -29,38 +29,34 @@ jobs:
           # the previous release and the commits since then
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
-      - run: npm ci
-
-      # The exec plugin writes the version to the step output. It only runs
-      # when there is something to release, so the output stays empty when
-      # the commits since the last tag do not warrant one.
+      # The output is empty when the commits since the last tag do not
+      # warrant a release, which skips the two jobs below
       - name: work out the next version
         id: dry-run
+        uses: cycjimmy/semantic-release-action@b12c8f6015dc215fe37bc154d4ad456dd3833c90 # v6.0.0
+        with:
+          semantic_version: 24.2.9
+          extra_plugins: conventional-changelog-conventionalcommits@8.0.0
+          dry_run: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./node_modules/.bin/semantic-release --dry-run
 
   # Reuses the image build that the release event already runs
   build:
     needs: next-version
-    if: needs.next-version.outputs.version != ''
+    if: needs.next-version.outputs.tag != ''
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/on_tag.yaml
     secrets: inherit
     with:
-      git_tag: v${{ needs.next-version.outputs.version }}
+      git_tag: ${{ needs.next-version.outputs.tag }}
 
   # Only once the image is pushed: tag the commit and publish the release
   release:
     needs: [next-version, build]
-    if: needs.next-version.outputs.version != ''
+    if: needs.next-version.outputs.tag != ''
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -70,14 +66,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - name: tag the commit and publish the release
+        uses: cycjimmy/semantic-release-action@b12c8f6015dc215fe37bc154d4ad456dd3833c90 # v6.0.0
         with:
-          node-version: 20
-          cache: npm
-
-      - run: npm ci
-
-      - name: run semantic-release
+          semantic_version: 24.2.9
+          extra_plugins: conventional-changelog-conventionalcommits@8.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./node_modules/.bin/semantic-release
