@@ -15,10 +15,13 @@ concurrency:
 jobs:
   # Work out the version first, so the image can be built and pushed before
   # anything user visible exists. A failure here leaves no tag and no release.
+  # contents: write looks wrong for a dry run, but semantic-release verifies
+  # it can push before it does anything else, and that check runs a real
+  # git push --dry-run. It is not guarded by the dryRun option.
   next-version:
     runs-on: ubuntu-22.04
     permissions:
-      contents: read
+      contents: write
     outputs:
       tag: ${{ steps.dry-run.outputs.new_release_git_tag }}
     steps:
