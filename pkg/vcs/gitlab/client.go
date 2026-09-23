@@ -31,6 +31,20 @@ func (c *GitlabClient) SupportsAggregateAutoMerge() bool {
 	return true
 }
 
+func (c *GitlabClient) GetAuthenticatedAccountName(ctx context.Context) (string, error) {
+	user, err := backoff.RetryWithData(func() (*gogitlab.User, error) {
+		user, resp, err := c.client.Users.CurrentUser(gogitlab.WithContext(ctx))
+		return user, permanentError(resp, err)
+	}, createBackOffWithRetries())
+	if err != nil {
+		return "", err
+	}
+	if user.Name != "" {
+		return user.Name, nil
+	}
+	return user.Username, nil
+}
+
 const DefaultMaxRetries = 3
 
 func createBackOffWithRetries() backoff.BackOff {
@@ -318,17 +332,65 @@ func (c *GitlabClient) GetOldRunUrls(ctx context.Context, mrIID int, project str
 
 // CreateMergeRequestComment creates a comment on the merge request.
 func (c *GitlabClient) CreateMergeRequestComment(ctx context.Context, mrIID int, projectID, comment string) error {
+	_, err := c.CreateMergeRequestCommentWithID(ctx, mrIID, projectID, comment)
+	return err
+}
+
+// CreateMergeRequestCommentWithID creates a comment and returns its note ID.
+func (c *GitlabClient) CreateMergeRequestCommentWithID(
+	ctx context.Context,
+	mrIID int,
+	projectID,
+	comment string,
+) (int64, error) {
 	_, span := otel.Tracer("TFC").Start(ctx, "CreateMergeRequestComment")
 	defer span.End()
 
 	if comment != "" {
-		return backoff.Retry(func() error {
+		return backoff.RetryWithData(func() (int64, error) {
 			log.Debug().Str("projectID", projectID).Int("mrIID", mrIID).Msg("posting Gitlab comment")
-			_, resp, err := c.client.Notes.CreateMergeRequestNote(projectID, mrIID, &gogitlab.CreateMergeRequestNoteOptions{Body: &comment})
-			return permanentError(resp, err)
+			note, resp, err := c.client.Notes.CreateMergeRequestNote(
+				projectID,
+				mrIID,
+				&gogitlab.CreateMergeRequestNoteOptions{Body: &comment},
+			)
+			if err := permanentError(resp, err); err != nil {
+				return 0, err
+			}
+			return int64(note.ID), nil
 		}, createBackOffWithRetries())
 	}
-	return utils.CreatePermanentError(errors.New("comment is empty"))
+	return 0, utils.CreatePermanentError(errors.New("comment is empty"))
+}
+
+// UpdateMergeRequestComment replaces an existing merge request comment.
+func (c *GitlabClient) UpdateMergeRequestComment(
+	ctx context.Context,
+	mrIID int,
+	noteID int64,
+	projectID,
+	comment string,
+) error {
+	_, span := otel.Tracer("TFC").Start(ctx, "UpdateMergeRequestComment")
+	defer span.End()
+
+	if comment == "" {
+		return utils.CreatePermanentError(errors.New("comment is empty"))
+	}
+	return backoff.Retry(func() error {
+		log.Debug().
+			Str("projectID", projectID).
+			Int("mrIID", mrIID).
+			Int64("noteID", noteID).
+			Msg("updating Gitlab comment")
+		_, resp, err := c.client.Notes.UpdateMergeRequestNote(
+			projectID,
+			mrIID,
+			int(noteID),
+			&gogitlab.UpdateMergeRequestNoteOptions{Body: &comment},
+		)
+		return permanentError(resp, err)
+	}, createBackOffWithRetries())
 }
 
 type GitlabMRDiscussion struct {

@@ -30,6 +30,17 @@ func (c *Client) SupportsAggregateAutoMerge() bool {
 	return false
 }
 
+func (c *Client) GetAuthenticatedAccountName(ctx context.Context) (string, error) {
+	user, resp, err := c.client.Users.Get(ctx, "")
+	if err := permanentError(resp, err); err != nil {
+		return "", err
+	}
+	if user.GetName() != "" {
+		return user.GetName(), nil
+	}
+	return user.GetLogin(), nil
+}
+
 // permanentError classifies a GitHub API error by the response it came with.
 // The response may be nil, which happens when a request fails before any
 // response is received, so the status code is read defensively here rather
@@ -203,6 +214,40 @@ func (c *Client) CreateMergeRequestComment(ctx context.Context, prID int, fullNa
 
 	_, err := c.PostIssueComment(ctx, prID, fullName, comment)
 	return err
+}
+
+func (c *Client) CreateMergeRequestCommentWithID(
+	ctx context.Context,
+	prID int,
+	fullName,
+	comment string,
+) (int64, error) {
+	issueComment, err := c.PostIssueComment(ctx, prID, fullName, comment)
+	if err != nil {
+		return 0, err
+	}
+	return issueComment.GetID(), nil
+}
+
+func (c *Client) UpdateMergeRequestComment(
+	ctx context.Context,
+	_ int,
+	noteID int64,
+	fullName,
+	comment string,
+) error {
+	parts, err := splitFullName(fullName)
+	if err != nil {
+		return err
+	}
+	_, resp, err := c.client.Issues.EditComment(
+		ctx,
+		parts[0],
+		parts[1],
+		noteID,
+		&gogithub.IssueComment{Body: &comment},
+	)
+	return permanentError(resp, err)
 }
 
 func (c *Client) CreateMergeRequestDiscussion(ctx context.Context, prID int, fullName string, comment string) (vcs.MRDiscussionNotes, error) {

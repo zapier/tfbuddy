@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
@@ -237,12 +239,13 @@ func (p *RunStatusUpdater) mergeMRIfPossible(ctx context.Context, rmd runstream.
 	}
 
 	comment := "All expected workspaces have been applied successfully. Auto-merging this MR."
-	if commentErr := p.client.CreateMergeRequestComment(
+	intentCommentID, commentErr := p.client.CreateMergeRequestCommentWithID(
 		ctx,
 		rmd.GetMRInternalID(),
 		rmd.GetMRProjectNameWithNamespace(),
 		comment,
-	); commentErr != nil {
+	)
+	if commentErr != nil {
 		log.Warn().Err(commentErr).
 			Str("project", rmd.GetMRProjectNameWithNamespace()).
 			Int("mergeRequestID", rmd.GetMRInternalID()).
@@ -256,6 +259,7 @@ func (p *RunStatusUpdater) mergeMRIfPossible(ctx context.Context, rmd runstream.
 			// Keep the claim set. Redelivery cannot make a permanent rejection
 			// succeed, and releasing it would let duplicate events repeatedly
 			// submit the same rejected merge request.
+			p.postAutoMergeFailureComment(ctx, rmd, intentCommentID, err)
 			log.Warn().Err(err).
 				Str("project", rmd.GetMRProjectNameWithNamespace()).
 				Int("mergeRequestID", rmd.GetMRInternalID()).
@@ -267,6 +271,7 @@ func (p *RunStatusUpdater) mergeMRIfPossible(ctx context.Context, rmd runstream.
 			log.Error().Err(releaseErr).Msg("could not release failed auto-merge claim")
 			// The persisted claim makes redelivery unable to retry safely.
 			// ACK this event and require operator intervention rather than storm GitLab.
+			p.postAutoMergeFailureComment(ctx, rmd, intentCommentID, err)
 			return nil
 		}
 	} else if stateErr := p.rs.RecordAutoMergeRequested(ref); stateErr != nil {
@@ -278,6 +283,65 @@ func (p *RunStatusUpdater) mergeMRIfPossible(ctx context.Context, rmd runstream.
 	}
 	log.Debug().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Str("commitSHA", rmd.GetCommitSHA()).AnErr("err", err).Msg("merge MR")
 	return err
+}
+
+func (p *RunStatusUpdater) postAutoMergeFailureComment(
+	ctx context.Context,
+	rmd runstream.RunMetadata,
+	intentCommentID int64,
+	mergeErr error,
+) {
+	reason := autoMergeFailureReason(mergeErr)
+	serviceAccount := "TFBuddy service account"
+	if accountName, err := p.client.GetAuthenticatedAccountName(ctx); err != nil {
+		log.Warn().Err(err).
+			Msg("could not retrieve authenticated account name for auto-merge failure comment")
+	} else if strings.TrimSpace(accountName) != "" {
+		serviceAccount = accountName
+	}
+	comment := fmt.Sprintf(
+		"Failed to auto-merge this MR.\n\nReason: %s: %s. Please merge manually.",
+		serviceAccount,
+		reason,
+	)
+	if intentCommentID != 0 {
+		if err := p.client.UpdateMergeRequestComment(
+			ctx,
+			rmd.GetMRInternalID(),
+			intentCommentID,
+			rmd.GetMRProjectNameWithNamespace(),
+			comment,
+		); err == nil {
+			return
+		} else {
+			log.Warn().Err(err).
+				Str("project", rmd.GetMRProjectNameWithNamespace()).
+				Int("mergeRequestID", rmd.GetMRInternalID()).
+				Int64("noteID", intentCommentID).
+				Msg("could not update auto-merge intent comment")
+		}
+	}
+	if err := p.client.CreateMergeRequestComment(
+		ctx,
+		rmd.GetMRInternalID(),
+		rmd.GetMRProjectNameWithNamespace(),
+		comment,
+	); err != nil {
+		log.Warn().Err(err).
+			Str("project", rmd.GetMRProjectNameWithNamespace()).
+			Int("mergeRequestID", rmd.GetMRInternalID()).
+			Msg("could not post auto-merge failure comment")
+	}
+}
+
+var gitLabHTTPErrorPattern = regexp.MustCompile(`\b(\d{3} \{.*\})$`)
+
+func autoMergeFailureReason(err error) string {
+	reason := strings.TrimSuffix(err.Error(), " "+utils.ErrPermanent.Error())
+	if match := gitLabHTTPErrorPattern.FindStringSubmatch(reason); len(match) == 2 {
+		return match[1]
+	}
+	return reason
 }
 
 // configureBackOff returns a backoff configuration to use to retry requests

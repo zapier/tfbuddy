@@ -20,6 +20,8 @@ type commitStatusStateMatcher struct {
 	expectedState string
 }
 
+const testAutoMergeIntentCommentID int64 = 999
+
 func testAutoMergeRunMetadata() *runstream.TFRunMetadata {
 	return &runstream.TFRunMetadata{
 		RunID:                                "run-123",
@@ -38,11 +40,27 @@ func testAutoMergeRunMetadata() *runstream.TFRunMetadata {
 
 func expectAutoMergeIntentComment(testSuite *mocks.TestSuite) *gomock.Call {
 	return testSuite.MockGitClient.EXPECT().
-		CreateMergeRequestComment(
+		CreateMergeRequestCommentWithID(
 			gomock.Any(),
 			101,
 			"zapier/tfbuddy",
 			"All expected workspaces have been applied successfully. Auto-merging this MR.",
+		).
+		Return(testAutoMergeIntentCommentID, nil)
+}
+
+func expectAutoMergeFailureComment(testSuite *mocks.TestSuite, reason string) {
+	testSuite.MockGitClient.EXPECT().
+		GetAuthenticatedAccountName(gomock.Any()).
+		Return("tfbuddy-localdev", nil)
+	testSuite.MockGitClient.EXPECT().
+		UpdateMergeRequestComment(
+			gomock.Any(),
+			101,
+			testAutoMergeIntentCommentID,
+			"zapier/tfbuddy",
+			"Failed to auto-merge this MR.\n\nReason: tfbuddy-localdev: "+reason+
+				". Please merge manually.",
 		).
 		Return(nil)
 }
@@ -262,7 +280,11 @@ func TestAutoMergePermanentGitLabFailureIsNotRedelivered(t *testing.T) {
 	expectAutoMergeIntentComment(testSuite)
 	testSuite.MockGitClient.EXPECT().
 		MergeMRAtSHA(gomock.Any(), 101, "zapier/tfbuddy", "commit-123").
-		Return(utils.CreatePermanentError(errors.New("SHA mismatch")))
+		Return(utils.CreatePermanentError(errors.New(
+			"PUT https://gitlab.com/api/v4/projects/zapier%2Ftfbuddy/merge_requests/101/merge: " +
+				"401 {message: 401 Unauthorized}",
+		)))
+	expectAutoMergeFailureComment(testSuite, "401 {message: 401 Unauthorized}")
 
 	r := &RunStatusUpdater{cfg: config.Config{AllowAutoMerge: true}, client: testSuite.MockGitClient, rs: testSuite.MockStreamClient}
 	if err := r.mergeMRIfPossible(context.Background(), testAutoMergeRunMetadata()); err != nil {
@@ -283,6 +305,7 @@ func TestAutoMergeReleaseFailureDoesNotStormGitLab(t *testing.T) {
 	testSuite.MockStreamClient.EXPECT().
 		ReleaseAutoMergeClaim(gomock.Any()).
 		Return(errors.New("NATS unavailable"))
+	expectAutoMergeFailureComment(testSuite, "GitLab unavailable")
 
 	r := &RunStatusUpdater{cfg: config.Config{AllowAutoMerge: true}, client: testSuite.MockGitClient, rs: testSuite.MockStreamClient}
 	if err := r.mergeMRIfPossible(context.Background(), testAutoMergeRunMetadata()); err != nil {
