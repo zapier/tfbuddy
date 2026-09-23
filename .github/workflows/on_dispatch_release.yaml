@@ -3,8 +3,10 @@ name: tag new release
 on:
   workflow_dispatch:
 
+# The called workflow inherits these, and pushing to ghcr needs packages
 permissions:
   contents: write
+  packages: write
 
 # Two dispatches racing each other would compute the same version twice
 concurrency:
@@ -12,8 +14,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  tag:
+  # Work out the version first, so the image can be built and pushed before
+  # anything user visible exists. A failure here leaves no tag and no release.
+  next-version:
     runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.dry-run.outputs.version }}
     steps:
       - name: checkout the source code
         uses: actions/checkout@v4
@@ -26,10 +32,44 @@ jobs:
         with:
           node-version: 20
 
-      # Computes the next version from the conventional commits since the last
-      # tag, pushes the tag and publishes the GitHub release. Building and
-      # pushing the image is still a manual dispatch of on_tag.yaml, because a
-      # release created with GITHUB_TOKEN does not fire the release event.
+      # The exec plugin writes the version to the step output. It only runs
+      # when there is something to release, so the output stays empty when
+      # the commits since the last tag do not warrant one.
+      - name: work out the next version
+        id: dry-run
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npx --yes \
+            -p semantic-release@24 \
+            -p conventional-changelog-conventionalcommits@8 \
+            -p @semantic-release/exec@7 \
+            semantic-release --dry-run
+
+  # Reuses the image build that the release event already runs
+  build:
+    needs: next-version
+    if: needs.next-version.outputs.version != ''
+    uses: ./.github/workflows/on_tag.yaml
+    secrets: inherit
+    with:
+      git_tag: v${{ needs.next-version.outputs.version }}
+
+  # Only once the image is pushed: tag the commit and publish the release
+  release:
+    needs: [next-version, build]
+    if: needs.next-version.outputs.version != ''
+    runs-on: ubuntu-22.04
+    steps:
+      - name: checkout the source code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - name: run semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -37,4 +77,5 @@ jobs:
           npx --yes \
             -p semantic-release@24 \
             -p conventional-changelog-conventionalcommits@8 \
+            -p @semantic-release/exec@7 \
             semantic-release
