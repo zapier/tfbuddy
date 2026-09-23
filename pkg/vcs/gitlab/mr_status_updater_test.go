@@ -20,6 +20,8 @@ type commitStatusStateMatcher struct {
 	expectedState string
 }
 
+const testAutoMergeIntentCommentID int64 = 999
+
 func testAutoMergeRunMetadata() *runstream.TFRunMetadata {
 	return &runstream.TFRunMetadata{
 		RunID:                                "run-123",
@@ -38,13 +40,33 @@ func testAutoMergeRunMetadata() *runstream.TFRunMetadata {
 
 func expectAutoMergeIntentComment(testSuite *mocks.TestSuite) *gomock.Call {
 	return testSuite.MockGitClient.EXPECT().
-		CreateMergeRequestComment(
+		CreateMergeRequestCommentWithID(
 			gomock.Any(),
 			101,
 			"zapier/tfbuddy",
 			"All expected workspaces have been applied successfully. Auto-merging this MR.",
 		).
+		Return(testAutoMergeIntentCommentID, nil)
+}
+
+func expectAutoMergeFailureComment(testSuite *mocks.TestSuite, reason string) {
+	testSuite.MockGitClient.EXPECT().
+		GetAuthenticatedAccountName(gomock.Any()).
+		Return("tfbuddy-localdev", nil)
+	testSuite.MockGitClient.EXPECT().
+		UpdateMergeRequestComment(
+			gomock.Any(),
+			101,
+			testAutoMergeIntentCommentID,
+			"zapier/tfbuddy",
+			autoMergeFailureComment(reason),
+		).
 		Return(nil)
+}
+
+func autoMergeFailureComment(reason string) string {
+	return "Failed to auto-merge this MR.\n\nReason: tfbuddy-localdev: " + reason +
+		". Please merge manually."
 }
 
 func (m *commitStatusStateMatcher) Matches(x interface{}) bool {
@@ -262,7 +284,11 @@ func TestAutoMergePermanentGitLabFailureIsNotRedelivered(t *testing.T) {
 	expectAutoMergeIntentComment(testSuite)
 	testSuite.MockGitClient.EXPECT().
 		MergeMRAtSHA(gomock.Any(), 101, "zapier/tfbuddy", "commit-123").
-		Return(utils.CreatePermanentError(errors.New("SHA mismatch")))
+		Return(utils.CreatePermanentError(errors.New(
+			"PUT https://gitlab.com/api/v4/projects/zapier%2Ftfbuddy/merge_requests/101/merge: " +
+				"401 {message: 401 Unauthorized}",
+		)))
+	expectAutoMergeFailureComment(testSuite, "401 {message: 401 Unauthorized}")
 
 	r := &RunStatusUpdater{cfg: config.Config{AllowAutoMerge: true}, client: testSuite.MockGitClient, rs: testSuite.MockStreamClient}
 	if err := r.mergeMRIfPossible(context.Background(), testAutoMergeRunMetadata()); err != nil {
@@ -283,10 +309,121 @@ func TestAutoMergeReleaseFailureDoesNotStormGitLab(t *testing.T) {
 	testSuite.MockStreamClient.EXPECT().
 		ReleaseAutoMergeClaim(gomock.Any()).
 		Return(errors.New("NATS unavailable"))
+	expectAutoMergeFailureComment(testSuite, "GitLab unavailable")
 
 	r := &RunStatusUpdater{cfg: config.Config{AllowAutoMerge: true}, client: testSuite.MockGitClient, rs: testSuite.MockStreamClient}
 	if err := r.mergeMRIfPossible(context.Background(), testAutoMergeRunMetadata()); err != nil {
 		t.Fatalf("unreleasable claim should be acknowledged to avoid a retry storm, got %v", err)
+	}
+}
+
+func TestAutoMergeFailureCreatesFallbackWhenIntentUpdateFails(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
+
+	testSuite.MockStreamClient.EXPECT().RecordAutoMergeSuccess(gomock.Any()).Return(true, nil)
+	expectAutoMergeIntentComment(testSuite)
+	testSuite.MockGitClient.EXPECT().
+		MergeMRAtSHA(gomock.Any(), 101, "zapier/tfbuddy", "commit-123").
+		Return(utils.CreatePermanentError(errors.New("merge rejected")))
+	testSuite.MockGitClient.EXPECT().
+		GetAuthenticatedAccountName(gomock.Any()).
+		Return("tfbuddy-localdev", nil)
+	testSuite.MockGitClient.EXPECT().
+		UpdateMergeRequestComment(
+			gomock.Any(),
+			101,
+			testAutoMergeIntentCommentID,
+			"zapier/tfbuddy",
+			autoMergeFailureComment("merge rejected"),
+		).
+		Return(errors.New("update failed"))
+	testSuite.MockGitClient.EXPECT().
+		CreateMergeRequestComment(
+			gomock.Any(),
+			101,
+			"zapier/tfbuddy",
+			autoMergeFailureComment("merge rejected"),
+		).
+		Return(nil)
+
+	r := &RunStatusUpdater{cfg: config.Config{AllowAutoMerge: true}, client: testSuite.MockGitClient, rs: testSuite.MockStreamClient}
+	if err := r.mergeMRIfPossible(context.Background(), testAutoMergeRunMetadata()); err != nil {
+		t.Fatalf("permanent merge rejection should be acknowledged, got %v", err)
+	}
+}
+
+func TestAutoMergeFailureCreatesCommentWhenIntentCommentFailed(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
+
+	testSuite.MockStreamClient.EXPECT().RecordAutoMergeSuccess(gomock.Any()).Return(true, nil)
+	testSuite.MockGitClient.EXPECT().
+		CreateMergeRequestCommentWithID(
+			gomock.Any(),
+			101,
+			"zapier/tfbuddy",
+			"All expected workspaces have been applied successfully. Auto-merging this MR.",
+		).
+		Return(int64(0), errors.New("intent comment failed"))
+	testSuite.MockGitClient.EXPECT().
+		MergeMRAtSHA(gomock.Any(), 101, "zapier/tfbuddy", "commit-123").
+		Return(utils.CreatePermanentError(errors.New("merge rejected")))
+	testSuite.MockGitClient.EXPECT().
+		GetAuthenticatedAccountName(gomock.Any()).
+		Return("tfbuddy-localdev", nil)
+	testSuite.MockGitClient.EXPECT().
+		CreateMergeRequestComment(
+			gomock.Any(),
+			101,
+			"zapier/tfbuddy",
+			autoMergeFailureComment("merge rejected"),
+		).
+		Return(nil)
+
+	r := &RunStatusUpdater{cfg: config.Config{AllowAutoMerge: true}, client: testSuite.MockGitClient, rs: testSuite.MockStreamClient}
+	if err := r.mergeMRIfPossible(context.Background(), testAutoMergeRunMetadata()); err != nil {
+		t.Fatalf("permanent merge rejection should be acknowledged, got %v", err)
+	}
+}
+
+func TestAutoMergeFailureReason(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{
+			name: "GitLab structured HTTP error",
+			err: utils.CreatePermanentError(errors.New(
+				"PUT https://gitlab.com/api/v4/projects/zapier%2Ftfbuddy/merge_requests/101/merge: " +
+					"401 {message: 401 Unauthorized}",
+			)),
+			want: "401 {message: 401 Unauthorized}",
+		},
+		{
+			name: "GitLab unstructured HTTP error",
+			err: errors.New(
+				"PUT https://gitlab.com/api/v4/projects/zapier%2Ftfbuddy/merge_requests/101/merge: " +
+					"401 Unauthorized",
+			),
+			want: "401 Unauthorized",
+		},
+		{
+			name: "non-HTTP error",
+			err:  errors.New("GitLab unavailable"),
+			want: "GitLab unavailable",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := autoMergeFailureReason(tt.err); got != tt.want {
+				t.Fatalf("autoMergeFailureReason() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
