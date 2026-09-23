@@ -41,12 +41,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # Reuses the image build that the release event already runs
+  # Reuses the build that the release event already runs. It is not only the
+  # image: earthly +release also builds +release-helm, which creates a chart
+  # release with cr upload and pushes the index to gh-pages, so this needs to
+  # write the repository as well as the packages.
   build:
     needs: next-version
     if: needs.next-version.outputs.tag != ''
     permissions:
-      contents: read
+      contents: write
       packages: write
     uses: ./.github/workflows/on_tag.yaml
     secrets: inherit
