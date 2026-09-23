@@ -85,6 +85,21 @@ func (mr *MockGitClientMockRecorder) CreateMergeRequestComment(ctx, id, fullPath
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateMergeRequestComment", reflect.TypeOf((*MockGitClient)(nil).CreateMergeRequestComment), ctx, id, fullPath, comment)
 }
 
+// CreateMergeRequestCommentWithID mocks base method.
+func (m *MockGitClient) CreateMergeRequestCommentWithID(ctx context.Context, id int, fullPath, comment string) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateMergeRequestCommentWithID", ctx, id, fullPath, comment)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateMergeRequestCommentWithID indicates an expected call of CreateMergeRequestCommentWithID.
+func (mr *MockGitClientMockRecorder) CreateMergeRequestCommentWithID(ctx, id, fullPath, comment any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateMergeRequestCommentWithID", reflect.TypeOf((*MockGitClient)(nil).CreateMergeRequestCommentWithID), ctx, id, fullPath, comment)
+}
+
 // CreateMergeRequestDiscussion mocks base method.
 func (m *MockGitClient) CreateMergeRequestDiscussion(ctx context.Context, mrID int, fullPath, comment string) (vcs.MRDiscussionNotes, error) {
 	m.ctrl.T.Helper()
@@ -98,6 +113,21 @@ func (m *MockGitClient) CreateMergeRequestDiscussion(ctx context.Context, mrID i
 func (mr *MockGitClientMockRecorder) CreateMergeRequestDiscussion(ctx, mrID, fullPath, comment any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateMergeRequestDiscussion", reflect.TypeOf((*MockGitClient)(nil).CreateMergeRequestDiscussion), ctx, mrID, fullPath, comment)
+}
+
+// GetAuthenticatedAccountName mocks base method.
+func (m *MockGitClient) GetAuthenticatedAccountName(ctx context.Context) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetAuthenticatedAccountName", ctx)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetAuthenticatedAccountName indicates an expected call of GetAuthenticatedAccountName.
+func (mr *MockGitClientMockRecorder) GetAuthenticatedAccountName(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAuthenticatedAccountName", reflect.TypeOf((*MockGitClient)(nil).GetAuthenticatedAccountName), ctx)
 }
 
 // GetCommitJobStatuses mocks base method.
@@ -303,6 +333,20 @@ func (m *MockGitClient) SupportsAggregateAutoMerge() bool {
 func (mr *MockGitClientMockRecorder) SupportsAggregateAutoMerge() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SupportsAggregateAutoMerge", reflect.TypeOf((*MockGitClient)(nil).SupportsAggregateAutoMerge))
+}
+
+// UpdateMergeRequestComment mocks base method.
+func (m *MockGitClient) UpdateMergeRequestComment(ctx context.Context, id int, noteID int64, fullPath, comment string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateMergeRequestComment", ctx, id, noteID, fullPath, comment)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateMergeRequestComment indicates an expected call of UpdateMergeRequestComment.
+func (mr *MockGitClientMockRecorder) UpdateMergeRequestComment(ctx, id, noteID, fullPath, comment any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateMergeRequestComment", reflect.TypeOf((*MockGitClient)(nil).UpdateMergeRequestComment), ctx, id, noteID, fullPath, comment)
 }
 
 // UpdateMergeRequestDiscussionNote mocks base method.

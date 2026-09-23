@@ -6,8 +6,11 @@ import "context"
 
 type GitClient interface {
 	SupportsAggregateAutoMerge() bool
+	GetAuthenticatedAccountName(ctx context.Context) (string, error)
 	GetMergeRequestApprovals(ctx context.Context, id int, project string) (MRApproved, error)
 	CreateMergeRequestComment(ctx context.Context, id int, fullPath string, comment string) error
+	CreateMergeRequestCommentWithID(ctx context.Context, id int, fullPath string, comment string) (int64, error)
+	UpdateMergeRequestComment(ctx context.Context, id int, noteID int64, fullPath string, comment string) error
 	CreateMergeRequestDiscussion(ctx context.Context, mrID int, fullPath string, comment string) (MRDiscussionNotes, error)
 	GetMergeRequest(context.Context, int, string) (DetailedMR, error)
 	GetRepoFile(context.Context, string, string, string) ([]byte, error)
