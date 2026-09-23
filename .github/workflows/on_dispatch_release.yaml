@@ -3,10 +3,9 @@ name: tag new release
 on:
   workflow_dispatch:
 
-# The called workflow inherits these, and pushing to ghcr needs packages
-permissions:
-  contents: write
-  packages: write
+# Each job grants itself only what it needs, so the release tooling never
+# holds the package scope and the image build never holds the repo scope
+permissions: {}
 
 # Two dispatches racing each other would compute the same version twice
 concurrency:
@@ -18,6 +17,8 @@ jobs:
   # anything user visible exists. A failure here leaves no tag and no release.
   next-version:
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
     outputs:
       version: ${{ steps.dry-run.outputs.version }}
     steps:
@@ -31,6 +32,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+
+      - run: npm ci
 
       # The exec plugin writes the version to the step output. It only runs
       # when there is something to release, so the output stays empty when
@@ -39,17 +43,15 @@ jobs:
         id: dry-run
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          npx --yes \
-            -p semantic-release@24 \
-            -p conventional-changelog-conventionalcommits@8 \
-            -p @semantic-release/exec@7 \
-            semantic-release --dry-run
+        run: ./node_modules/.bin/semantic-release --dry-run
 
   # Reuses the image build that the release event already runs
   build:
     needs: next-version
     if: needs.next-version.outputs.version != ''
+    permissions:
+      contents: read
+      packages: write
     uses: ./.github/workflows/on_tag.yaml
     secrets: inherit
     with:
@@ -60,6 +62,8 @@ jobs:
     needs: [next-version, build]
     if: needs.next-version.outputs.version != ''
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write
     steps:
       - name: checkout the source code
         uses: actions/checkout@v4
@@ -69,13 +73,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+
+      - run: npm ci
 
       - name: run semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          npx --yes \
-            -p semantic-release@24 \
-            -p conventional-changelog-conventionalcommits@8 \
-            -p @semantic-release/exec@7 \
-            semantic-release
+        run: ./node_modules/.bin/semantic-release

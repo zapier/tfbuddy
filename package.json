@@ -1,0 +1,10 @@
+{
+  "name": "tfbuddy-release-tooling",
+  "private": true,
+  "description": "Pins the semantic-release tooling that .github/workflows/on_dispatch_release.yaml runs. Nothing here ships in the tfbuddy image.",
+  "devDependencies": {
+    "@semantic-release/exec": "7.1.0",
+    "conventional-changelog-conventionalcommits": "8.0.0",
+    "semantic-release": "24.2.9"
+  }
+}
