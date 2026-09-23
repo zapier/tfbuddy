@@ -272,6 +272,10 @@ func (p *RunStatusUpdater) mergeMRIfPossible(ctx context.Context, rmd runstream.
 			// The persisted claim makes redelivery unable to retry safely.
 			// ACK this event and require operator intervention rather than storm GitLab.
 			p.postAutoMergeFailureComment(ctx, rmd, intentCommentID, err)
+			log.Error().Err(err).
+				Str("project", rmd.GetMRProjectNameWithNamespace()).
+				Int("mergeRequestID", rmd.GetMRInternalID()).
+				Msg("auto-merge failed and its claim could not be released")
 			return nil
 		}
 	} else if stateErr := p.rs.RecordAutoMergeRequested(ref); stateErr != nil {
@@ -334,7 +338,7 @@ func (p *RunStatusUpdater) postAutoMergeFailureComment(
 	}
 }
 
-var gitLabHTTPErrorPattern = regexp.MustCompile(`\b(\d{3} \{.*\})$`)
+var gitLabHTTPErrorPattern = regexp.MustCompile(`(?:^|: )(\d{3}(?: \{.*\}| [^\n]+))$`)
 
 func autoMergeFailureReason(err error) string {
 	reason := strings.TrimSuffix(err.Error(), " "+utils.ErrPermanent.Error())
