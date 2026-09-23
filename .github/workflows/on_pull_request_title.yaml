@@ -17,19 +17,8 @@ jobs:
   semantic-title:
     runs-on: ubuntu-22.04
     steps:
+      # No types listed: the action defaults to the conventional commit types,
+      # which is the policy we want and one fewer copy to keep in step
       - uses: amannn/action-semantic-pull-request@v5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          types: |
-            feat
-            fix
-            docs
-            chore
-            refactor
-            test
-            perf
-            build
-            ci
-            revert
-          requireScope: false
