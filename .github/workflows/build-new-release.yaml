@@ -1,7 +1,6 @@
-name: release new version
+name: build new release
 
 on:
-  workflow_dispatch:
   release:
     types: [published]
   # Called by on_dispatch_release.yaml, which knows the tag before it exists
@@ -35,7 +34,7 @@ jobs:
       - name: extract tag and sha
         run: |
           # A caller passes the tag in, because the ref is still the branch at
-          # that point. The release and dispatch events carry it in the ref.
+          # that point. The release event carries it in the ref.
           GIT_RELEASE_TAG="${{ inputs.git_tag }}"
           if [ -z "$GIT_RELEASE_TAG" ]; then
             GIT_RELEASE_TAG="${GITHUB_REF#refs/*/}"

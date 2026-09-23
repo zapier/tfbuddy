@@ -1,4 +1,4 @@
-name: tag new release
+name: Release New Version
 
 on:
   workflow_dispatch:
@@ -51,7 +51,7 @@ jobs:
     permissions:
       contents: write
       packages: write
-    uses: ./.github/workflows/on_tag.yaml
+    uses: ./.github/workflows/build-new-release.yaml
     secrets: inherit
     with:
       git_tag: ${{ needs.next-version.outputs.tag }}
