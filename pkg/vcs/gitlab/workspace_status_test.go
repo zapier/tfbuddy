@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/zapier/tfbuddy/pkg/vcs"
@@ -131,5 +132,88 @@ func TestSetWorkspaceStatusPostsSkippedToTheMRPipeline(t *testing.T) {
 	// links pointing at stale runs.
 	if got["pipeline_id"] != float64(wantPipelineID) {
 		t.Errorf("pipeline_id = %v, want %d", got["pipeline_id"], wantPipelineID)
+	}
+}
+
+// pipelinelessServer serves a project with no pipelines at all — the shape of
+// a Terraform repo that has .tfbuddy.yaml but no .gitlab-ci.yml.
+func pipelinelessServer(t *testing.T, lookups *int) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.RawPath
+		if path == "" {
+			path = r.URL.Path
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(path, "/pipelines"):
+			*lookups++
+			json.NewEncoder(w).Encode([]map[string]any{})
+		case strings.Contains(path, "/statuses/"):
+			json.NewEncoder(w).Encode(map[string]any{
+				"id": 1, "name": "TFC/plan/svc-a", "sha": "abc123", "status": "skipped",
+				"author": map[string]any{"username": "tfbuddy"},
+			})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+}
+
+// SetWorkspaceStatus runs synchronously inside the merge-request webhook
+// handler, whose JetStream AckWait is 30s. A long pipeline-ID backoff there
+// gets the delivery redelivered and the whole MR reprocessed, producing the
+// duplicate discussions and duplicate TFC runs that the per-workspace fan-out
+// exists to prevent. Giving up quickly is correct: the status posts anyway,
+// onto the implicit "external" pipeline.
+func TestSetWorkspaceStatusGivesUpQuicklyWhenNoPipelineExists(t *testing.T) {
+	var lookups int
+	srv := pipelinelessServer(t, &lookups)
+	defer srv.Close()
+
+	client := newTestClient(t, srv.URL)
+
+	start := time.Now()
+	err := client.SetWorkspaceStatus(context.Background(), vcs.WorkspaceStatus{
+		Project:   testProject,
+		CommitSHA: "abc123",
+		Workspace: "svc-a",
+		Action:    "plan",
+		State:     vcs.CommitStateSkipped,
+	})
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("the status must still post without a pipeline ID: %v", err)
+	}
+	if elapsed > 10*time.Second {
+		t.Fatalf("pipeline lookup blocked for %s; that exceeds the 30s JetStream AckWait "+
+			"budget once clone time is added, risking redelivery and duplicate runs "+
+			"(%d lookups)", elapsed, lookups)
+	}
+}
+
+// backoff.Retry ignores context, so without an explicit context-aware backoff
+// nothing upstream can bound this call.
+func TestSetWorkspaceStatusHonorsContextCancellation(t *testing.T) {
+	var lookups int
+	srv := pipelinelessServer(t, &lookups)
+	defer srv.Close()
+
+	client := newTestClient(t, srv.URL)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	_ = client.SetWorkspaceStatus(ctx, vcs.WorkspaceStatus{
+		Project:   testProject,
+		CommitSHA: "abc123",
+		Workspace: "svc-a",
+		Action:    "plan",
+		State:     vcs.CommitStateFailed,
+	})
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Fatalf("a cancelled context did not shorten the call: took %s", elapsed)
 	}
 }

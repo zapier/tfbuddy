@@ -241,7 +241,12 @@ var (
 	ErrWorkspaceNotDefined = errors.New("the workspace is not defined in " + ProjectConfigFilename)
 	ErrNoChangesDetected   = errors.New("no changes detected for configured Terraform directories")
 	ErrWorkspaceLocked     = errors.New("workspace is already locked")
-	ErrWorkspaceUnlocked   = errors.New("workspace is already unlocked")
+	// ErrRunPublished marks a failure raised after the TFC run was already
+	// created. The run is live and the run-event path owns its commit status,
+	// so dispatch must not overwrite that with a failed status — a late write
+	// would leave the workspace red forever despite a successful apply.
+	ErrRunPublished      = errors.New("TFC run was created before the failure")
+	ErrWorkspaceUnlocked = errors.New("workspace is already unlocked")
 )
 
 func FindLockingMR(ctx context.Context, tags []string, thisMR string) string {
@@ -510,6 +515,8 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 
 	repo, err := t.cloneGitRepo(ctx, mr)
 	if err != nil {
+		t.postWorkspaceStatusForAll(ctx, triggeredWorkspaces, vcs.CommitStateFailed,
+			fmt.Sprintf("could not clone the repository: %v", err))
 		return nil, err
 	}
 	defer func() {
@@ -526,9 +533,13 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 	}
 
 	if err := t.ensureAutoMergeState(affectedWorkspaces); err != nil {
+		t.postWorkspaceStatusForAll(ctx, triggeredWorkspaces, vcs.CommitStateFailed,
+			fmt.Sprintf("could not initialize auto-merge state: %v", err))
 		return nil, fmt.Errorf("could not initialize auto-merge state: %w", err)
 	}
 	if err := t.beginAutoMergeApply(triggeredWorkspaces); err != nil {
+		t.postWorkspaceStatusForAll(ctx, triggeredWorkspaces, vcs.CommitStateFailed,
+			fmt.Sprintf("could not initialize apply generation: %v", err))
 		return nil, fmt.Errorf("could not initialize apply generation: %w", err)
 	}
 
@@ -542,6 +553,18 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 // workspaceDispatchFn runs (inline) or enqueues (fan-out) a single workspace.
 // Returning an error puts the workspace into status.Errored verbatim.
 type workspaceDispatchFn func(ctx context.Context, ws *TFCWorkspace) error
+
+// postWorkspaceStatusForAll publishes the same terminal status for every
+// triggered workspace. It covers merge-request-wide failures, which happen
+// after the triggered set is known but before any workspace is dispatched:
+// cloneGitRepo wraps its error with utils.CreatePermanentError, so that
+// delivery is ACKed and never redelivered, and without this the merge request
+// event path would disclose nothing at all.
+func (t *TFCTrigger) postWorkspaceStatusForAll(ctx context.Context, workspaces []*TFCWorkspace, state vcs.CommitState, description string) {
+	for _, ws := range workspaces {
+		t.postWorkspaceStatus(ctx, ws, state, description)
+	}
+}
 
 // postWorkspaceStatus publishes a terminal TFC/<action>/<workspace> commit
 // status. Every workspace TFBuddy declines to run must leave one behind,
@@ -598,7 +621,9 @@ func (t *TFCTrigger) dispatchWorkspaces(ctx context.Context, workspaces []*TFCWo
 			continue
 		}
 		if err := dispatch(ctx, ws); err != nil {
-			t.postWorkspaceStatus(ctx, ws, vcs.CommitStateFailed, err.Error())
+			if !errors.Is(err, ErrRunPublished) {
+				t.postWorkspaceStatus(ctx, ws, vcs.CommitStateFailed, err.Error())
+			}
 			status.Errored = append(status.Errored, &ErroredWorkspace{Name: ws.Name, Error: err.Error()})
 			continue
 		}
@@ -893,7 +918,10 @@ func (t *TFCTrigger) triggerRunForWorkspace(ctx context.Context, cfgWS *TFCWorks
 		Bool("speculative", run.ConfigurationVersion.Speculative).
 		Msg("created TFC run")
 
-	return t.publishRunToStream(ctx, run, cfgWS, discussionID, rootNoteID)
+	if err := t.publishRunToStream(ctx, run, cfgWS, discussionID, rootNoteID); err != nil {
+		return fmt.Errorf("%w: %w", ErrRunPublished, err)
+	}
+	return nil
 }
 
 func (t *TFCTrigger) publishRunToStream(ctx context.Context, run *tfe.Run, cfgWS *TFCWorkspace, discussionID string, rootNoteID int64) error {

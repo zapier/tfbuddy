@@ -3,6 +3,7 @@ package gitlab
 import (
 	"context"
 	"fmt"
+	"time"
 	"unicode/utf8"
 
 	"github.com/cenkalti/backoff/v4"
@@ -19,6 +20,28 @@ import (
 // GitLab rejects an over-long description rather than truncating it, and
 // wrapped TFC error strings routinely exceed it, so we cut it ourselves.
 const maxDescriptionLen = 255
+
+// statusPipelineLookupTimeout bounds the pipeline-ID lookup on the status
+// path. Unlike the run-event path, SetWorkspaceStatus is called synchronously
+// from the merge-request webhook handler, whose JetStream AckWait is the 30s
+// default: a long wait here gets the delivery redelivered and the whole merge
+// request reprocessed, producing the duplicate discussions and duplicate TFC
+// runs that the per-workspace fan-out exists to prevent.
+//
+// Giving up is cheap. A status posted without a pipeline ID lands on the
+// implicit "external" pipeline, which for a repo with no CI of its own is the
+// only destination there ever was.
+const statusPipelineLookupTimeout = 3 * time.Second
+
+// configureStatusPipelineBackOff is the short, cancellable counterpart to
+// configureBackOff. backoff.Retry ignores context, so the WithContext wrapper
+// is what lets a caller's deadline actually shorten the call.
+func configureStatusPipelineBackOff(ctx context.Context) backoff.BackOffContext {
+	bo := backoff.NewExponentialBackOff()
+	bo.MaxInterval = time.Second
+	bo.MaxElapsedTime = statusPipelineLookupTimeout
+	return backoff.WithContext(bo, ctx)
+}
 
 // buildStateFor maps a provider-agnostic state onto the GitLab build state.
 // Every vcs.CommitState has a GitLab equivalent; an unknown value is reported
@@ -107,9 +130,9 @@ func (c *GitlabClient) SetWorkspaceStatus(ctx context.Context, ws vcs.WorkspaceS
 			return errNoPipelineStatus
 		}
 		return nil
-	}, configureBackOff()); err != nil {
+	}, configureStatusPipelineBackOff(ctx)); err != nil {
 		log.Warn().Str("project", ws.Project).Int("mergeRequestID", ws.MergeRequestIID).
-			Msg("could not retrieve pipeline id after multiple attempts")
+			Msg("no pipeline id for commit; posting status to the implicit external pipeline")
 	}
 	status.PipelineID = pipelineID
 

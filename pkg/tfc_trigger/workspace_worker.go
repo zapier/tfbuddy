@@ -2,6 +2,7 @@ package tfc_trigger
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
@@ -145,7 +146,10 @@ func (w *WorkspaceTriggerWorker) postWorkspaceError(ctx context.Context, gl vcs.
 	// Mirror the inline dispatcher: a workspace that could not run must leave
 	// a terminal status behind, or it vanishes from the merge request
 	// pipeline. Only plan and apply have a pipeline meaning.
-	if opts.Action == PlanAction || opts.Action == ApplyAction {
+	// A failure raised after the run was created leaves the run-event path
+	// owning the status; overwriting it here could strand the workspace red
+	// after a successful apply.
+	if (opts.Action == PlanAction || opts.Action == ApplyAction) && !errors.Is(err, ErrRunPublished) {
 		if serr := gl.SetWorkspaceStatus(ctx, vcs.WorkspaceStatus{
 			Project:         opts.ProjectNameWithNamespace,
 			CommitSHA:       opts.CommitSHA,
