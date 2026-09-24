@@ -241,7 +241,17 @@ var (
 	ErrWorkspaceNotDefined = errors.New("the workspace is not defined in " + ProjectConfigFilename)
 	ErrNoChangesDetected   = errors.New("no changes detected for configured Terraform directories")
 	ErrWorkspaceLocked     = errors.New("workspace is already locked")
-	ErrWorkspaceUnlocked   = errors.New("workspace is already unlocked")
+	// ErrRunPublished marks a failure raised once the run-event path is
+	// established and able to report on the run: the run exists AND its
+	// metadata is live, so TFC webhooks will drive the commit status. Dispatch
+	// must not overwrite that with a failed status, because a late write would
+	// leave the workspace red forever despite a successful apply.
+	//
+	// A run merely existing is not enough. If AddRunMeta fails, or a speculative
+	// plan's poller cannot be scheduled, nothing will ever report on the run and
+	// dispatch is the only thing that can — those failures are left unmarked.
+	ErrRunPublished      = errors.New("TFC run was created and its event path established")
+	ErrWorkspaceUnlocked = errors.New("workspace is already unlocked")
 )
 
 func FindLockingMR(ctx context.Context, tags []string, thisMR string) string {
@@ -510,6 +520,8 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 
 	repo, err := t.cloneGitRepo(ctx, mr)
 	if err != nil {
+		t.postWorkspaceStatusForAll(ctx, triggeredWorkspaces, vcs.CommitStateFailed,
+			fmt.Sprintf("could not clone the repository: %v", err))
 		return nil, err
 	}
 	defer func() {
@@ -526,9 +538,13 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 	}
 
 	if err := t.ensureAutoMergeState(affectedWorkspaces); err != nil {
+		t.postWorkspaceStatusForAll(ctx, triggeredWorkspaces, vcs.CommitStateFailed,
+			fmt.Sprintf("could not initialize auto-merge state: %v", err))
 		return nil, fmt.Errorf("could not initialize auto-merge state: %w", err)
 	}
 	if err := t.beginAutoMergeApply(triggeredWorkspaces); err != nil {
+		t.postWorkspaceStatusForAll(ctx, triggeredWorkspaces, vcs.CommitStateFailed,
+			fmt.Sprintf("could not initialize apply generation: %v", err))
 		return nil, fmt.Errorf("could not initialize apply generation: %w", err)
 	}
 
@@ -543,6 +559,70 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 // Returning an error puts the workspace into status.Errored verbatim.
 type workspaceDispatchFn func(ctx context.Context, ws *TFCWorkspace) error
 
+// postWorkspaceStatusForAll publishes the same terminal status for every
+// triggered workspace. It covers merge-request-wide failures, which happen
+// after the triggered set is known but before any workspace is dispatched:
+// cloneGitRepo wraps its error with utils.CreatePermanentError, so that
+// delivery is ACKed and never redelivered, and without this the merge request
+// event path would disclose nothing at all.
+func (t *TFCTrigger) postWorkspaceStatusForAll(ctx context.Context, workspaces []*TFCWorkspace, state vcs.CommitState, description string) {
+	// These writes are back to back with no work between them, so one budget
+	// covers the batch.
+	ctx, cancel := context.WithTimeout(ctx, statusWriteBudget)
+	defer cancel()
+	for _, ws := range workspaces {
+		t.postWorkspaceStatus(ctx, ws, state, description)
+	}
+}
+
+// statusWriteBudget bounds one status write on the synchronous webhook path.
+// The merge-request consumer uses JetStream's 30s default AckWait, and
+// overrunning it gets the delivery redelivered and the whole merge request
+// reprocessed — the duplicate discussions and duplicate TFC runs the
+// per-workspace fan-out exists to prevent.
+//
+// Giving up is cheap: a status posted without a pipeline ID still lands, on
+// the implicit "external" pipeline. The budget is per write rather than
+// shared across the dispatch loop, because a workspace's dispatch can take
+// minutes and a shared deadline would expire before later workspaces got to
+// report at all.
+const statusWriteBudget = 3 * time.Second
+
+// postWorkspaceStatus publishes a terminal TFC/<action>/<workspace> commit
+// status. Every workspace TFBuddy declines to run must leave one behind,
+// otherwise it vanishes from the merge request pipeline with no trace.
+//
+// Failures are logged, never propagated: a commit status is a notification,
+// and losing one must not change what TFBuddy does with the workspace.
+func (t *TFCTrigger) postWorkspaceStatus(ctx context.Context, ws *TFCWorkspace, state vcs.CommitState, description string) {
+	action := t.GetAction()
+	// Lock and unlock have no pipeline meaning; a TFC/lock/<ws> job would be
+	// noise that never resolves.
+	if action != PlanAction && action != ApplyAction {
+		return
+	}
+	// Only impose the budget when the caller has not already set one, so a
+	// batch (postWorkspaceStatusForAll) is bounded as a whole rather than per
+	// workspace.
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, statusWriteBudget)
+		defer cancel()
+	}
+	if err := t.gl.SetWorkspaceStatus(ctx, vcs.WorkspaceStatus{
+		Project:         t.GetProjectNameWithNamespace(),
+		CommitSHA:       t.GetCommitSHA(),
+		MergeRequestIID: t.GetMergeRequestIID(),
+		Workspace:       ws.Name,
+		Action:          action.String(),
+		State:           state,
+		Description:     description,
+	}); err != nil {
+		log.Error().Err(err).Str("ws", ws.Name).Str("state", string(state)).
+			Msg("could not set workspace commit status")
+	}
+}
+
 func (t *TFCTrigger) dispatchWorkspaces(ctx context.Context, workspaces []*TFCWorkspace, blocked map[string]struct{}, dispatch workspaceDispatchFn) *TriggeredTFCWorkspaces {
 	status := &TriggeredTFCWorkspaces{
 		Errored:  make([]*ErroredWorkspace, 0),
@@ -551,6 +631,8 @@ func (t *TFCTrigger) dispatchWorkspaces(ctx context.Context, workspaces []*TFCWo
 	for _, ws := range workspaces {
 		if !isWorkspaceAllowed(t.appCfg, ws.Name, ws.Organization) {
 			log.Info().Str("ws", ws.Name).Msg("Ignoring workspace, because of allow/deny list.")
+			t.postWorkspaceStatus(ctx, ws, vcs.CommitStateSkipped,
+				"skipped: excluded by TFBuddy configuration")
 			status.Errored = append(status.Errored, &ErroredWorkspace{
 				Name:  ws.Name,
 				Error: "Ignoring workspace, because of allow/deny list.",
@@ -560,6 +642,8 @@ func (t *TFCTrigger) dispatchWorkspaces(ctx context.Context, workspaces []*TFCWo
 		if _, ok := blocked[ws.Name]; ok {
 			log.Info().Str("ws", ws.Name).Str("dir", ws.Dir).Strs("triggerDirs", ws.TriggerDirs).
 				Msg("Blocking workspace: relevant paths modified on target branch.")
+			t.postWorkspaceStatus(ctx, ws, vcs.CommitStateFailed,
+				"blocked: target branch modified workspace paths; rebase to resolve")
 			status.Errored = append(status.Errored, &ErroredWorkspace{
 				Name:  ws.Name,
 				Error: fmt.Sprintf("Blocked: workspace-relevant paths (dir: '%s', triggerDirs: %v) have been modified on the target branch since this branch diverged. Please rebase/merge the target branch to resolve this.", ws.Dir, ws.TriggerDirs),
@@ -567,6 +651,9 @@ func (t *TFCTrigger) dispatchWorkspaces(ctx context.Context, workspaces []*TFCWo
 			continue
 		}
 		if err := dispatch(ctx, ws); err != nil {
+			if !errors.Is(err, ErrRunPublished) {
+				t.postWorkspaceStatus(ctx, ws, vcs.CommitStateFailed, err.Error())
+			}
 			status.Errored = append(status.Errored, &ErroredWorkspace{Name: ws.Name, Error: err.Error()})
 			continue
 		}
@@ -861,6 +948,8 @@ func (t *TFCTrigger) triggerRunForWorkspace(ctx context.Context, cfgWS *TFCWorks
 		Bool("speculative", run.ConfigurationVersion.Speculative).
 		Msg("created TFC run")
 
+	// publishRunToStream marks its own failures: only some of them leave the
+	// run-event path able to report on the run.
 	return t.publishRunToStream(ctx, run, cfgWS, discussionID, rootNoteID)
 }
 
@@ -897,13 +986,19 @@ func (t *TFCTrigger) publishRunToStream(ctx context.Context, run *tfe.Run, cfgWS
 			Str("WS", run.Workspace.Name).Msg("auto-merge cannot be enabled since the feature is globally disabled")
 		rmd.AutoMerge = false
 	}
+	// Deliberately not marked with ErrRunPublished: waitForTFRunMetadata reads
+	// this back before PublishTFRunEvent will route anything, so without it no
+	// run event ever arrives and dispatch is the only thing that can report
+	// this workspace at all.
 	err := t.runstream.AddRunMeta(rmd)
 	if err != nil {
 		return fmt.Errorf("could not publish Run metadata to event stream, updates may not be posted to MR. %w", err)
 	}
 	if t.GetVcsProvider() == "gitlab" && t.GetAction() == ApplyAction && t.cfg.Target == "" && t.cfg.AutoMergeGeneration != "" {
 		if err := t.runstream.RegisterAutoMergeRun(runstream.AutoMergeRefForRun(rmd)); err != nil {
-			return fmt.Errorf("could not register Run for auto-merge coordination. %w", err)
+			// Run metadata is already live, so TFC webhooks will drive this
+			// workspace's commit status; only auto-merge coordination is lost.
+			return fmt.Errorf("%w: could not register Run for auto-merge coordination. %w", ErrRunPublished, err)
 		}
 	}
 
@@ -913,6 +1008,9 @@ func (t *TFCTrigger) publishRunToStream(ctx context.Context, run *tfe.Run, cfgWS
 		err := task.Schedule(ctx)
 
 		if err != nil {
+			// Not marked with ErrRunPublished: TFC sends no notifications for
+			// speculative plans, so with no poller there is no status source
+			// and dispatch must report the failure itself.
 			return fmt.Errorf("failed to create TFC plan polling task. Updates may not be posted to MR. %w", err)
 		}
 
