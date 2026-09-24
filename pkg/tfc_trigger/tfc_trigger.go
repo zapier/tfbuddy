@@ -241,11 +241,16 @@ var (
 	ErrWorkspaceNotDefined = errors.New("the workspace is not defined in " + ProjectConfigFilename)
 	ErrNoChangesDetected   = errors.New("no changes detected for configured Terraform directories")
 	ErrWorkspaceLocked     = errors.New("workspace is already locked")
-	// ErrRunPublished marks a failure raised after the TFC run was already
-	// created. The run is live and the run-event path owns its commit status,
-	// so dispatch must not overwrite that with a failed status — a late write
-	// would leave the workspace red forever despite a successful apply.
-	ErrRunPublished      = errors.New("TFC run was created before the failure")
+	// ErrRunPublished marks a failure raised once the run-event path is
+	// established and able to report on the run: the run exists AND its
+	// metadata is live, so TFC webhooks will drive the commit status. Dispatch
+	// must not overwrite that with a failed status, because a late write would
+	// leave the workspace red forever despite a successful apply.
+	//
+	// A run merely existing is not enough. If AddRunMeta fails, or a speculative
+	// plan's poller cannot be scheduled, nothing will ever report on the run and
+	// dispatch is the only thing that can — those failures are left unmarked.
+	ErrRunPublished      = errors.New("TFC run was created and its event path established")
 	ErrWorkspaceUnlocked = errors.New("workspace is already unlocked")
 )
 
@@ -561,10 +566,27 @@ type workspaceDispatchFn func(ctx context.Context, ws *TFCWorkspace) error
 // delivery is ACKed and never redelivered, and without this the merge request
 // event path would disclose nothing at all.
 func (t *TFCTrigger) postWorkspaceStatusForAll(ctx context.Context, workspaces []*TFCWorkspace, state vcs.CommitState, description string) {
+	// These writes are back to back with no work between them, so one budget
+	// covers the batch.
+	ctx, cancel := context.WithTimeout(ctx, statusWriteBudget)
+	defer cancel()
 	for _, ws := range workspaces {
 		t.postWorkspaceStatus(ctx, ws, state, description)
 	}
 }
+
+// statusWriteBudget bounds one status write on the synchronous webhook path.
+// The merge-request consumer uses JetStream's 30s default AckWait, and
+// overrunning it gets the delivery redelivered and the whole merge request
+// reprocessed — the duplicate discussions and duplicate TFC runs the
+// per-workspace fan-out exists to prevent.
+//
+// Giving up is cheap: a status posted without a pipeline ID still lands, on
+// the implicit "external" pipeline. The budget is per write rather than
+// shared across the dispatch loop, because a workspace's dispatch can take
+// minutes and a shared deadline would expire before later workspaces got to
+// report at all.
+const statusWriteBudget = 3 * time.Second
 
 // postWorkspaceStatus publishes a terminal TFC/<action>/<workspace> commit
 // status. Every workspace TFBuddy declines to run must leave one behind,
@@ -578,6 +600,14 @@ func (t *TFCTrigger) postWorkspaceStatus(ctx context.Context, ws *TFCWorkspace, 
 	// noise that never resolves.
 	if action != PlanAction && action != ApplyAction {
 		return
+	}
+	// Only impose the budget when the caller has not already set one, so a
+	// batch (postWorkspaceStatusForAll) is bounded as a whole rather than per
+	// workspace.
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, statusWriteBudget)
+		defer cancel()
 	}
 	if err := t.gl.SetWorkspaceStatus(ctx, vcs.WorkspaceStatus{
 		Project:         t.GetProjectNameWithNamespace(),
@@ -918,10 +948,9 @@ func (t *TFCTrigger) triggerRunForWorkspace(ctx context.Context, cfgWS *TFCWorks
 		Bool("speculative", run.ConfigurationVersion.Speculative).
 		Msg("created TFC run")
 
-	if err := t.publishRunToStream(ctx, run, cfgWS, discussionID, rootNoteID); err != nil {
-		return fmt.Errorf("%w: %w", ErrRunPublished, err)
-	}
-	return nil
+	// publishRunToStream marks its own failures: only some of them leave the
+	// run-event path able to report on the run.
+	return t.publishRunToStream(ctx, run, cfgWS, discussionID, rootNoteID)
 }
 
 func (t *TFCTrigger) publishRunToStream(ctx context.Context, run *tfe.Run, cfgWS *TFCWorkspace, discussionID string, rootNoteID int64) error {
@@ -957,13 +986,19 @@ func (t *TFCTrigger) publishRunToStream(ctx context.Context, run *tfe.Run, cfgWS
 			Str("WS", run.Workspace.Name).Msg("auto-merge cannot be enabled since the feature is globally disabled")
 		rmd.AutoMerge = false
 	}
+	// Deliberately not marked with ErrRunPublished: waitForTFRunMetadata reads
+	// this back before PublishTFRunEvent will route anything, so without it no
+	// run event ever arrives and dispatch is the only thing that can report
+	// this workspace at all.
 	err := t.runstream.AddRunMeta(rmd)
 	if err != nil {
 		return fmt.Errorf("could not publish Run metadata to event stream, updates may not be posted to MR. %w", err)
 	}
 	if t.GetVcsProvider() == "gitlab" && t.GetAction() == ApplyAction && t.cfg.Target == "" && t.cfg.AutoMergeGeneration != "" {
 		if err := t.runstream.RegisterAutoMergeRun(runstream.AutoMergeRefForRun(rmd)); err != nil {
-			return fmt.Errorf("could not register Run for auto-merge coordination. %w", err)
+			// Run metadata is already live, so TFC webhooks will drive this
+			// workspace's commit status; only auto-merge coordination is lost.
+			return fmt.Errorf("%w: could not register Run for auto-merge coordination. %w", ErrRunPublished, err)
 		}
 	}
 
@@ -973,6 +1008,9 @@ func (t *TFCTrigger) publishRunToStream(ctx context.Context, run *tfe.Run, cfgWS
 		err := task.Schedule(ctx)
 
 		if err != nil {
+			// Not marked with ErrRunPublished: TFC sends no notifications for
+			// speculative plans, so with no poller there is no status source
+			// and dispatch must report the failure itself.
 			return fmt.Errorf("failed to create TFC plan polling task. Updates may not be posted to MR. %w", err)
 		}
 

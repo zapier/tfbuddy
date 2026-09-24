@@ -21,28 +21,6 @@ import (
 // wrapped TFC error strings routinely exceed it, so we cut it ourselves.
 const maxDescriptionLen = 255
 
-// statusPipelineLookupTimeout bounds the pipeline-ID lookup on the status
-// path. Unlike the run-event path, SetWorkspaceStatus is called synchronously
-// from the merge-request webhook handler, whose JetStream AckWait is the 30s
-// default: a long wait here gets the delivery redelivered and the whole merge
-// request reprocessed, producing the duplicate discussions and duplicate TFC
-// runs that the per-workspace fan-out exists to prevent.
-//
-// Giving up is cheap. A status posted without a pipeline ID lands on the
-// implicit "external" pipeline, which for a repo with no CI of its own is the
-// only destination there ever was.
-const statusPipelineLookupTimeout = 3 * time.Second
-
-// configureStatusPipelineBackOff is the short, cancellable counterpart to
-// configureBackOff. backoff.Retry ignores context, so the WithContext wrapper
-// is what lets a caller's deadline actually shorten the call.
-func configureStatusPipelineBackOff(ctx context.Context) backoff.BackOffContext {
-	bo := backoff.NewExponentialBackOff()
-	bo.MaxInterval = time.Second
-	bo.MaxElapsedTime = statusPipelineLookupTimeout
-	return backoff.WithContext(bo, ctx)
-}
-
 // buildStateFor maps a provider-agnostic state onto the GitLab build state.
 // Every vcs.CommitState has a GitLab equivalent; an unknown value is reported
 // as failed rather than silently dropped.
@@ -99,6 +77,13 @@ func truncateDescription(s string) string {
 
 // SetWorkspaceStatus publishes one TFC/<action>/<workspace> commit status.
 // This is the only place in the codebase that builds one.
+//
+// How long it may take is the caller's to decide, via the context deadline.
+// The asynchronous run-event path passes no deadline and keeps the full
+// eventual-consistency window, because a GitLab pipeline can take seconds to
+// become visible and a status posted too early lands on an unrelated external
+// pipeline. Synchronous webhook callers set a short deadline instead, since
+// overrunning their JetStream AckWait causes a redelivery.
 func (c *GitlabClient) SetWorkspaceStatus(ctx context.Context, ws vcs.WorkspaceStatus) error {
 	ctx, span := otel.Tracer("TFC").Start(ctx, "SetWorkspaceStatus")
 	defer span.End()
@@ -123,14 +108,26 @@ func (c *GitlabClient) SetWorkspaceStatus(ctx context.Context, ws vcs.WorkspaceS
 	// Look up the pipeline ID, since GitLab is eventually consistent. Without
 	// one the status lands on a stray "external" pipeline instead of the
 	// merge request's.
+	//
+	// When the caller set a deadline, reserve half of it for the write: a
+	// status with no pipeline ID still lands somewhere useful, but a lookup
+	// that consumes the whole budget leaves nothing to post with and the
+	// workspace disappears entirely — the failure this feature exists to fix.
+	lookupCtx := ctx
+	if deadline, ok := ctx.Deadline(); ok {
+		var cancelLookup context.CancelFunc
+		lookupCtx, cancelLookup = context.WithTimeout(ctx, time.Until(deadline)/2)
+		defer cancelLookup()
+	}
+
 	var pipelineID *int
 	if err := backoff.Retry(func() error {
-		pipelineID = c.latestPipelineID(ctx, ws.Project, ws.CommitSHA, ws.MergeRequestIID)
+		pipelineID = c.latestPipelineID(lookupCtx, ws.Project, ws.CommitSHA, ws.MergeRequestIID)
 		if pipelineID == nil {
 			return errNoPipelineStatus
 		}
 		return nil
-	}, configureStatusPipelineBackOff(ctx)); err != nil {
+	}, backoff.WithContext(configureBackOff(), lookupCtx)); err != nil {
 		log.Warn().Str("project", ws.Project).Int("mergeRequestID", ws.MergeRequestIID).
 			Msg("no pipeline id for commit; posting status to the implicit external pipeline")
 	}

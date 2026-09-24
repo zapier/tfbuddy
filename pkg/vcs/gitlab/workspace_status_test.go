@@ -160,21 +160,23 @@ func pipelinelessServer(t *testing.T, lookups *int) *httptest.Server {
 	}))
 }
 
-// SetWorkspaceStatus runs synchronously inside the merge-request webhook
-// handler, whose JetStream AckWait is 30s. A long pipeline-ID backoff there
-// gets the delivery redelivered and the whole MR reprocessed, producing the
-// duplicate discussions and duplicate TFC runs that the per-workspace fan-out
-// exists to prevent. Giving up quickly is correct: the status posts anyway,
-// onto the implicit "external" pipeline.
-func TestSetWorkspaceStatusGivesUpQuicklyWhenNoPipelineExists(t *testing.T) {
+// A synchronous webhook caller passes a short deadline, because overrunning
+// its JetStream AckWait gets the delivery redelivered and the whole MR
+// reprocessed. Under that deadline the status must still post — onto the
+// implicit "external" pipeline, which for a repo with no CI is the only
+// destination there was.
+func TestSetWorkspaceStatusStillPostsWhenTheDeadlineBeatsThePipelineLookup(t *testing.T) {
 	var lookups int
 	srv := pipelinelessServer(t, &lookups)
 	defer srv.Close()
 
 	client := newTestClient(t, srv.URL)
 
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
 	start := time.Now()
-	err := client.SetWorkspaceStatus(context.Background(), vcs.WorkspaceStatus{
+	err := client.SetWorkspaceStatus(ctx, vcs.WorkspaceStatus{
 		Project:   testProject,
 		CommitSHA: "abc123",
 		Workspace: "svc-a",
@@ -215,5 +217,128 @@ func TestSetWorkspaceStatusHonorsContextCancellation(t *testing.T) {
 	})
 	if elapsed := time.Since(start); elapsed > 5*time.Second {
 		t.Fatalf("a cancelled context did not shorten the call: took %s", elapsed)
+	}
+}
+
+// The run-event path is asynchronous and has no ack deadline, so it must keep
+// the long eventual-consistency window: a GitLab pipeline that only becomes
+// visible after a few seconds must still receive its TFC status rather than
+// having it posted to an unrelated external pipeline.
+func TestSetWorkspaceStatusWithoutDeadlineWaitsForALatePipeline(t *testing.T) {
+	const wantPipelineID = 777
+	visibleAfter := time.Now().Add(4 * time.Second)
+
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.RawPath
+		if path == "" {
+			path = r.URL.Path
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(path, "/pipelines"):
+			if time.Now().Before(visibleAfter) {
+				json.NewEncoder(w).Encode([]map[string]any{})
+				return
+			}
+			json.NewEncoder(w).Encode([]map[string]any{
+				{"id": wantPipelineID, "source": "merge_request_event", "status": "running"},
+			})
+		case strings.Contains(path, "/statuses/"):
+			json.NewDecoder(r.Body).Decode(&got)
+			json.NewEncoder(w).Encode(map[string]any{
+				"id": 1, "name": "TFC/apply/svc-a", "sha": "abc123", "status": "success",
+				"author": map[string]any{"username": "tfbuddy"},
+			})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	client := newTestClient(t, srv.URL)
+
+	// No deadline: this is the asynchronous run-event caller.
+	if err := client.SetWorkspaceStatus(context.Background(), vcs.WorkspaceStatus{
+		Project:   testProject,
+		CommitSHA: "abc123",
+		Workspace: "svc-a",
+		Action:    "apply",
+		State:     vcs.CommitStateSuccess,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if got["pipeline_id"] != float64(wantPipelineID) {
+		t.Fatalf("pipeline_id = %v, want %d; a late-appearing MR pipeline must still be found "+
+			"on the asynchronous path", got["pipeline_id"], wantPipelineID)
+	}
+}
+
+// failingServer returns a retryable 503 from the named endpoint, which drives
+// the GitLab client's own retry loop.
+func failingServer(t *testing.T, failSuffix string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.RawPath
+		if path == "" {
+			path = r.URL.Path
+		}
+		if strings.Contains(path, failSuffix) {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(path, "/pipelines"):
+			json.NewEncoder(w).Encode([]map[string]any{
+				{"id": 5, "source": "merge_request_event", "status": "running"},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]any{
+				"id": 1, "name": "TFC/plan/svc-a", "sha": "abc123", "status": "failed",
+				"author": map[string]any{"username": "tfbuddy"},
+			})
+		}
+	}))
+}
+
+// GetPipelinesForCommit runs its own 30s retry loop and passes no context to
+// go-gitlab, so a retrying GitLab could hold the synchronous webhook handler
+// well past its deadline no matter what bound the caller set.
+func TestSetWorkspaceStatusRespectsDeadlineWhenPipelineLookupKeepsFailing(t *testing.T) {
+	srv := failingServer(t, "/pipelines")
+	defer srv.Close()
+
+	client := newTestClient(t, srv.URL)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	_ = client.SetWorkspaceStatus(ctx, vcs.WorkspaceStatus{
+		Project: testProject, CommitSHA: "abc123", Workspace: "svc-a",
+		Action: "plan", State: vcs.CommitStateFailed,
+	})
+	if elapsed := time.Since(start); elapsed > 10*time.Second {
+		t.Fatalf("a failing pipeline lookup ignored the caller's 2s deadline: took %s", elapsed)
+	}
+}
+
+// SetCommitStatus has the same problem: its own retry loop, no context.
+func TestSetWorkspaceStatusRespectsDeadlineWhenStatusWriteKeepsFailing(t *testing.T) {
+	srv := failingServer(t, "/statuses/")
+	defer srv.Close()
+
+	client := newTestClient(t, srv.URL)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	_ = client.SetWorkspaceStatus(ctx, vcs.WorkspaceStatus{
+		Project: testProject, CommitSHA: "abc123", Workspace: "svc-a",
+		Action: "plan", State: vcs.CommitStateFailed,
+	})
+	if elapsed := time.Since(start); elapsed > 10*time.Second {
+		t.Fatalf("a failing status write ignored the caller's 2s deadline: took %s", elapsed)
 	}
 }

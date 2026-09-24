@@ -150,7 +150,9 @@ func (w *WorkspaceTriggerWorker) postWorkspaceError(ctx context.Context, gl vcs.
 	// owning the status; overwriting it here could strand the workspace red
 	// after a successful apply.
 	if (opts.Action == PlanAction || opts.Action == ApplyAction) && !errors.Is(err, ErrRunPublished) {
-		if serr := gl.SetWorkspaceStatus(ctx, vcs.WorkspaceStatus{
+		statusCtx, cancel := context.WithTimeout(ctx, statusWriteBudget)
+		defer cancel()
+		if serr := gl.SetWorkspaceStatus(statusCtx, vcs.WorkspaceStatus{
 			Project:         opts.ProjectNameWithNamespace,
 			CommitSHA:       opts.CommitSHA,
 			MergeRequestIID: opts.MergeRequestIID,
