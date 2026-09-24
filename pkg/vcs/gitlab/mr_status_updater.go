@@ -176,6 +176,10 @@ func descriptionForState(state gogitlab.BuildStateValue) *string {
 		return ptr("failed.")
 	case gogitlab.Success:
 		return ptr("succeeded.")
+	case gogitlab.Canceled:
+		return ptr("canceled.")
+	case gogitlab.Skipped:
+		return ptr("skipped.")
 	}
 	return ptr("unknown")
 }
