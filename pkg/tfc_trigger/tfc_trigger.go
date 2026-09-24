@@ -543,6 +543,33 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 // Returning an error puts the workspace into status.Errored verbatim.
 type workspaceDispatchFn func(ctx context.Context, ws *TFCWorkspace) error
 
+// postWorkspaceStatus publishes a terminal TFC/<action>/<workspace> commit
+// status. Every workspace TFBuddy declines to run must leave one behind,
+// otherwise it vanishes from the merge request pipeline with no trace.
+//
+// Failures are logged, never propagated: a commit status is a notification,
+// and losing one must not change what TFBuddy does with the workspace.
+func (t *TFCTrigger) postWorkspaceStatus(ctx context.Context, ws *TFCWorkspace, state vcs.CommitState, description string) {
+	action := t.GetAction()
+	// Lock and unlock have no pipeline meaning; a TFC/lock/<ws> job would be
+	// noise that never resolves.
+	if action != PlanAction && action != ApplyAction {
+		return
+	}
+	if err := t.gl.SetWorkspaceStatus(ctx, vcs.WorkspaceStatus{
+		Project:         t.GetProjectNameWithNamespace(),
+		CommitSHA:       t.GetCommitSHA(),
+		MergeRequestIID: t.GetMergeRequestIID(),
+		Workspace:       ws.Name,
+		Action:          action.String(),
+		State:           state,
+		Description:     description,
+	}); err != nil {
+		log.Error().Err(err).Str("ws", ws.Name).Str("state", string(state)).
+			Msg("could not set workspace commit status")
+	}
+}
+
 func (t *TFCTrigger) dispatchWorkspaces(ctx context.Context, workspaces []*TFCWorkspace, blocked map[string]struct{}, dispatch workspaceDispatchFn) *TriggeredTFCWorkspaces {
 	status := &TriggeredTFCWorkspaces{
 		Errored:  make([]*ErroredWorkspace, 0),
@@ -551,6 +578,8 @@ func (t *TFCTrigger) dispatchWorkspaces(ctx context.Context, workspaces []*TFCWo
 	for _, ws := range workspaces {
 		if !isWorkspaceAllowed(t.appCfg, ws.Name, ws.Organization) {
 			log.Info().Str("ws", ws.Name).Msg("Ignoring workspace, because of allow/deny list.")
+			t.postWorkspaceStatus(ctx, ws, vcs.CommitStateSkipped,
+				"skipped: excluded by TFBuddy configuration")
 			status.Errored = append(status.Errored, &ErroredWorkspace{
 				Name:  ws.Name,
 				Error: "Ignoring workspace, because of allow/deny list.",
@@ -560,6 +589,8 @@ func (t *TFCTrigger) dispatchWorkspaces(ctx context.Context, workspaces []*TFCWo
 		if _, ok := blocked[ws.Name]; ok {
 			log.Info().Str("ws", ws.Name).Str("dir", ws.Dir).Strs("triggerDirs", ws.TriggerDirs).
 				Msg("Blocking workspace: relevant paths modified on target branch.")
+			t.postWorkspaceStatus(ctx, ws, vcs.CommitStateFailed,
+				"blocked: target branch modified workspace paths; rebase to resolve")
 			status.Errored = append(status.Errored, &ErroredWorkspace{
 				Name:  ws.Name,
 				Error: fmt.Sprintf("Blocked: workspace-relevant paths (dir: '%s', triggerDirs: %v) have been modified on the target branch since this branch diverged. Please rebase/merge the target branch to resolve this.", ws.Dir, ws.TriggerDirs),
@@ -567,6 +598,7 @@ func (t *TFCTrigger) dispatchWorkspaces(ctx context.Context, workspaces []*TFCWo
 			continue
 		}
 		if err := dispatch(ctx, ws); err != nil {
+			t.postWorkspaceStatus(ctx, ws, vcs.CommitStateFailed, err.Error())
 			status.Errored = append(status.Errored, &ErroredWorkspace{Name: ws.Name, Error: err.Error()})
 			continue
 		}
