@@ -142,6 +142,23 @@ func (w *WorkspaceTriggerWorker) postWorkspaceError(ctx context.Context, gl vcs.
 	if gl == nil {
 		return
 	}
+	// Mirror the inline dispatcher: a workspace that could not run must leave
+	// a terminal status behind, or it vanishes from the merge request
+	// pipeline. Only plan and apply have a pipeline meaning.
+	if opts.Action == PlanAction || opts.Action == ApplyAction {
+		if serr := gl.SetWorkspaceStatus(ctx, vcs.WorkspaceStatus{
+			Project:         opts.ProjectNameWithNamespace,
+			CommitSHA:       opts.CommitSHA,
+			MergeRequestIID: opts.MergeRequestIID,
+			Workspace:       ws,
+			Action:          opts.Action.String(),
+			State:           vcs.CommitStateFailed,
+			Description:     err.Error(),
+		}); serr != nil {
+			log.Error().Err(serr).Str("workspace", ws).Msg("could not set workspace commit status")
+		}
+	}
+
 	body := fmt.Sprintf(":no_entry: %s could not be run because: %s", ws, err.Error())
 	if cerr := gl.CreateMergeRequestComment(ctx, opts.MergeRequestIID, opts.ProjectNameWithNamespace, body); cerr != nil {
 		log.Error().Err(cerr).Str("workspace", ws).Msg("could not post workspace error to MR")
