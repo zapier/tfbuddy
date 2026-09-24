@@ -112,51 +112,26 @@ func (p *RunStatusUpdater) updateCommitStatusForRun(ctx context.Context, run *tf
 	return nil
 }
 
+// updateStatus adapts run metadata onto the provider-agnostic status writer.
+// The status building, pipeline lookup and truncation all live in
+// GitlabClient.SetWorkspaceStatus so there is one implementation of each.
 func (p *RunStatusUpdater) updateStatus(ctx context.Context, state gogitlab.BuildStateValue, action string, rmd runstream.RunMetadata) {
 	ctx, span := otel.Tracer("TFC").Start(ctx, "updateStatus")
 	defer span.End()
 
-	status := &gogitlab.SetCommitStatusOptions{
-		Name:        statusName(rmd.GetWorkspace(), action),
-		Context:     statusName(rmd.GetWorkspace(), action),
-		TargetURL:   runUrlForTFRunMetadata(rmd),
-		Description: descriptionForState(state),
-		State:       state,
-	}
-
-	// Look up the latest pipeline ID for this MR, since Gitlab is eventually consistent
-	// Once we have a pipeline ID returned, we know we have a valid pipeline to set commit status for
-	var pipelineID *int
-	getPipelineIDFn := func() error {
-		log.Debug().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Msg("getting pipeline status")
-		pipelineID = p.getLatestPipelineID(ctx, rmd)
-		if pipelineID == nil {
-			return errNoPipelineStatus
-		}
-		return nil
-	}
-
-	err := backoff.Retry(getPipelineIDFn, configureBackOff())
+	err := p.client.SetWorkspaceStatus(ctx, vcs.WorkspaceStatus{
+		Project:         rmd.GetMRProjectNameWithNamespace(),
+		CommitSHA:       rmd.GetCommitSHA(),
+		MergeRequestIID: rmd.GetMRInternalID(),
+		Workspace:       rmd.GetWorkspace(),
+		Action:          action,
+		State:           commitStateFor(state),
+		TargetURL:       *runUrlForTFRunMetadata(rmd),
+	})
 	if err != nil {
-		log.Warn().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Msg("could not retrieve pipeline id after multiple attempts")
+		log.Error().Str("project", rmd.GetMRProjectNameWithNamespace()).
+			Int("mergeRequestID", rmd.GetMRInternalID()).Err(err).Msg("could not update status")
 	}
-	if pipelineID != nil {
-		log.Trace().Int("pipeline_id", *pipelineID).Msg("pipeline status")
-		status.PipelineID = pipelineID
-	}
-
-	log.Debug().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Interface("new_status", status).Msg("updating Gitlab commit status")
-	cs, err := p.client.SetCommitStatus(
-		ctx,
-		rmd.GetMRProjectNameWithNamespace(),
-		rmd.GetCommitSHA(),
-		&GitlabCommitStatusOptions{status},
-	)
-	if err != nil {
-		log.Error().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Err(err).Interface("status", status).Msg("could not update status")
-		return
-	}
-	log.Debug().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Interface("commit_status", cs.Info()).Msg("updated Commit Status")
 }
 
 // statusName builds the commit status name TFBuddy publishes. The
@@ -191,25 +166,6 @@ func runUrlForTFRunMetadata(rmd runstream.RunMetadata) *string {
 		rmd.GetWorkspace(),
 		rmd.GetRunID(),
 	))
-}
-
-func (p *RunStatusUpdater) getLatestPipelineID(ctx context.Context, rmd runstream.RunMetadata) *int {
-	pipelines, err := p.client.GetPipelinesForCommit(ctx, rmd.GetMRProjectNameWithNamespace(), rmd.GetCommitSHA())
-	if err != nil {
-		log.Error().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Err(err).Msg("could not retrieve pipelines for commit")
-		return nil
-	}
-	log.Trace().Interface("pipelines", pipelines).Msg("retrieved pipelines for commit")
-	// Prefers the merge request pipeline, and otherwise falls back to the newest
-	// pipeline when GitLab reports no merge request pipeline.
-	selected := vcs.SelectPipelineForCommit(pipelines)
-	if selected == nil {
-		return nil
-	}
-	if selected.GetSource() != vcs.PipelineSourceMergeRequestEvent {
-		log.Debug().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Msg("No merge request pipeline ID found for the commit. Using latest pipeline ID as fallback...")
-	}
-	return ptr(selected.GetID())
 }
 
 func (p *RunStatusUpdater) mergeMRIfPossible(ctx context.Context, rmd runstream.RunMetadata) error {

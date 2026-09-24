@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/go-tfe"
@@ -15,10 +16,6 @@ import (
 	gogitlab "gitlab.com/gitlab-org/api/client-go"
 	"go.uber.org/mock/gomock"
 )
-
-type commitStatusStateMatcher struct {
-	expectedState string
-}
 
 const testAutoMergeIntentCommentID int64 = 999
 
@@ -69,63 +66,23 @@ func autoMergeFailureComment(reason string) string {
 		". Please merge manually."
 }
 
-func (m *commitStatusStateMatcher) Matches(x interface{}) bool {
-	opts, ok := x.(vcs.CommitStatusOptions)
-	if !ok {
-		return false
-	}
-	return opts.GetState() == m.expectedState
-}
-
-func (m *commitStatusStateMatcher) String() string {
-	return "matches commit status with state=" + m.expectedState
-}
-
-// pipelineIDMatcher asserts that the commit status options carry the expected pipeline ID.
-type pipelineIDMatcher struct {
-	expectedID int
-}
-
-func (m *pipelineIDMatcher) Matches(x interface{}) bool {
-	opts, ok := x.(*GitlabCommitStatusOptions)
-	if !ok {
-		return false
-	}
-	if opts.PipelineID == nil {
-		return false
-	}
-	return *opts.PipelineID == m.expectedID
-}
-
-func (m *pipelineIDMatcher) String() string {
-	return "matches commit status whose PipelineID is set to the expected value"
-}
-
-// TestUpdateStatusAttachesPipelineID guards against a regression of the closure
-// shadowing bug where the resolved pipeline ID was discarded and SetCommitStatus
-// was called with PipelineID == nil. Without an attached pipeline ID, GitLab
-// can't associate the status with the current MR pipeline, leaving the "apply"
-// check stuck and pipeline-status links pointing at stale runs.
-func TestUpdateStatusAttachesPipelineID(t *testing.T) {
+// TestUpdateStatusForwardsRunIdentity pins what updateStatus still owns after
+// the status building moved into GitlabClient.SetWorkspaceStatus: mapping run
+// metadata onto the right workspace, action, state and TFC run URL. Pipeline
+// ID attachment is now the client's job and is covered end-to-end against a
+// real HTTP request by TestSetWorkspaceStatusPostsSkippedToTheMRPipeline.
+func TestUpdateStatusForwardsRunIdentity(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
 
-	const expectedPipelineID = 42
+	var got vcs.WorkspaceStatus
 	testSuite.MockGitClient.EXPECT().
-		GetPipelinesForCommit(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return([]vcs.ProjectPipeline{&GitlabPipeline{&gogitlab.PipelineInfo{ID: expectedPipelineID, Source: "merge_request_event"}}}, nil).
-		AnyTimes()
-
-	testSuite.MockGitClient.EXPECT().
-		SetCommitStatus(
-			gomock.Any(),
-			gomock.Any(),
-			gomock.Any(),
-			&pipelineIDMatcher{expectedID: expectedPipelineID},
-		).
-		Return(&GitlabCommitStatus{&gogitlab.CommitStatus{}}, nil).
-		Times(1)
+		SetWorkspaceStatus(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, s vcs.WorkspaceStatus) error {
+			got = s
+			return nil
+		}).Times(1)
 
 	testSuite.InitTestSuite()
 	r := &RunStatusUpdater{
@@ -136,10 +93,31 @@ func TestUpdateStatusAttachesPipelineID(t *testing.T) {
 	}
 
 	r.updateStatus(context.Background(), gogitlab.Success, "apply", &runstream.TFRunMetadata{
-		Action:    "apply",
-		Workspace: "service-tfbuddy",
-		RunID:     "run-123",
+		Action:                               "apply",
+		Workspace:                            "service-tfbuddy",
+		Organization:                         "zapier",
+		RunID:                                "run-123",
+		CommitSHA:                            "commit-123",
+		MergeRequestProjectNameWithNamespace: "zapier/tfbuddy",
+		MergeRequestIID:                      101,
 	})
+
+	if got.Workspace != "service-tfbuddy" {
+		t.Errorf("Workspace = %q, want service-tfbuddy", got.Workspace)
+	}
+	if got.Action != "apply" {
+		t.Errorf("Action = %q, want apply", got.Action)
+	}
+	if got.State != vcs.CommitStateSuccess {
+		t.Errorf("State = %q, want success", got.State)
+	}
+	if got.CommitSHA != "commit-123" || got.Project != "zapier/tfbuddy" || got.MergeRequestIID != 101 {
+		t.Errorf("status targets the wrong commit or merge request: %+v", got)
+	}
+	// The run URL is what makes the pipeline job clickable through to TFC.
+	if !strings.Contains(got.TargetURL, "run-123") {
+		t.Errorf("TargetURL = %q, want it to point at run-123", got.TargetURL)
+	}
 }
 
 func TestAutoMergeNoChangesApply(t *testing.T) {
@@ -475,22 +453,22 @@ func TestPolicySoftFailPlanFailsPipelineWhenEnvTrue(t *testing.T) {
 	defer mockCtrl.Finish()
 	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
 
-	// Ensure we can fetch a pipeline ID without backoff delay
-	testSuite.MockGitClient.EXPECT().
-		GetPipelinesForCommit(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return([]vcs.ProjectPipeline{&GitlabPipeline{&gogitlab.PipelineInfo{ID: 1}}}, nil).
-		AnyTimes()
-
 	// Expect a failed plan status to be set due to policy soft fail
+	var got vcs.WorkspaceStatus
 	testSuite.MockGitClient.EXPECT().
-		SetCommitStatus(
-			gomock.Any(),
-			gomock.Any(),
-			gomock.Any(),
-			&commitStatusStateMatcher{expectedState: string(gogitlab.Failed)},
-		).
-		Return(nil, errors.New("could not commit status")).
-		Times(1)
+		SetWorkspaceStatus(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, s vcs.WorkspaceStatus) error {
+			got = s
+			return errors.New("could not commit status")
+		}).Times(1)
+	t.Cleanup(func() {
+		if got.State != vcs.CommitStateFailed {
+			t.Errorf("State = %q, want failed", got.State)
+		}
+		if got.Action != "plan" {
+			t.Errorf("Action = %q, want plan", got.Action)
+		}
+	})
 
 	r := &RunStatusUpdater{
 		cfg:    config.C,

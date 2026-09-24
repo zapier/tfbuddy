@@ -124,8 +124,11 @@ func TestSetWorkspaceStatusPostsSkippedToTheMRPipeline(t *testing.T) {
 	if got["description"] != "skipped: excluded by TFBuddy configuration" {
 		t.Errorf("description = %v", got["description"])
 	}
-	// Without the pipeline ID the status creates a stray "external" pipeline
-	// instead of joining the merge request's.
+	// Guards the pipeline-ID shadowing regression this assertion inherited from
+	// TestUpdateStatusAttachesPipelineID: when the resolved ID is discarded and
+	// the status goes out with PipelineID == nil, GitLab cannot associate it
+	// with the current MR pipeline, leaving the "apply" check stuck and status
+	// links pointing at stale runs.
 	if got["pipeline_id"] != float64(wantPipelineID) {
 		t.Errorf("pipeline_id = %v, want %d", got["pipeline_id"], wantPipelineID)
 	}

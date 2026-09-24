@@ -42,6 +42,24 @@ func buildStateFor(state vcs.CommitState) gogitlab.BuildStateValue {
 	return gogitlab.Failed
 }
 
+// commitStateFor is the inverse of buildStateFor, used by the run-event path
+// which still speaks gogitlab.BuildStateValue internally.
+func commitStateFor(state gogitlab.BuildStateValue) vcs.CommitState {
+	switch state {
+	case gogitlab.Pending:
+		return vcs.CommitStatePending
+	case gogitlab.Running:
+		return vcs.CommitStateRunning
+	case gogitlab.Success:
+		return vcs.CommitStateSuccess
+	case gogitlab.Canceled:
+		return vcs.CommitStateCanceled
+	case gogitlab.Skipped:
+		return vcs.CommitStateSkipped
+	}
+	return vcs.CommitStateFailed
+}
+
 // truncateDescription cuts s to maxDescriptionLen bytes, backing up to a rune
 // boundary so the result is always valid UTF-8.
 func truncateDescription(s string) string {
