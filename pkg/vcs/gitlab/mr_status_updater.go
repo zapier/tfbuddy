@@ -136,7 +136,7 @@ func (p *RunStatusUpdater) updateStatus(ctx context.Context, state gogitlab.Buil
 		return nil
 	}
 
-	err := backoff.Retry(getPipelineIDFn, configureBackOff())
+	err := backoff.Retry(getPipelineIDFn, backoff.WithContext(configureBackOff(), ctx))
 	if err != nil {
 		log.Warn().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Msg("could not retrieve pipeline id after multiple attempts")
 	}
