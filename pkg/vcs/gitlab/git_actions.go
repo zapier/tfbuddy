@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/sideband"
@@ -24,11 +25,14 @@ func (c *GitlabClient) CloneMergeRequest(ctx context.Context, project string, mr
 	_, span := otel.Tracer("TFC").Start(ctx, "CloneMergeRequest")
 	defer span.End()
 
-	proj, _, err := c.client.Projects.GetProject(project, &gitlab.GetProjectOptions{
-		License:              ptr(false),
-		Statistics:           ptr(false),
-		WithCustomAttributes: ptr(false),
-	})
+	proj, err := backoff.RetryWithData(func() (*gitlab.Project, error) {
+		proj, resp, err := c.client.Projects.GetProject(project, &gitlab.GetProjectOptions{
+			License:              ptr(false),
+			Statistics:           ptr(false),
+			WithCustomAttributes: ptr(false),
+		}, gitlab.WithContext(ctx))
+		return proj, permanentError(resp, err)
+	}, createBackOffWithRetries(ctx))
 	if err != nil {
 		err = errors.Newf("could not clone MR - unable to read project details from Gitlab API: %v", err)
 		span.RecordError(err)
