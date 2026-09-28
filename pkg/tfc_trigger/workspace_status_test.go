@@ -350,11 +350,11 @@ func TestDispatch_SpeculativePollerScheduleFailureStillPostsFailedStatus(t *test
 	}
 }
 
-// The sentinel is still correct for failures raised once the run-event path is
-// established: the metadata is live, so TFC webhooks will drive this
-// workspace's status and only auto-merge coordination was lost. Posting failed
-// here could strand the workspace red after a successful apply.
-func TestDispatch_AutoMergeRegistrationFailureDoesNotPostFailedStatus(t *testing.T) {
+// An auto-merge registration failure is not a dispatch failure: the run is live
+// and TFC webhooks will drive this workspace's status. Posting failed here could
+// strand the workspace red after a successful apply, so dispatch treats the
+// workspace as executed and only warns in its discussion that auto-merge is off.
+func TestDispatch_AutoMergeRegistrationFailureDoesNotFailWorkspace(t *testing.T) {
 	ws := &tfc_trigger.ProjectConfig{Workspaces: []*tfc_trigger.TFCWorkspace{{
 		Name: "service-tfbuddy", Organization: "zapier-test", Mode: "apply-before-merge",
 	}}}
@@ -376,6 +376,12 @@ func TestDispatch_AutoMergeRegistrationFailureDoesNotPostFailedStatus(t *testing
 	testSuite.MockStreamClient.EXPECT().AddRunMeta(gomock.Any()).Return(nil).AnyTimes()
 	testSuite.MockStreamClient.EXPECT().RegisterAutoMergeRun(gomock.Any()).
 		Return(errors.New("KV write failed")).AnyTimes()
+	var warned bool
+	testSuite.MockGitClient.EXPECT().AddMergeRequestDiscussionReply(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ int, _, _, comment string) (vcs.MRNote, error) {
+			warned = strings.Contains(comment, "Auto-merge is unavailable")
+			return nil, nil
+		}).Times(1)
 
 	seen := captureStatuses(testSuite)
 	testSuite.InitTestSuite()
@@ -400,11 +406,15 @@ func TestDispatch_AutoMergeRegistrationFailureDoesNotPostFailedStatus(t *testing
 		t.Fatal(err)
 	}
 
-	if len(triggered.Errored) != 1 {
-		t.Fatalf("the workspace should still be recorded as errored, got %d", len(triggered.Errored))
+	if len(triggered.Errored) != 0 || len(triggered.Executed) != 1 {
+		t.Fatalf("the run is fine, so the workspace should be executed: errored=%d executed=%v",
+			len(triggered.Errored), triggered.Executed)
 	}
 	if got, posted := (*seen)["service-tfbuddy"]; posted {
 		t.Fatalf("run metadata is live so the run-event path owns this status, got %+v", got)
+	}
+	if !warned {
+		t.Error("expected an auto-merge warning in the workspace discussion")
 	}
 }
 
