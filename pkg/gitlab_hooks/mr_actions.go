@@ -51,13 +51,15 @@ func (w *GitlabEventWorker) processMergeRequestEvent(msg *MergeRequestEventMsg) 
 	switch event.ObjectAttributes.Action {
 	case "open", "reopen":
 		log.Debug().Str("project", projectName).Int("mergeRequestID", event.ObjectAttributes.IID).Msg("triggering TFC events for merge request")
-		_, err := trigger.TriggerTFCEvents(ctx)
+		executed, err := trigger.TriggerTFCEvents(ctx)
+		logErroredWorkspaces(projectName, event.ObjectAttributes.IID, executed)
 		return projectName, err
 
 	case "update":
 		log.Debug().Str("project", projectName).Int("mergeRequestID", event.ObjectAttributes.IID).Msg("triggering TFC events for merge request")
 		if event.ObjectAttributes.OldRev != "" && event.ObjectAttributes.OldRev != event.ObjectAttributes.LastCommit.ID {
-			_, err := trigger.TriggerTFCEvents(ctx)
+			executed, err := trigger.TriggerTFCEvents(ctx)
+			logErroredWorkspaces(projectName, event.ObjectAttributes.IID, executed)
 			return projectName, err
 		}
 
@@ -70,4 +72,19 @@ func (w *GitlabEventWorker) processMergeRequestEvent(msg *MergeRequestEventMsg) 
 	}
 
 	return projectName, nil
+}
+
+// logErroredWorkspaces records workspaces that did not run for a merge request
+// event. The pipeline carries the user-facing signal — each errored workspace
+// leaves a failed or skipped TFC/* commit status — so this is for operators
+// only. Posting comments here would repeat on every push.
+func logErroredWorkspaces(project string, mrIID int, executed *tfc_trigger.TriggeredTFCWorkspaces) {
+	if executed == nil {
+		return
+	}
+	for _, ws := range executed.Errored {
+		log.Warn().Str("project", project).Int("mergeRequestID", mrIID).
+			Str("workspace", ws.Name).Str("reason", ws.Error).
+			Msg("workspace did not run for merge request event")
+	}
 }

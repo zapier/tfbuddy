@@ -268,6 +268,10 @@ func TestWorkspaceWorker_RoutesByVcsProvider(t *testing.T) {
 		Return(nil, errors.New("forced failure to short-circuit run path")).Times(1)
 	githubClient.EXPECT().CreateMergeRequestComment(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, gomock.Any()).
 		Return(nil).Times(1)
+	// The failed workspace status must go to the routed client, not to some
+	// other one. gitlabClient deliberately has no such expectation, so a
+	// misrouted status fails this test under gomock's strict mode.
+	githubClient.EXPECT().SetWorkspaceStatus(gomock.Any(), gomock.Any()).Return(nil).Times(1)
 
 	testSuite.InitTestSuite()
 
@@ -305,5 +309,62 @@ func TestWorkspaceWorker_RoutesByVcsProvider(t *testing.T) {
 	}
 	if err := worker.HandleMsg(unknownMsg); err != nil {
 		t.Fatalf("HandleMsg should ACK on unknown provider, got: %v", err)
+	}
+}
+
+// TestWorkspaceWorker_PostsFailedStatusOnFailure covers the fan-out path: the
+// inline dispatcher never sees post-lookup failures here, because dispatch is
+// enqueue and returns before the real work happens, so the worker owns putting
+// the workspace in the pipeline.
+func TestWorkspaceWorker_PostsFailedStatusOnFailure(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{}, t)
+
+	testSuite.MockGitClient.EXPECT().GetMergeRequest(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS).
+		Return(nil, errors.New("VCS API down")).AnyTimes()
+	testSuite.MockGitClient.EXPECT().CreateMergeRequestComment(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+
+	// Declared before InitTestSuite on purpose: gomock returns the earliest
+	// declared non-exhausted expectation, so the AnyTimes() default registered
+	// by InitTestSuite would otherwise swallow the call and Times(1) would
+	// never match.
+	var got []vcs.WorkspaceStatus
+	testSuite.MockGitClient.EXPECT().SetWorkspaceStatus(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, s vcs.WorkspaceStatus) error {
+			got = append(got, s)
+			return nil
+		}).Times(1)
+
+	testSuite.InitTestSuite()
+
+	worker := tfc_trigger.NewWorkspaceTriggerWorkerWithoutSubscription(
+		config.Config{},
+		map[string]vcs.GitClient{"gitlab": testSuite.MockGitClient},
+		testSuite.MockApiClient, testSuite.MockStreamClient,
+	)
+	msg := &tfc_trigger.WorkspaceTriggerMsg{
+		Opts: tfc_trigger.TFCTriggerOptions{
+			Action:                   tfc_trigger.PlanAction,
+			ProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
+			MergeRequestIID:          testSuite.MetaData.MRIID,
+			CommitSHA:                "deadbeef",
+			TriggerSource:            tfc_trigger.MergeRequestEventTrigger,
+			VcsProvider:              "gitlab",
+		},
+		Workspace: tfc_trigger.TFCWorkspace{Name: "service-tfbuddy", Organization: "zapier-test"},
+	}
+
+	if err := worker.HandleMsg(msg); err != nil {
+		t.Fatalf("HandleMsg should ACK on workspace error, got: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 commit status, got %d", len(got))
+	}
+	if got[0].State != vcs.CommitStateFailed {
+		t.Errorf("state = %q, want failed", got[0].State)
+	}
+	if got[0].Workspace != "service-tfbuddy" || got[0].CommitSHA != "deadbeef" {
+		t.Errorf("status targets the wrong workspace or commit: %+v", got[0])
 	}
 }

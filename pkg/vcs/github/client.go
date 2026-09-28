@@ -423,6 +423,15 @@ func (c *Client) SetCommitStatus(ctx context.Context, projectWithNS string, comm
 	return nil, nil
 }
 
+// SetWorkspaceStatus is intentionally a no-op. GitHub commit statuses are not
+// implemented (see SetCommitStatus above), so TFBuddy surfaces skipped and
+// failed workspaces on GitHub through pull request comments instead.
+func (c *Client) SetWorkspaceStatus(ctx context.Context, status vcs.WorkspaceStatus) error {
+	log.Debug().Str("workspace", status.Workspace).Str("state", string(status.State)).
+		Msg("GitHub commit statuses are not implemented; skipping workspace status")
+	return nil
+}
+
 func (c *Client) GetPipelinesForCommit(ctx context.Context, projectWithNS string, commitSHA string) ([]vcs.ProjectPipeline, error) {
 	//TODO implement me
 	return nil, nil

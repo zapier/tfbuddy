@@ -47,6 +47,15 @@ func (c *GitlabClient) GetAuthenticatedAccountName(ctx context.Context) (string,
 
 const DefaultMaxRetries = 3
 
+// createBackOffWithRetriesCtx is the cancellable form of
+// createBackOffWithRetries. Retry loops that are reachable from a synchronous
+// webhook handler must use it: without a context the loop runs its full 30s
+// budget regardless of the caller's deadline, which can outlast the handler's
+// JetStream AckWait and cause the delivery to be redelivered.
+func createBackOffWithRetriesCtx(ctx context.Context) backoff.BackOffContext {
+	return backoff.WithContext(createBackOffWithRetries(), ctx)
+}
+
 func createBackOffWithRetries() backoff.BackOff {
 	exp := backoff.NewExponentialBackOff()
 	exp.MaxElapsedTime = 30 * time.Second
@@ -166,13 +175,13 @@ func (gS *GitlabCommitStatus) Info() string {
 }
 
 func (c *GitlabClient) SetCommitStatus(ctx context.Context, projectWithNS string, commitSHA string, status vcs.CommitStatusOptions) (vcs.CommitStatus, error) {
-	_, span := otel.Tracer("TFC").Start(ctx, "SetCommitStatus")
+	ctx, span := otel.Tracer("TFC").Start(ctx, "SetCommitStatus")
 	defer span.End()
 
 	return backoff.RetryWithData(func() (vcs.CommitStatus, error) {
-		commitStatus, resp, err := c.client.Commits.SetCommitStatus(projectWithNS, commitSHA, status.(*GitlabCommitStatusOptions).SetCommitStatusOptions)
+		commitStatus, resp, err := c.client.Commits.SetCommitStatus(projectWithNS, commitSHA, status.(*GitlabCommitStatusOptions).SetCommitStatusOptions, gogitlab.WithContext(ctx))
 		return &GitlabCommitStatus{commitStatus}, permanentError(resp, err)
-	}, createBackOffWithRetries())
+	}, createBackOffWithRetriesCtx(ctx))
 }
 
 func (c *GitlabClient) GetCommitStatuses(ctx context.Context, projectID, commitSHA string) []*gogitlab.CommitStatus {
@@ -634,13 +643,13 @@ func (gP *GitlabPipeline) GetWebURL() string {
 	return gP.WebURL
 }
 func (g *GitlabClient) GetPipelinesForCommit(ctx context.Context, project, commitSHA string) ([]vcs.ProjectPipeline, error) {
-	_, span := otel.Tracer("TFC").Start(ctx, "GetPipelinesForCommit")
+	ctx, span := otel.Tracer("TFC").Start(ctx, "GetPipelinesForCommit")
 	defer span.End()
 
 	return backoff.RetryWithData(func() ([]vcs.ProjectPipeline, error) {
 		pipelines, resp, err := g.client.Pipelines.ListProjectPipelines(project, &gogitlab.ListProjectPipelinesOptions{
 			SHA: &commitSHA,
-		})
+		}, gogitlab.WithContext(ctx))
 		if err != nil {
 			return nil, permanentError(resp, err)
 		}
@@ -649,7 +658,7 @@ func (g *GitlabClient) GetPipelinesForCommit(ctx context.Context, project, commi
 			output[idx] = &GitlabPipeline{pipeline}
 		}
 		return output, nil
-	}, createBackOffWithRetries())
+	}, createBackOffWithRetriesCtx(ctx))
 }
 
 // commitStatusesPerPage is GitLab's maximum page size, keeping the number of

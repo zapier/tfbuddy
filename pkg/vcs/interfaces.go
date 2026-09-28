@@ -21,6 +21,7 @@ type GitClient interface {
 	ResolveMergeRequestDiscussions(ctx context.Context, project string, mrIID int, workspace, action string) error
 	AddMergeRequestDiscussionReply(ctx context.Context, mrIID int, project, discussionID, comment string) (MRNote, error)
 	SetCommitStatus(ctx context.Context, projectWithNS string, commitSHA string, status CommitStatusOptions) (CommitStatus, error)
+	SetWorkspaceStatus(ctx context.Context, status WorkspaceStatus) error
 	GetPipelinesForCommit(ctx context.Context, projectWithNS string, commitSHA string) ([]ProjectPipeline, error)
 	GetCommitJobStatuses(ctx context.Context, projectWithNS string, commitSHA string) ([]CommitJobStatus, error)
 	GetProjectSettings(ctx context.Context, projectWithNS string) (ProjectSettings, error)
