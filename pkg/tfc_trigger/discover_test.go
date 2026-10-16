@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/zapier/tfbuddy/internal/config"
@@ -506,5 +507,44 @@ func TestProjectConfig_discoverWorkspacesExplicitDirWithoutSlash(t *testing.T) {
 	want := []string{"legacy-api-staging-west", "services-api-staging-global-us-east-1", "workspaces-root"}
 	if diff := cmp.Diff(want, workspaceNames(cfg.Workspaces)); diff != "" {
 		t.Errorf("workspaces mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestProjectConfig_discoverWorkspacesNameCollisionWithListedRoot(t *testing.T) {
+	// The MR's own listing of services/a does not include services/a itself,
+	// so it cannot show that services/a is absent.
+	cfg := mustLoadDiscoverConfig(t, `---
+discover:
+  - dir: services/*/*/
+    name: svc-{1}-{2}
+    organization: foo-corp
+  - dir: services/*/
+    name: svc-{1}-b
+    organization: foo-corp
+`)
+	repo := &fakeRepo{dirs: []string{"services", "services/a", "services/a/b"}}
+	err := cfg.discoverWorkspaces(context.Background(), repo.list, []string{"services/a/b/main.tf"})
+	if err == nil || !strings.Contains(err.Error(), `"services/a"`) {
+		t.Fatalf("expected a collision with services/a, got %v", err)
+	}
+}
+
+func TestDiscoverRule_nameSplitsBoundsFailedSearch(t *testing.T) {
+	// Eight adjacent placeholders before a literal the name lacks: every way
+	// of splitting the name fails, and there are hundreds of millions of them.
+	r := &DiscoverRule{Dir: "d/*/*/*/*/*/*/*/*/", Name: "{1}{2}{3}{4}{5}{6}{7}{8}-x"}
+	start := time.Now()
+	splits, complete := r.nameSplits(strings.Repeat("abcdefghij", 6))
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("nameSplits took %v", elapsed)
+	}
+	if complete || len(splits) != 0 {
+		t.Fatalf("expected an incomplete, empty search, got complete=%v splits=%d", complete, len(splits))
+	}
+
+	// A long name in the usual layout still gets every split.
+	usual := &DiscoverRule{Dir: "services/*/*/*/", Name: "services-{1}-{2}-{3}"}
+	if _, complete := usual.nameSplits("services-very-long-service-name-production-main-ap-southeast-2"); !complete {
+		t.Fatal("expected every split of a long conventional name")
 	}
 }

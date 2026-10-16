@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -267,12 +268,18 @@ func (r *DiscoverRule) workspace(dir string, captures []string) *TFCWorkspace {
 }
 
 // maxNameSplits caps how many ways of splitting one workspace name are
-// checked one by one; past it, every directory the rules match is listed.
-const maxNameSplits = 64
+// checked one by one, and maxNameSplitSteps how long finding them may take;
+// past either, every directory the rules match is listed instead.
+const (
+	maxNameSplits     = 64
+	maxNameSplitSteps = 20000
+)
 
 // nameSplits returns every set of wildcard values that fills the rule's Name
-// as name, and false when there are more than maxNameSplits. A value is one
-// directory name, so it is never empty and never contains a slash.
+// as name, and false when there are more than maxNameSplits or the search
+// takes more than maxNameSplitSteps steps. Adjacent placeholders can make
+// even a search that finds nothing take exponentially many steps. A value is
+// one directory name, so it is never empty and never contains a slash.
 func (r *DiscoverRule) nameSplits(name string) ([][]string, bool) {
 	// The name template as alternating literals (n == 0) and placeholders.
 	type part struct {
@@ -295,8 +302,13 @@ func (r *DiscoverRule) nameSplits(name string) ([][]string, bool) {
 
 	var splits [][]string
 	captures := make([]string, r.wildcards())
+	steps := 0
 	var walk func(i, pos int) bool
 	walk = func(i, pos int) bool {
+		steps++
+		if steps > maxNameSplitSteps {
+			return false
+		}
 		if i == len(parts) {
 			if pos == len(name) {
 				if len(splits) == maxNameSplits {
@@ -371,9 +383,12 @@ func newDirIndex(list dirLister) *dirIndex {
 	return &dirIndex{list: list, exists: map[string]bool{}}
 }
 
-func (x *dirIndex) covers(dir string) bool {
+// listedBelow reports whether a listing so far reached dir. A listing returns
+// its root's descendants, never the root itself, so only a strict ancestor's
+// listing says whether dir exists.
+func (x *dirIndex) listedBelow(dir string) bool {
 	for _, root := range x.roots {
-		if root == "" || strings.HasPrefix(dir, root+"/") || dir == root {
+		if root == "" || strings.HasPrefix(dir, root+"/") {
 			return true
 		}
 	}
@@ -384,7 +399,7 @@ func (x *dirIndex) covers(dir string) bool {
 // covered root when there is one.
 func (x *dirIndex) listDirs(ctx context.Context, root string) ([]string, error) {
 	var dirs []string
-	if x.covers(root) {
+	if x.listedBelow(root) || slices.Contains(x.roots, root) {
 		for d := range x.exists {
 			if root == "" || strings.HasPrefix(d, root+"/") {
 				dirs = append(dirs, d)
@@ -404,10 +419,10 @@ func (x *dirIndex) listDirs(ctx context.Context, root string) ([]string, error) 
 	return dirs, nil
 }
 
-// has reports whether dir exists, listing root first when no earlier listing
-// covered dir.
+// has reports whether dir exists, listing root, a strict ancestor of dir,
+// first when no earlier listing reached dir.
 func (x *dirIndex) has(ctx context.Context, dir, root string) (bool, error) {
-	if !x.covers(dir) {
+	if !x.listedBelow(dir) {
 		if _, err := x.listDirs(ctx, root); err != nil {
 			return false, err
 		}
@@ -548,4 +563,13 @@ func (cfg *ProjectConfig) addDiscovered(ws *TFCWorkspace) (bool, error) {
 // sameDir compares workspace dirs, whose trailing slash is optional.
 func sameDir(a, b string) bool {
 	return strings.TrimSuffix(a, "/") == strings.TrimSuffix(b, "/")
+}
+
+// clone returns a copy of cfg whose workspace list discovery can extend
+// independently.
+func (cfg *ProjectConfig) clone() *ProjectConfig {
+	return &ProjectConfig{
+		Workspaces: append([]*TFCWorkspace(nil), cfg.Workspaces...),
+		Discover:   cfg.Discover,
+	}
 }

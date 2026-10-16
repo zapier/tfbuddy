@@ -323,29 +323,17 @@ func (t *TFCTrigger) getTriggeredWorkspaces(ctx context.Context, modifiedFiles [
 		return nil, nil, nil
 	}
 
-	var refs []string
+	var listDirs dirLister
 	if len(cfg.Discover) > 0 {
-		refs = discoverRefs()
-	}
-	listDirs := func(ctx context.Context, dir string) ([]string, error) {
-		var dirs []string
-		seen := map[string]bool{}
-		for _, ref := range refs {
-			listed, err := t.gl.ListRepoDirectories(ctx, t.GetProjectNameWithNamespace(), dir, ref)
-			if err != nil {
-				return nil, err
-			}
-			for _, d := range listed {
-				if !seen[d] {
-					seen[d] = true
-					dirs = append(dirs, d)
-				}
-			}
+		refs := discoverRefs()
+		if len(refs) > 1 {
+			triggered, err := t.workspacesAcrossRefs(ctx, cfg, modifiedFiles, refs)
+			return triggered, triggered, err
 		}
-		return dirs, nil
-	}
-	if err := cfg.discoverWorkspaces(ctx, listDirs, modifiedFiles); err != nil {
-		return nil, nil, fmt.Errorf("could not discover workspaces. %w", err)
+		listDirs = t.repoDirLister(refs[0])
+		if err := cfg.discoverWorkspaces(ctx, listDirs, modifiedFiles); err != nil {
+			return nil, nil, fmt.Errorf("could not discover workspaces. %w", err)
+		}
 	}
 
 	affectedWorkspaces := cfg.triggeredWorkspaces(modifiedFiles)
@@ -429,10 +417,51 @@ func (t *TFCTrigger) getModifiedWorkspacesOnTargetBranch(ctx context.Context, mr
 	return modifiedWSMap, err
 }
 
+func (t *TFCTrigger) repoDirLister(ref string) dirLister {
+	return func(ctx context.Context, dir string) ([]string, error) {
+		return t.gl.ListRepoDirectories(ctx, t.GetProjectNameWithNamespace(), dir, ref)
+	}
+}
+
+// workspacesAcrossRefs resolves the workspaces modifiedFiles trigger on each
+// of refs separately and returns them together, once per workspace. Each
+// branch is checked for duplicate names on its own: a move that keeps a
+// workspace's name is valid on either branch, but looks like two directories
+// sharing it when both are combined. A branch whose discovery fails is
+// skipped, so cleanup still releases what the others find.
+func (t *TFCTrigger) workspacesAcrossRefs(ctx context.Context, cfg *ProjectConfig, modifiedFiles, refs []string) ([]*TFCWorkspace, error) {
+	var triggered []*TFCWorkspace
+	seen := map[string]bool{}
+	var firstErr error
+	discovered := 0
+	for _, ref := range refs {
+		refCfg := cfg.clone()
+		if err := refCfg.discoverWorkspaces(ctx, t.repoDirLister(ref), modifiedFiles); err != nil {
+			log.Warn().Err(err).Str("ref", ref).Msg("could not discover workspaces on branch")
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		discovered++
+		for _, ws := range refCfg.triggeredWorkspaces(modifiedFiles) {
+			key := ws.Organization + "/" + ws.Name
+			if !seen[key] {
+				seen[key] = true
+				triggered = append(triggered, ws)
+			}
+		}
+	}
+	if discovered == 0 {
+		return nil, fmt.Errorf("could not discover workspaces. %w", firstErr)
+	}
+	return triggered, nil
+}
+
 // getTriggeredWorkspacesForRequest resolves the workspaces mr's changes
 // trigger. Discover rules list directories on the MR's source branch, so a
-// plan covers the directories the MR adds and none it deletes. For cleanup
-// they also list the target branch: the source branch is often deleted on
+// plan covers the directories the MR adds and none it deletes. Cleanup also
+// discovers on the target branch: the source branch is often deleted on
 // merge, and finding extra workspaces there is harmless because only this
 // MR's own lock tag is removed.
 func (t *TFCTrigger) getTriggeredWorkspacesForRequest(ctx context.Context, mr vcs.MR, forCleanup bool) ([]*TFCWorkspace, []*TFCWorkspace, error) {
