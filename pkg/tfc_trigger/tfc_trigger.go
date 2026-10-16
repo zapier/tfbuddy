@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -40,7 +41,15 @@ const (
 
 const tfPrefix = "tfbuddylock"
 
-var tagRegex = regexp.MustCompile(fmt.Sprintf("%s\\-(\\d+)", tfPrefix))
+// tagRegex matches a lock held by a merge request. It is anchored so that an
+// external holder containing "tfbuddylock-<n>" is never read as MR <n>.
+var tagRegex = regexp.MustCompile(fmt.Sprintf("^%s-(\\d+)$", tfPrefix))
+
+// externalLockRegex matches a lock held by something other than a merge
+// request, such as automation that applies through the TFC API. The holder
+// starts with a letter, so no tag matches both this and tagRegex, and uses only
+// characters TFC allows in a tag (which it also lowercases).
+var externalLockRegex = regexp.MustCompile(fmt.Sprintf("^%s-([a-z][a-z0-9_:-]*)$", tfPrefix))
 
 func (a TriggerAction) String() string {
 	switch a {
@@ -270,6 +279,40 @@ func FindLockingMR(ctx context.Context, tags []string, thisMR string) string {
 	return ""
 }
 
+// FindExternalLock returns the holder of the first external lock in tags: a
+// tfbuddylock-<holder> tag whose holder is not an MR number. TFBuddy never
+// acquires or releases these itself; it only refuses to apply while one exists.
+func FindExternalLock(tags []string) string {
+	for _, tag := range tags {
+		if matches := externalLockRegex.FindStringSubmatch(strings.TrimSpace(tag)); matches != nil {
+			return matches[1]
+		}
+	}
+	return ""
+}
+
+// findLockingMRs returns every MR other than thisMR that holds a lock tag.
+func findLockingMRs(tags []string, thisMR string) []string {
+	var lockingMRs []string
+	for _, tag := range tags {
+		matches := tagRegex.FindStringSubmatch(strings.TrimSpace(tag))
+		if matches == nil || matches[1] == thisMR || slices.Contains(lockingMRs, matches[1]) {
+			continue
+		}
+		lockingMRs = append(lockingMRs, matches[1])
+	}
+	return lockingMRs
+}
+
+// foreignLockHolder describes the first lock in tags that this MR does not
+// hold, or returns "" if there is none.
+func foreignLockHolder(ctx context.Context, tags []string, thisMR string) string {
+	if lockingMR := FindLockingMR(ctx, tags, thisMR); lockingMR != "" {
+		return "MR " + lockingMR
+	}
+	return FindExternalLock(tags)
+}
+
 // handleError both logs an error and reports it back to the Merge Request via an MR comment.
 // the returned error is identical to the input parameter as a convenience
 func (t *TFCTrigger) handleError(ctx context.Context, err error, msg string) error {
@@ -290,20 +333,46 @@ func (t *TFCTrigger) postUpdate(ctx context.Context, msg string) error {
 
 }
 
-func (t *TFCTrigger) getLockingMR(ctx context.Context, workspace string) string {
-	ctx, span := otel.Tracer("TFC").Start(ctx, "getLockingMR")
+// getLockTags returns the workspace's tfbuddylock-* tags.
+func (t *TFCTrigger) getLockTags(ctx context.Context, workspace string) ([]string, error) {
+	ctx, span := otel.Tracer("TFC").Start(ctx, "getLockTags")
 	defer span.End()
 
 	tags, err := t.tfc.GetTagsByQuery(ctx, workspace, tfPrefix)
 	if err != nil {
-		log.Error().Err(err)
+		log.Error().Err(err).Str("workspace", workspace).Msg("could not read lock tags")
+		return nil, err
 	}
 	if len(tags) == 0 {
 		log.Info().Msg("no tags returned")
-		return ""
 	}
-	lockingMR := FindLockingMR(ctx, tags, fmt.Sprintf("%d", t.GetMergeRequestIID()))
-	return lockingMR
+	return tags, nil
+}
+
+// releaseStaleMRLock removes lockingMR's lock tag if that MR has merged or
+// closed, and otherwise returns an error naming the MR that holds the workspace.
+func (t *TFCTrigger) releaseStaleMRLock(ctx context.Context, workspaceID, lockingMR string) error {
+	lockingMRIID, convErr := strconv.Atoi(lockingMR)
+	if convErr != nil {
+		return fmt.Errorf("workspace is locked by another MR! %s", lockingMR)
+	}
+	lockingMRDetails, mrErr := t.gl.GetMergeRequest(ctx, lockingMRIID, t.GetProjectNameWithNamespace())
+	if mrErr != nil {
+		return fmt.Errorf("workspace is locked by another MR! %s", lockingMR)
+	}
+	state := lockingMRDetails.GetState()
+	if state != "merged" && state != "closed" {
+		return fmt.Errorf("workspace is locked by another MR! %s", lockingMRDetails.GetWebURL())
+	}
+	log.Warn().Str("workspace", workspaceID).Str("lockingMR", lockingMR).Str("state", state).
+		Msg("auto-cleaning stale lock from merged/closed MR")
+	// Remove the exact tag. A tag query matches substrings, so it would also
+	// delete tfbuddylock-<n>0 or an external lock whose name contains this tag.
+	tag := fmt.Sprintf("%s-%s", tfPrefix, lockingMR)
+	if removeErr := t.tfc.RemoveTagsByName(ctx, workspaceID, []string{tag}); removeErr != nil {
+		return fmt.Errorf("failed to auto-clean stale lock tag from MR %s: %w", lockingMRDetails.GetWebURL(), removeErr)
+	}
+	return nil
 }
 
 func (t *TFCTrigger) getTriggeredWorkspaces(ctx context.Context, modifiedFiles []string) ([]*TFCWorkspace, []*TFCWorkspace, error) {
@@ -845,7 +914,15 @@ func (t *TFCTrigger) triggerRunForWorkspace(ctx context.Context, cfgWS *TFCWorks
 	// If the workspace is locked tell the user and don't queue a run
 	// Otherwise, TFC wil queue an apply, which might put them out of order
 	if isApply {
-		lockingMR := t.getLockingMR(ctx, ws.ID)
+		thisMR := fmt.Sprintf("%d", t.GetMergeRequestIID())
+		// An unreadable lock state is not an unlocked one: refuse rather than
+		// apply over a lock we could not see.
+		lockTags, err := t.getLockTags(ctx, ws.ID)
+		if err != nil {
+			return fmt.Errorf("could not read the workspace lock tags. %w", err)
+		}
+		lockingMR := FindLockingMR(ctx, lockTags, thisMR)
+		externalLock := FindExternalLock(lockTags)
 		if ws.Locked {
 			// Surface the tag-based locking MR too if we have one, so the user
 			// has something actionable to investigate alongside the TFC lock.
@@ -859,40 +936,50 @@ func (t *TFCTrigger) triggerRunForWorkspace(ctx context.Context, cfgWS *TFCWorks
 			if lockingMR != "" {
 				return fmt.Errorf("refusing to Apply changes to a locked workspace (also tagged by MR %s). %w", lockingMR, utils.ErrPermanent)
 			}
+			if externalLock != "" {
+				return fmt.Errorf("refusing to Apply changes to a locked workspace (also locked by %s). %w", externalLock, utils.ErrPermanent)
+			}
 			return fmt.Errorf("refusing to Apply changes to a locked workspace. %w", utils.ErrPermanent)
-		} else if lockingMR != "" {
-			// Check if locking MR is already merged/closed (stale lock)
-			lockingMRIID, convErr := strconv.Atoi(lockingMR)
-			if convErr == nil {
-				lockingMRDetails, mrErr := t.gl.GetMergeRequest(ctx, lockingMRIID, t.GetProjectNameWithNamespace())
-				if mrErr == nil {
-					state := lockingMRDetails.GetState()
-					if state == "merged" || state == "closed" {
-						log.Warn().Str("workspace", ws.ID).Str("lockingMR", lockingMR).Str("state", state).
-							Msg("auto-cleaning stale lock from merged/closed MR")
-						tag := fmt.Sprintf("%s-%s", tfPrefix, lockingMR)
-						if removeErr := t.tfc.RemoveTagsByQuery(ctx, ws.ID, tag); removeErr != nil {
-							return fmt.Errorf("failed to auto-clean stale lock tag from MR %s: %w", lockingMRDetails.GetWebURL(), removeErr)
-						}
-						// Stale lock removed — fall through to acquire lock for current MR
-					} else {
-						return fmt.Errorf("workspace is locked by another MR! %s", lockingMRDetails.GetWebURL())
-					}
-				} else {
-					return fmt.Errorf("workspace is locked by another MR! %s", lockingMR)
-				}
-			} else {
-				return fmt.Errorf("workspace is locked by another MR! %s", lockingMR)
+		} else if externalLock != "" {
+			// Held by automation applying through the TFC API. Its holder removes
+			// the tag when it is done; TFBuddy never auto-cleans it, because there
+			// is no MR whose state says the lock is stale.
+			return fmt.Errorf("refusing to Apply changes: workspace is locked by %s (tag `%s-%s`). Retry once it is released, or clear it with `tfc unlock -w %s`. %w",
+				externalLock, tfPrefix, externalLock, wsName, utils.ErrPermanent)
+		}
+		// Every other MR's lock must be stale for this MR to proceed; checking
+		// only the first would let an open MR's lock behind a stale one through.
+		for _, foreignMR := range findLockingMRs(lockTags, thisMR) {
+			if err := t.releaseStaleMRLock(ctx, ws.ID, foreignMR); err != nil {
+				return err
 			}
 		}
 		// Acquire the tag-based lock for the current MR
 		err = t.tfc.AddTags(ctx,
 			ws.ID,
 			tfPrefix,
-			fmt.Sprintf("%d", t.GetMergeRequestIID()),
+			thisMR,
 		)
 		if err != nil {
 			return fmt.Errorf("error adding tags to workspace. %w", err)
+		}
+		// Tags are not an atomic lock: another writer can pass the same checks
+		// before either tag lands. Every foreign lock seen above was either
+		// released as stale or refused, so a foreign lock on the re-read belongs
+		// to a writer that acquired concurrently: back off so the two writers
+		// never both apply.
+		//
+		// Backing off keeps the tag. Every apply attempt for this MR shares it,
+		// so removing it here could drop the lock another attempt's run is
+		// relying on. Like after any apply, the MR holds the workspace until it
+		// merges or closes, or until `tfc unlock` clears it.
+		currentTags, err := t.getLockTags(ctx, ws.ID)
+		if err != nil {
+			return fmt.Errorf("could not verify the workspace lock after acquiring it. %w", err)
+		}
+		if contender := foreignLockHolder(ctx, currentTags, thisMR); contender != "" {
+			return fmt.Errorf("workspace was locked by %s while this MR was acquiring the lock. Retry once it is released, or clear both locks with `tfc unlock -w %s`. %w",
+				contender, wsName, utils.ErrPermanent)
 		}
 	}
 	// create a new Merge Request discussion thread where status updates will be nested

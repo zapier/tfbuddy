@@ -279,22 +279,29 @@ func (t *TFCClient) GetTagsByQuery(ctx context.Context, workspace string, query 
 	))
 	defer span.End()
 
+	// Lock checks rely on seeing every matching tag, so read all pages and fail
+	// if any page fails rather than return a partial list.
 	ListTagOptions := &tfe.WorkspaceTagListOptions{
-		Query: &query,
+		ListOptions: tfe.ListOptions{PageSize: 100},
+		Query:       &query,
 	}
 	var tags []string
-	TagList, err := t.Client.Workspaces.ListTags(
-		ctx,
-		workspace,
-		ListTagOptions,
-	)
-	if err != nil {
-		log.Error().Err(err)
-		return tags, err
+	for {
+		TagList, err := t.Client.Workspaces.ListTags(
+			ctx,
+			workspace,
+			ListTagOptions,
+		)
+		if err != nil {
+			log.Error().Err(err).Str("workspace", workspace).Msg("could not list workspace tags")
+			return nil, err
+		}
+		for _, tag := range TagList.Items {
+			tags = append(tags, tag.Name)
+		}
+		if TagList.Pagination == nil || TagList.NextPage == 0 || TagList.NextPage == TagList.CurrentPage {
+			return tags, nil
+		}
+		ListTagOptions.PageNumber = TagList.NextPage
 	}
-
-	for _, tag := range TagList.Items {
-		tags = append(tags, tag.Name)
-	}
-	return tags, err
 }
