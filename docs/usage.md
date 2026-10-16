@@ -206,7 +206,9 @@ With this rule, `services/api/staging/main-us-west-2/` is the workspace
 directory, in `services/api/staging/`, or under `services/api/staging/files/`.
 
 * Workspaces are found on the MR's source branch, so a new directory is planned
-  in the MR that adds it, and a deleted one is no longer planned.
+  in the MR that adds it, and a deleted one is no longer planned. When an MR is
+  merged or closed, TF Buddy also looks on the target branch to release its
+  locks, since the source branch may already be deleted.
 * TF Buddy only lists the directories an MR's changes can reach; for the rule
   above, that is one listing per `services/<service>/<env>/` changed. A
   `tfc plan -w <name>` for a workspace the MR does not touch lists everything
@@ -214,7 +216,11 @@ directory, in `services/api/staging/`, or under `services/api/staging/files/`.
 * An entry under `workspaces` takes precedence over a discovered workspace with
   the same name or `dir`, which is how to name one directory differently.
 * If two directories produce the same workspace name, the run fails rather than
-  pointing both at one workspace; add an explicit entry for one of them.
+  pointing both at one workspace; add an explicit entry for one of them. With
+  `services-{1}-{2}`, for example, `services/a-b/c/` and `services/a/b-c/` both
+  produce `services-a-b-c`. TF Buddy checks for this even when the MR only
+  touches one of them, by looking up every other directory that could produce
+  each discovered name, so names with many separators cost a few more listings.
 * YAML treats `{` as syntax at the start of a value and anywhere inside a
   `[a, b]` list, so quote such values (`name: "{1}-{2}"`) or use block lists
   as above.

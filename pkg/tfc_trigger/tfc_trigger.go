@@ -306,11 +306,14 @@ func (t *TFCTrigger) getLockingMR(ctx context.Context, workspace string) string 
 	return lockingMR
 }
 
-func (t *TFCTrigger) getTriggeredWorkspaces(ctx context.Context, modifiedFiles []string) ([]*TFCWorkspace, []*TFCWorkspace, error) {
+// getTriggeredWorkspaces resolves the workspaces modifiedFiles trigger.
+// discoverRefs returns the branches discover rules list directories on; it is
+// only called when the config has discover rules.
+func (t *TFCTrigger) getTriggeredWorkspaces(ctx context.Context, modifiedFiles []string, discoverRefs func() []string) ([]*TFCWorkspace, []*TFCWorkspace, error) {
 	ctx, span := otel.Tracer(t.tracerName()).Start(ctx, "getTriggeredWorkspaces")
 	defer span.End()
 
-	cfg, cfgBranch, err := getProjectConfigFile(ctx, t.gl, t)
+	cfg, err := getProjectConfigFile(ctx, t.gl, t)
 	if err != nil {
 		if t.GetTriggerSource() == CommentTrigger {
 			return nil, nil, fmt.Errorf("could not read .tfbuddy.yml file for this repo. %w", err)
@@ -320,8 +323,26 @@ func (t *TFCTrigger) getTriggeredWorkspaces(ctx context.Context, modifiedFiles [
 		return nil, nil, nil
 	}
 
+	var refs []string
+	if len(cfg.Discover) > 0 {
+		refs = discoverRefs()
+	}
 	listDirs := func(ctx context.Context, dir string) ([]string, error) {
-		return t.gl.ListRepoDirectories(ctx, t.GetProjectNameWithNamespace(), dir, cfgBranch)
+		var dirs []string
+		seen := map[string]bool{}
+		for _, ref := range refs {
+			listed, err := t.gl.ListRepoDirectories(ctx, t.GetProjectNameWithNamespace(), dir, ref)
+			if err != nil {
+				return nil, err
+			}
+			for _, d := range listed {
+				if !seen[d] {
+					seen[d] = true
+					dirs = append(dirs, d)
+				}
+			}
+		}
+		return dirs, nil
 	}
 	if err := cfg.discoverWorkspaces(ctx, listDirs, modifiedFiles); err != nil {
 		return nil, nil, fmt.Errorf("could not discover workspaces. %w", err)
@@ -407,7 +428,14 @@ func (t *TFCTrigger) getModifiedWorkspacesOnTargetBranch(ctx context.Context, mr
 	}
 	return modifiedWSMap, err
 }
-func (t *TFCTrigger) getTriggeredWorkspacesForRequest(ctx context.Context, mr vcs.MR) ([]*TFCWorkspace, []*TFCWorkspace, error) {
+
+// getTriggeredWorkspacesForRequest resolves the workspaces mr's changes
+// trigger. Discover rules list directories on the MR's source branch, so a
+// plan covers the directories the MR adds and none it deletes. For cleanup
+// they also list the target branch: the source branch is often deleted on
+// merge, and finding extra workspaces there is harmless because only this
+// MR's own lock tag is removed.
+func (t *TFCTrigger) getTriggeredWorkspacesForRequest(ctx context.Context, mr vcs.MR, forCleanup bool) ([]*TFCWorkspace, []*TFCWorkspace, error) {
 	ctx, span := otel.Tracer(t.tracerName()).Start(ctx, "getTriggeredWorkspacesForRequest")
 	defer span.End()
 
@@ -416,7 +444,14 @@ func (t *TFCTrigger) getTriggeredWorkspacesForRequest(ctx context.Context, mr vc
 		return nil, nil, fmt.Errorf("failed to get a list of modified files. %w", err)
 	}
 	log.Debug().Str("project", t.GetProjectNameWithNamespace()).Int("mergeRequestID", mr.GetInternalID()).Strs("modifiedFiles", mrModifiedFiles).Msg("modified files")
-	return t.getTriggeredWorkspaces(ctx, mrModifiedFiles)
+	discoverRefs := func() []string {
+		refs := []string{mr.GetSourceBranch()}
+		if forCleanup && mr.GetTargetBranch() != mr.GetSourceBranch() {
+			refs = append(refs, mr.GetTargetBranch())
+		}
+		return refs
+	}
+	return t.getTriggeredWorkspaces(ctx, mrModifiedFiles, discoverRefs)
 
 }
 
@@ -513,7 +548,7 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 	if err != nil {
 		return nil, fmt.Errorf("could not read MergeRequest data from VCS API: %w", err)
 	}
-	triggeredWorkspaces, affectedWorkspaces, err := t.getTriggeredWorkspacesForRequest(ctx, mr)
+	triggeredWorkspaces, affectedWorkspaces, err := t.getTriggeredWorkspacesForRequest(ctx, mr, false)
 	if err != nil {
 		return nil, fmt.Errorf("could not read triggered workspaces. %w", err)
 	}
@@ -697,7 +732,7 @@ func (t *TFCTrigger) TriggerCleanupEvent(ctx context.Context) error {
 		return fmt.Errorf("could not read MergeRequest data from VCS API: %w", err)
 	}
 	t.recordAutoMergeResult(mr)
-	triggeredWorkspaces, _, err := t.getTriggeredWorkspacesForRequest(ctx, mr)
+	triggeredWorkspaces, _, err := t.getTriggeredWorkspacesForRequest(ctx, mr, true)
 	if err != nil {
 		return fmt.Errorf("could not determine workspaces for merge cleanup. %w", err)
 	}

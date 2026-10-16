@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -142,8 +143,9 @@ func (r *DiscoverRule) matchDir(dir string) ([]string, bool) {
 
 // matchTriggerDir reports whether p matches the triggerDir template td, and
 // returns whichever of the rule's wildcards td pins down. A placeholder only
-// pins its wildcard when it fills a whole path segment ahead of any `**`;
-// elsewhere its position in p is ambiguous and it is left unset ("").
+// pins its wildcard when it fills a whole path segment ahead of any `**` or
+// `{a,b}` alternative, either of which can match a different number of path
+// segments; elsewhere its position in p is ambiguous and it is left unset ("").
 func (r *DiscoverRule) matchTriggerDir(td, p string) ([]string, bool) {
 	if match, err := doublestar.Match(placeholderRE.ReplaceAllString(td, "*"), p); err != nil || !match {
 		return nil, false
@@ -151,7 +153,7 @@ func (r *DiscoverRule) matchTriggerDir(td, p string) ([]string, bool) {
 	captures := make([]string, r.wildcards())
 	pSegs := strings.Split(p, "/")
 	for i, seg := range strings.Split(td, "/") {
-		if i >= len(pSegs) || strings.Contains(seg, "**") {
+		if i >= len(pSegs) || strings.Contains(seg, "**") || strings.Contains(placeholderRE.ReplaceAllString(seg, ""), "{") {
 			break
 		}
 		m := placeholderRE.FindStringSubmatch(seg)
@@ -264,38 +266,199 @@ func (r *DiscoverRule) workspace(dir string, captures []string) *TFCWorkspace {
 	return ws
 }
 
+// maxNameSplits caps how many ways of splitting one workspace name are
+// checked one by one; past it, every directory the rules match is listed.
+const maxNameSplits = 64
+
+// nameSplits returns every set of wildcard values that fills the rule's Name
+// as name, and false when there are more than maxNameSplits. A value is one
+// directory name, so it is never empty and never contains a slash.
+func (r *DiscoverRule) nameSplits(name string) ([][]string, bool) {
+	// The name template as alternating literals (n == 0) and placeholders.
+	type part struct {
+		literal string
+		n       int
+	}
+	var parts []part
+	last := 0
+	for _, loc := range placeholderRE.FindAllStringSubmatchIndex(r.Name, -1) {
+		if loc[0] > last {
+			parts = append(parts, part{literal: r.Name[last:loc[0]]})
+		}
+		n, _ := strconv.Atoi(r.Name[loc[2]:loc[3]])
+		parts = append(parts, part{n: n})
+		last = loc[1]
+	}
+	if last < len(r.Name) {
+		parts = append(parts, part{literal: r.Name[last:]})
+	}
+
+	var splits [][]string
+	captures := make([]string, r.wildcards())
+	var walk func(i, pos int) bool
+	walk = func(i, pos int) bool {
+		if i == len(parts) {
+			if pos == len(name) {
+				if len(splits) == maxNameSplits {
+					return false
+				}
+				splits = append(splits, append([]string(nil), captures...))
+			}
+			return true
+		}
+		p := parts[i]
+		if p.n == 0 {
+			if !strings.HasPrefix(name[pos:], p.literal) {
+				return true
+			}
+			return walk(i+1, pos+len(p.literal))
+		}
+		// A placeholder used twice must repeat its value.
+		if v := captures[p.n-1]; v != "" {
+			if !strings.HasPrefix(name[pos:], v) {
+				return true
+			}
+			return walk(i+1, pos+len(v))
+		}
+		for end := pos + 1; end <= len(name); end++ {
+			v := name[pos:end]
+			if strings.Contains(v, "/") {
+				break
+			}
+			if v == "." || v == ".." {
+				continue
+			}
+			captures[p.n-1] = v
+			ok := walk(i+1, end)
+			captures[p.n-1] = ""
+			if !ok {
+				return false
+			}
+		}
+		return true
+	}
+	complete := walk(0, 0)
+	return splits, complete
+}
+
+// dirFor returns the directory whose wildcards match captures.
+func (r *DiscoverRule) dirFor(captures []string) string {
+	var segs []string
+	w := 0
+	for _, seg := range r.dirSegments() {
+		if seg == "*" {
+			seg = captures[w]
+			w++
+		}
+		segs = append(segs, seg)
+	}
+	return strings.Join(segs, "/")
+}
+
 // dirLister returns every directory below dir, recursively, relative to the
 // repo root.
 type dirLister func(ctx context.Context, dir string) ([]string, error)
+
+// dirIndex lists each root at most once and answers whether a directory
+// exists from the listings made so far.
+type dirIndex struct {
+	list   dirLister
+	roots  []string
+	exists map[string]bool
+}
+
+func newDirIndex(list dirLister) *dirIndex {
+	return &dirIndex{list: list, exists: map[string]bool{}}
+}
+
+func (x *dirIndex) covers(dir string) bool {
+	for _, root := range x.roots {
+		if root == "" || strings.HasPrefix(dir, root+"/") || dir == root {
+			return true
+		}
+	}
+	return false
+}
+
+// listDirs returns every directory below root, from an earlier listing that
+// covered root when there is one.
+func (x *dirIndex) listDirs(ctx context.Context, root string) ([]string, error) {
+	var dirs []string
+	if x.covers(root) {
+		for d := range x.exists {
+			if root == "" || strings.HasPrefix(d, root+"/") {
+				dirs = append(dirs, d)
+			}
+		}
+		sort.Strings(dirs)
+		return dirs, nil
+	}
+	dirs, err := x.list(ctx, root)
+	if err != nil {
+		return nil, err
+	}
+	x.roots = append(x.roots, root)
+	for _, d := range dirs {
+		x.exists[d] = true
+	}
+	return dirs, nil
+}
+
+// has reports whether dir exists, listing root first when no earlier listing
+// covered dir.
+func (x *dirIndex) has(ctx context.Context, dir, root string) (bool, error) {
+	if !x.covers(dir) {
+		if _, err := x.listDirs(ctx, root); err != nil {
+			return false, err
+		}
+	}
+	return x.exists[dir], nil
+}
+
+// discoveredWorkspace is a workspace a discover rule added.
+type discoveredWorkspace struct {
+	ws   *TFCWorkspace
+	rule *DiscoverRule
+}
 
 // discoverWorkspaces adds the workspaces cfg's discover rules derive to
 // cfg.Workspaces, limited to those modifiedFiles could trigger so that an MR
 // lists only the directories it touches.
 func (cfg *ProjectConfig) discoverWorkspaces(ctx context.Context, list dirLister, modifiedFiles []string) error {
+	idx := newDirIndex(list)
+	var discovered []discoveredWorkspace
 	for _, r := range cfg.Discover {
-		if err := cfg.discoverFromRoots(ctx, list, r, r.listRoots(modifiedFiles)); err != nil {
+		found, err := cfg.discoverFromRoots(ctx, idx, r, r.listRoots(modifiedFiles))
+		if err != nil {
 			return err
 		}
+		discovered = append(discovered, found...)
 	}
-	return nil
+	return cfg.checkNamesUnique(ctx, idx, discovered)
 }
 
 // discoverAllWorkspaces adds every workspace cfg's discover rules derive, for
-// a workspace named explicitly that the MR's changes do not reach.
+// a workspace named explicitly that the MR's changes do not reach. Having
+// listed everything, addDiscovered sees every duplicate name itself.
 func (cfg *ProjectConfig) discoverAllWorkspaces(ctx context.Context, list dirLister) error {
+	return cfg.discoverAll(ctx, newDirIndex(list))
+}
+
+func (cfg *ProjectConfig) discoverAll(ctx context.Context, idx *dirIndex) error {
 	for _, r := range cfg.Discover {
-		if err := cfg.discoverFromRoots(ctx, list, r, []string{r.listRoot(nil)}); err != nil {
+		if _, err := cfg.discoverFromRoots(ctx, idx, r, []string{r.listRoot(nil)}); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (cfg *ProjectConfig) discoverFromRoots(ctx context.Context, list dirLister, r *DiscoverRule, roots []string) error {
+func (cfg *ProjectConfig) discoverFromRoots(ctx context.Context, idx *dirIndex, r *DiscoverRule, roots []string) ([]discoveredWorkspace, error) {
+	var discovered []discoveredWorkspace
 	for _, root := range roots {
-		dirs, err := list(ctx, root)
+		dirs, err := idx.listDirs(ctx, root)
 		if err != nil {
-			return fmt.Errorf("could not list %q for discover rule %q: %w", root, r.Dir, err)
+			return nil, fmt.Errorf("could not list %q for discover rule %q: %w", root, r.Dir, err)
 		}
 		found := 0
 		for _, dir := range dirs {
@@ -303,32 +466,86 @@ func (cfg *ProjectConfig) discoverFromRoots(ctx context.Context, list dirLister,
 			if !ok || r.excluded(dir) {
 				continue
 			}
-			if err := cfg.addDiscovered(r.workspace(dir, captures)); err != nil {
-				return err
+			ws := r.workspace(dir, captures)
+			added, err := cfg.addDiscovered(ws)
+			if err != nil {
+				return nil, err
+			}
+			if added {
+				discovered = append(discovered, discoveredWorkspace{ws: ws, rule: r})
 			}
 			found++
 		}
 		log.Debug().Str("rule", r.Dir).Str("root", root).Int("listed", len(dirs)).Int("workspaces", found).Msg("discovered workspaces")
 	}
+	return discovered, nil
+}
+
+// checkNamesUnique fails when a directory the listings so far did not reach
+// would derive the same workspace name as one discovered. Two MRs would then
+// plan different directories against one workspace, and neither MR's listing
+// shows the other directory. For each discovered name it works out every
+// directory any rule could derive that name from, and checks whether those
+// directories exist. A name with too many such directories falls back to
+// listing everything every rule matches.
+func (cfg *ProjectConfig) checkNamesUnique(ctx context.Context, idx *dirIndex, discovered []discoveredWorkspace) error {
+	for _, d := range discovered {
+		for _, r := range cfg.Discover {
+			splits, complete := r.nameSplits(d.ws.Name)
+			if !complete {
+				return cfg.discoverAll(ctx, idx)
+			}
+			for _, captures := range splits {
+				dir := r.dirFor(captures)
+				if sameDir(dir, d.ws.Dir) || r.excluded(dir) || cfg.hasExplicitDir(dir) {
+					continue
+				}
+				exists, err := idx.has(ctx, dir, r.listRoot(captures[:1]))
+				if err != nil {
+					return fmt.Errorf("could not check whether %q also derives workspace %q: %w", dir, d.ws.Name, err)
+				}
+				if exists {
+					return utils.CreatePermanentError(fmt.Errorf(
+						"discover rules derive workspace %q from both %q and %q; add an explicit workspace entry for one of them",
+						d.ws.Name, strings.TrimSuffix(d.ws.Dir, "/"), dir))
+				}
+			}
+		}
+	}
 	return nil
 }
 
+func (cfg *ProjectConfig) hasExplicitDir(dir string) bool {
+	for _, ws := range cfg.Workspaces {
+		if !ws.Discovered && sameDir(ws.Dir, dir) {
+			return true
+		}
+	}
+	return false
+}
+
 // addDiscovered adds ws unless an explicit workspace already claims its name
-// or dir, which lets an explicit entry override discovery for one directory.
-// Two discovered directories claiming one workspace name is a config error:
-// planning both against the same workspace would let each overwrite the other.
-func (cfg *ProjectConfig) addDiscovered(ws *TFCWorkspace) error {
+// or dir, which lets an explicit entry override discovery for one directory,
+// and reports whether it did. Two discovered directories claiming one
+// workspace name is a config error: planning both against the same workspace
+// would let each overwrite the other.
+func (cfg *ProjectConfig) addDiscovered(ws *TFCWorkspace) (bool, error) {
 	for _, existing := range cfg.Workspaces {
-		if existing.Name != ws.Name && existing.Dir != ws.Dir {
+		if existing.Name != ws.Name && !sameDir(existing.Dir, ws.Dir) {
 			continue
 		}
-		if !existing.Discovered || (existing.Name == ws.Name && existing.Dir == ws.Dir) {
-			return nil
+		if !existing.Discovered || (existing.Name == ws.Name && sameDir(existing.Dir, ws.Dir)) {
+			return false, nil
 		}
-		return utils.CreatePermanentError(fmt.Errorf(
+		return false, utils.CreatePermanentError(fmt.Errorf(
 			"discover rules derive workspace %q for dir %q and workspace %q for dir %q; add an explicit workspace entry to resolve it",
 			existing.Name, existing.Dir, ws.Name, ws.Dir))
 	}
 	cfg.Workspaces = append(cfg.Workspaces, ws)
-	return nil
+	return true, nil
+}
+
+// sameDir compares workspace dirs, whose trailing slash is optional.
+func sameDir(a, b string) bool {
+	return strings.TrimSuffix(a, "/") == strings.TrimSuffix(b, "/")
 }

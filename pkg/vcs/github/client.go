@@ -297,6 +297,10 @@ func (c *Client) GetRepoFile(ctx context.Context, fullName string, file string, 
 	}, createBackOffWithRetries())
 }
 
+// contentsListingLimit is the most entries GitHub's contents API returns for
+// one directory.
+const contentsListingLimit = 1000
+
 // ListRepoDirectories returns every directory below dir at ref, recursively,
 // relative to the repo root. A dir that does not exist at ref yields nothing.
 func (c *Client) ListRepoDirectories(ctx context.Context, fullName, dir, ref string) ([]string, error) {
@@ -333,6 +337,12 @@ func (c *Client) ListRepoDirectories(ctx context.Context, fullName, dir, ref str
 				}
 			}
 			if treeSHA == "" {
+				// The contents API returns at most contentsListingLimit entries
+				// of a directory, so a full listing cannot show that dir is
+				// absent; it may be among the entries left out.
+				if len(entries) >= contentsListingLimit {
+					return nil, backoff.Permanent(utils.CreatePermanentError(fmt.Errorf("%q has at least %d entries at %s, too many to tell whether %q exists", parent, contentsListingLimit, ref, dir)))
+				}
 				return nil, nil
 			}
 		}
@@ -345,9 +355,10 @@ func (c *Client) ListRepoDirectories(ctx context.Context, fullName, dir, ref str
 			return nil, permanentError(resp, err)
 		}
 		// A truncated tree would silently drop directories, and with them the
-		// workspaces discovered from them.
+		// workspaces discovered from them. Neither this nor a capped listing
+		// changes on retry.
 		if tree.GetTruncated() {
-			return nil, utils.CreatePermanentError(fmt.Errorf("tree of %q at %s is too large to list", dir, ref))
+			return nil, backoff.Permanent(utils.CreatePermanentError(fmt.Errorf("tree of %q at %s is too large to list", dir, ref)))
 		}
 
 		var dirs []string

@@ -198,7 +198,18 @@ func TestProjectConfig_discoverWorkspaces(t *testing.T) {
 	if err := cfg.discoverWorkspaces(context.Background(), repo.list, modified); err != nil {
 		t.Fatal(err)
 	}
-	if diff := cmp.Diff([]string{"services/api/staging"}, repo.listed); diff != "" {
+	// One listing finds the workspaces; the rest check that no other directory
+	// derives the same names (see TestProjectConfig_discoverWorkspacesNameCollision).
+	wantListed := []string{
+		"services/api/staging",
+		"services/api",
+		"services/api-staging",
+		"services/api-staging-main",
+		"services/api-staging-main-us",
+		"services/api-staging-global",
+		"services/api-staging-global-us",
+	}
+	if diff := cmp.Diff(wantListed, repo.listed); diff != "" {
 		t.Errorf("listed roots mismatch (-want +got):\n%s", diff)
 	}
 	wantAll := []string{
@@ -327,7 +338,7 @@ func TestProjectConfig_discoverWorkspacesIsIdempotent(t *testing.T) {
 	if diff := cmp.Diff(want, workspaceNames(cfg.Workspaces)); diff != "" {
 		t.Errorf("workspaces mismatch (-want +got):\n%s", diff)
 	}
-	if diff := cmp.Diff([]string{"services/api/staging", "services"}, repo.listed); diff != "" {
+	if diff := cmp.Diff("services", repo.listed[len(repo.listed)-1]); diff != "" {
 		t.Errorf("listed roots mismatch (-want +got):\n%s", diff)
 	}
 }
@@ -349,5 +360,151 @@ func TestProjectConfig_noDiscoverRulesListsNothing(t *testing.T) {
 	}
 	if len(repo.listed) != 0 {
 		t.Errorf("expected no listings without discover rules, got %v", repo.listed)
+	}
+}
+
+func TestProjectConfig_discoverWorkspacesNameCollision(t *testing.T) {
+	// "a-b" + "c" and "a" + "b-c" fill services-{1}-{2} with the same name. An
+	// MR touching only services/a-b/c never lists services/a, so the check has
+	// to look for the other directory itself.
+	const rule = `---
+discover:
+  - dir: services/*/*/
+    exclude: [services/a/b-c-excluded]
+    name: services-{1}-{2}
+    organization: foo-corp
+`
+	tests := []struct {
+		name    string
+		dirs    []string
+		extra   string
+		wantErr string
+	}{
+		{name: "collision outside the listed root", dirs: []string{"services/a-b", "services/a-b/c", "services/a", "services/a/b-c"},
+			wantErr: `workspace "services-a-b-c" from both "services/a-b/c" and "services/a/b-c"`},
+		{name: "no other directory", dirs: []string{"services/a-b", "services/a-b/c", "services/a", "services/a/other"}},
+		{name: "explicit entry owns the other directory", dirs: []string{"services/a-b", "services/a-b/c", "services/a", "services/a/b-c"},
+			extra: "workspaces:\n  - name: legacy-a\n    organization: foo-corp\n    dir: services/a/b-c\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := mustLoadDiscoverConfig(t, rule+tt.extra)
+			repo := &fakeRepo{dirs: tt.dirs}
+			err := cfg.discoverWorkspaces(context.Background(), repo.list, []string{"services/a-b/c/main.tf"})
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("unexpected error %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("expected an error containing %q, got %v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
+func TestProjectConfig_discoverWorkspacesNameCollisionExcluded(t *testing.T) {
+	cfg := mustLoadDiscoverConfig(t, `---
+discover:
+  - dir: services/*/*/
+    exclude: [services/a/b-c]
+    name: services-{1}-{2}
+    organization: foo-corp
+`)
+	repo := &fakeRepo{dirs: []string{"services/a-b", "services/a-b/c", "services/a", "services/a/b-c"}}
+	if err := cfg.discoverWorkspaces(context.Background(), repo.list, []string{"services/a-b/c/main.tf"}); err != nil {
+		t.Fatalf("an excluded directory is not a workspace, got %v", err)
+	}
+}
+
+func TestProjectConfig_discoverWorkspacesNameCollisionAcrossRules(t *testing.T) {
+	cfg := mustLoadDiscoverConfig(t, `---
+discover:
+  - dir: services/*/*/
+    name: svc-{1}-{2}
+    organization: foo-corp
+  - dir: legacy/*/
+    name: svc-{1}
+    organization: foo-corp
+`)
+	repo := &fakeRepo{dirs: []string{"services/a", "services/a/b", "legacy", "legacy/a-b"}}
+	err := cfg.discoverWorkspaces(context.Background(), repo.list, []string{"services/a/b/main.tf"})
+	if err == nil || !strings.Contains(err.Error(), `"legacy/a-b"`) {
+		t.Fatalf("expected a collision with legacy/a-b, got %v", err)
+	}
+}
+
+func TestProjectConfig_discoverWorkspacesTooManySplitsListsEverything(t *testing.T) {
+	// Adjacent placeholders split anywhere, so a long name has too many splits
+	// to check one by one and the rule's whole tree is listed instead.
+	cfg := mustLoadDiscoverConfig(t, `---
+discover:
+  - dir: services/*/*/*/
+    name: "{1}{2}{3}"
+    organization: foo-corp
+`)
+	repo := &fakeRepo{dirs: []string{
+		"services/abcdefghij", "services/abcdefghij/klmnop", "services/abcdefghij/klmnop/qrstuv",
+		"services/abcdefghijk", "services/abcdefghijk/lmnop", "services/abcdefghijk/lmnop/qrstuv",
+	}}
+	err := cfg.discoverWorkspaces(context.Background(), repo.list, []string{"services/abcdefghij/klmnop/qrstuv/main.tf"})
+	if err == nil || !strings.Contains(err.Error(), `"abcdefghijklmnopqrstuv"`) {
+		t.Fatalf("expected a duplicate workspace error, got %v", err)
+	}
+	if got := repo.listed[len(repo.listed)-1]; got != "services" {
+		t.Errorf("expected the whole rule to be listed last, got %q", got)
+	}
+}
+
+func TestDiscoverRule_nameSplits(t *testing.T) {
+	rule := &DiscoverRule{Dir: "services/*/*/", Name: "services-{1}-{2}"}
+	splits, complete := rule.nameSplits("services-a-b-c")
+	want := [][]string{{"a", "b-c"}, {"a-b", "c"}}
+	if !complete {
+		t.Fatal("expected every split")
+	}
+	if diff := cmp.Diff(want, splits); diff != "" {
+		t.Errorf("nameSplits() mismatch (-want +got):\n%s", diff)
+	}
+	if splits, _ := rule.nameSplits("other-a-b"); len(splits) != 0 {
+		t.Errorf("expected no splits for a name the template cannot produce, got %v", splits)
+	}
+
+	repeated := &DiscoverRule{Dir: "services/*/", Name: "{1}-{1}"}
+	if splits, _ := repeated.nameSplits("x-y-x-y"); !cmp.Equal(splits, [][]string{{"x-y"}}) {
+		t.Errorf("a repeated placeholder must repeat its value, got %v", splits)
+	}
+}
+
+func TestDiscoverRule_listRootsBraceAlternative(t *testing.T) {
+	// The alternative spans a different number of path segments on each side,
+	// so {1} and {2} cannot be located by position: list the whole rule.
+	cfg := mustLoadDiscoverConfig(t, `---
+discover:
+  - dir: services/*/*/*/
+    name: services-{1}-{2}-{3}
+    organization: foo-corp
+    triggerDirs:
+      - "{shared/path,shared}/{1}/{2}"
+`)
+	got := cfg.Discover[0].listRoots([]string{"shared/api/staging/main.tf"})
+	if diff := cmp.Diff([]string{"services"}, got); diff != "" {
+		t.Errorf("listRoots() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestProjectConfig_discoverWorkspacesExplicitDirWithoutSlash(t *testing.T) {
+	cfg := mustLoadDiscoverConfig(t, tfbuddyYamlDiscover+`  - name: legacy-api-staging-west
+    organization: foo-corp
+    dir: services/api/staging/main-us-west-2
+`)
+	modified := []string{"services/api/staging/variables.tf"}
+	if err := cfg.discoverWorkspaces(context.Background(), newFakeRepo().list, modified); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"legacy-api-staging-west", "services-api-staging-global-us-east-1", "workspaces-root"}
+	if diff := cmp.Diff(want, workspaceNames(cfg.Workspaces)); diff != "" {
+		t.Errorf("workspaces mismatch (-want +got):\n%s", diff)
 	}
 }
