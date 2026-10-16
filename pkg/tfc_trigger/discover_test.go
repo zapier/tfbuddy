@@ -548,3 +548,20 @@ func TestDiscoverRule_nameSplitsBoundsFailedSearch(t *testing.T) {
 		t.Fatal("expected every split of a long conventional name")
 	}
 }
+
+func Test_loadProjectConfig_emptyEntries(t *testing.T) {
+	tests := map[string]string{
+		"null discover rule":  "discover: [null]\n",
+		"blank discover rule": "discover:\n  -\n",
+		"null workspace":      "workspaces: [null]\n",
+		"blank workspace":     "workspaces:\n  - name: a\n    organization: foo-corp\n  -\n",
+	}
+	for name, yaml := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, err := loadProjectConfig(config.C, []byte(yaml))
+			if err == nil || !strings.Contains(err.Error(), "is empty") {
+				t.Fatalf("expected an empty-entry error, got %v", err)
+			}
+		})
+	}
+}

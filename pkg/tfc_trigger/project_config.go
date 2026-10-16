@@ -196,6 +196,18 @@ func loadProjectConfig(appCfg config.Config, b []byte) (*ProjectConfig, error) {
 		return nil, fmt.Errorf("could not parse Project config file (.tfbuddy.yaml): %v. %w", err, utils.ErrPermanent)
 	}
 
+	// An empty list item, such as `- ` or `null`, decodes to nil.
+	for i, ws := range cfg.Workspaces {
+		if ws == nil {
+			return nil, utils.CreatePermanentError(fmt.Errorf("workspaces[%d] in %s is empty", i, ProjectConfigFilename))
+		}
+	}
+	for i, r := range cfg.Discover {
+		if r == nil {
+			return nil, utils.CreatePermanentError(fmt.Errorf("discover[%d] in %s is empty", i, ProjectConfigFilename))
+		}
+	}
+
 	defaultOrgName := getDefaultOrgName(appCfg)
 	for _, ws := range cfg.Workspaces {
 		if ws.Organization == "" {
