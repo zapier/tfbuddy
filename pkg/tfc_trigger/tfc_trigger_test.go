@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -1481,5 +1482,249 @@ func TestTFCEvents_UnlockAlreadyUnlocked_StillRemovesTags(t *testing.T) {
 	}
 	if len(triggeredWS.Executed) != 1 {
 		t.Fatal("expected unlock to still proceed and remove tags")
+	}
+}
+
+func discoverProjectConfig() *tfc_trigger.ProjectConfig {
+	return &tfc_trigger.ProjectConfig{
+		Discover: []*tfc_trigger.DiscoverRule{{
+			Dir:          "services/*/*/*/",
+			Exclude:      []string{"services/*/*/files"},
+			Name:         "services-{1}-{2}-{3}",
+			Organization: "zapier-test",
+			Mode:         "apply-before-merge",
+			TriggerDirs:  []string{"services/{1}/{2}", "services/{1}/{2}/files/**"},
+			AutoMerge:    true,
+		}},
+	}
+}
+
+// TestTFCEvents_DiscoveredWorkspacesPlan verifies that an env-level change
+// plans every cell a discover rule finds in that env, listing only the env.
+func TestTFCEvents_DiscoveredWorkspacesPlan(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: discoverProjectConfig()}, t)
+	testSuite.MockGitClient.EXPECT().GetMergeRequestModifiedFiles(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS).Return([]string{"services/api/staging/variables.tf"}, nil).AnyTimes()
+	testSuite.MockGitClient.EXPECT().ListRepoDirectories(gomock.Any(), testSuite.MetaData.ProjectNameNS, "services/api/staging", testSuite.MetaData.SourceBranch).Return([]string{
+		"services/api/staging/main-us-west-2",
+		"services/api/staging/global-us-east-1",
+		"services/api/staging/files",
+	}, nil).Times(1)
+	// The name uniqueness check lists other places; none of them exist here.
+	// Planning never lists the target branch.
+	testSuite.MockGitClient.EXPECT().ListRepoDirectories(gomock.Any(), testSuite.MetaData.ProjectNameNS, gomock.Not("services/api/staging"), testSuite.MetaData.SourceBranch).Return(nil, nil).AnyTimes()
+
+	for _, ws := range []string{"services-api-staging-main-us-west-2", "services-api-staging-global-us-east-1"} {
+		testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, fmt.Sprintf("Starting TFC plan for Workspace: `zapier-test/%s`.\n<!-- tfbuddy:ws=%s:action=plan -->", ws, ws)).Return(testSuite.MockGitDisc, nil)
+	}
+	var runDirs []string
+	testSuite.MockApiClient.EXPECT().CreateRunFromSource(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, opts *tfc_api.ApiRunOptions) (*tfe.Run, error) {
+		runDirs = append(runDirs, opts.Workspace+"="+opts.Path)
+		return &tfe.Run{
+			ID: "101",
+			Workspace: &tfe.Workspace{Name: opts.Workspace,
+				Organization: &tfe.Organization{Name: "zapier-test"},
+			},
+			ConfigurationVersion: &tfe.ConfigurationVersion{Speculative: true}}, nil
+	}).Times(2)
+	mockRunPollingTask := mocks.NewMockRunPollingTask(mockCtrl)
+	mockRunPollingTask.EXPECT().Schedule(gomock.Any()).Times(2)
+	testSuite.MockStreamClient.EXPECT().NewTFRunPollingTask(gomock.Any(), time.Second*1).Return(mockRunPollingTask).Times(2)
+
+	testSuite.InitTestSuite()
+
+	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
+		Action:                   tfc_trigger.PlanAction,
+		Branch:                   testSuite.MetaData.SourceBranch,
+		CommitSHA:                "abcd12233",
+		ProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
+		MergeRequestIID:          testSuite.MetaData.MRIID,
+		TriggerSource:            tfc_trigger.CommentTrigger,
+	})
+	trigger := tfc_trigger.NewTFCTrigger(config.C, testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	triggeredWS, err := trigger.TriggerTFCEvents(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(triggeredWS.Errored) > 0 {
+		t.Fatal("unexpected failed workspaces", triggeredWS.Errored)
+	}
+	executed := append([]string(nil), triggeredWS.Executed...)
+	sort.Strings(executed)
+	want := []string{"services-api-staging-global-us-east-1", "services-api-staging-main-us-west-2"}
+	if strings.Join(executed, ",") != strings.Join(want, ",") {
+		t.Fatalf("expected workspaces %v, got %v", want, executed)
+	}
+	for _, rd := range runDirs {
+		ws, dir, _ := strings.Cut(rd, "=")
+		cell := strings.TrimPrefix(ws, "services-api-staging-")
+		if !strings.HasSuffix(dir, "services/api/staging/"+cell) && !strings.HasSuffix(dir, "services/api/staging/"+cell+"/") {
+			t.Errorf("workspace %s ran from %q, want its cell directory", ws, dir)
+		}
+	}
+}
+
+// TestTFCEvents_DiscoveredWorkspaceNamedExplicitly verifies that `-w` reaches
+// a discovered workspace the MR's changes do not touch.
+func TestTFCEvents_DiscoveredWorkspaceNamedExplicitly(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: discoverProjectConfig()}, t)
+	testSuite.MockGitClient.EXPECT().GetMergeRequestModifiedFiles(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS).Return([]string{"services/api/staging/main-us-west-2/main.tf"}, nil).AnyTimes()
+	testSuite.MockGitClient.EXPECT().ListRepoDirectories(gomock.Any(), testSuite.MetaData.ProjectNameNS, "services/api/staging", testSuite.MetaData.SourceBranch).Return([]string{
+		"services/api/staging/main-us-west-2",
+	}, nil).Times(1)
+	testSuite.MockGitClient.EXPECT().ListRepoDirectories(gomock.Any(), testSuite.MetaData.ProjectNameNS, "services", testSuite.MetaData.SourceBranch).Return([]string{
+		"services/api",
+		"services/api/staging",
+		"services/api/staging/main-us-west-2",
+		"services/web",
+		"services/web/production",
+		"services/web/production/main-us-east-1",
+	}, nil).Times(1)
+	testSuite.MockGitClient.EXPECT().ListRepoDirectories(gomock.Any(), testSuite.MetaData.ProjectNameNS, gomock.Not(gomock.AnyOf("services/api/staging", "services")), testSuite.MetaData.SourceBranch).Return(nil, nil).AnyTimes()
+
+	const ws = "services-web-production-main-us-east-1"
+	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, fmt.Sprintf("Starting TFC plan for Workspace: `zapier-test/%s`.\n<!-- tfbuddy:ws=%s:action=plan -->", ws, ws)).Return(testSuite.MockGitDisc, nil)
+	testSuite.MockApiClient.EXPECT().CreateRunFromSource(gomock.Any(), gomock.Any()).Return(&tfe.Run{
+		ID: "101",
+		Workspace: &tfe.Workspace{Name: ws,
+			Organization: &tfe.Organization{Name: "zapier-test"},
+		},
+		ConfigurationVersion: &tfe.ConfigurationVersion{Speculative: true}}, nil)
+	mockRunPollingTask := mocks.NewMockRunPollingTask(mockCtrl)
+	mockRunPollingTask.EXPECT().Schedule(gomock.Any())
+	testSuite.MockStreamClient.EXPECT().NewTFRunPollingTask(gomock.Any(), time.Second*1).Return(mockRunPollingTask)
+
+	testSuite.InitTestSuite()
+
+	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
+		Action:                   tfc_trigger.PlanAction,
+		Branch:                   testSuite.MetaData.SourceBranch,
+		CommitSHA:                "abcd12233",
+		ProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
+		MergeRequestIID:          testSuite.MetaData.MRIID,
+		TriggerSource:            tfc_trigger.CommentTrigger,
+		Workspace:                ws,
+	})
+	trigger := tfc_trigger.NewTFCTrigger(config.C, testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	triggeredWS, err := trigger.TriggerTFCEvents(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(triggeredWS.Errored) > 0 {
+		t.Fatal("unexpected failed workspaces", triggeredWS.Errored)
+	}
+	if len(triggeredWS.Executed) != 1 || triggeredWS.Executed[0] != ws {
+		t.Fatalf("expected workspace %s, got %v", ws, triggeredWS.Executed)
+	}
+}
+
+// TestTriggerCleanupEvent_DiscoveredWorkspaceOnTargetBranch verifies that a
+// merge whose source branch is already deleted still releases the lock on a
+// discovered workspace, found on the target branch instead.
+func TestTriggerCleanupEvent_DiscoveredWorkspaceOnTargetBranch(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: discoverProjectConfig()}, t)
+	const ws = "services-api-staging-main-us-west-2"
+
+	testSuite.MockGitMR.EXPECT().GetInternalID().Return(testSuite.MetaData.MRIID).AnyTimes()
+	testSuite.MockGitMR.EXPECT().GetSourceBranch().Return(testSuite.MetaData.SourceBranch).AnyTimes()
+	testSuite.MockGitMR.EXPECT().GetTargetBranch().Return(testSuite.MetaData.TargetBranch).AnyTimes()
+	testSuite.MockGitClient.EXPECT().GetMergeRequest(
+		gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS,
+	).Return(testSuite.MockGitMR, nil)
+	testSuite.MockGitClient.EXPECT().GetRepoFile(
+		gomock.Any(), testSuite.MetaData.ProjectNameNS, ".tfbuddy.yaml", testSuite.MetaData.SourceBranch,
+	).Return(testSuite.MetaData.TFBuddyConfig, nil)
+	testSuite.MockGitClient.EXPECT().GetMergeRequestModifiedFiles(
+		gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS,
+	).Return([]string{"services/api/staging/main-us-west-2/main.tf"}, nil)
+
+	// The source branch is gone; the merged directory is on the target branch.
+	testSuite.MockGitClient.EXPECT().ListRepoDirectories(gomock.Any(), testSuite.MetaData.ProjectNameNS, "services/api/staging", testSuite.MetaData.SourceBranch).Return(nil, nil)
+	testSuite.MockGitClient.EXPECT().ListRepoDirectories(gomock.Any(), testSuite.MetaData.ProjectNameNS, "services/api/staging", testSuite.MetaData.TargetBranch).Return([]string{"services/api/staging/main-us-west-2"}, nil)
+	testSuite.MockGitClient.EXPECT().ListRepoDirectories(gomock.Any(), testSuite.MetaData.ProjectNameNS, gomock.Not("services/api/staging"), gomock.Any()).Return(nil, nil).AnyTimes()
+
+	testSuite.MockApiClient.EXPECT().GetWorkspaceByName(gomock.Any(), "zapier-test", ws).
+		Return(&tfe.Workspace{ID: ws}, nil)
+	testSuite.MockApiClient.EXPECT().GetTagsByQuery(gomock.Any(), ws, "tfbuddylock-101").
+		Return([]string{"tfbuddylock-101"}, nil)
+	testSuite.MockApiClient.EXPECT().RemoveTagsByName(gomock.Any(), ws, []string{"tfbuddylock-101"}).
+		Return(nil)
+	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(
+		gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS,
+		"Released locks for workspaces: "+ws,
+	).Return(testSuite.MockGitDisc, nil)
+
+	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
+		Action:                   tfc_trigger.PlanAction,
+		Branch:                   testSuite.MetaData.SourceBranch,
+		CommitSHA:                "abcd12233",
+		ProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
+		MergeRequestIID:          testSuite.MetaData.MRIID,
+		TriggerSource:            tfc_trigger.MergeRequestEventTrigger,
+	})
+	trigger := tfc_trigger.NewTFCTrigger(config.C, testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
+	if err := trigger.TriggerCleanupEvent(ctx); err != nil {
+		t.Fatalf("cleanup failed: %v", err)
+	}
+}
+
+// TestTriggerCleanupEvent_NamePreservingMoveAcrossBranches verifies that
+// cleanup discovers each branch on its own. An MR moving services/a-b/c to
+// services/a/b-c keeps the workspace name services-a-b-c: each branch is valid,
+// but taken together they look like two directories sharing one workspace.
+func TestTriggerCleanupEvent_NamePreservingMoveAcrossBranches(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: &tfc_trigger.ProjectConfig{
+		Discover: []*tfc_trigger.DiscoverRule{{
+			Dir:          "services/*/*/",
+			Name:         "services-{1}-{2}",
+			Organization: "zapier-test",
+			Mode:         "apply-before-merge",
+			AutoMerge:    true,
+		}},
+	}}, t)
+	const ws = "services-a-b-c"
+	project, source, target := testSuite.MetaData.ProjectNameNS, testSuite.MetaData.SourceBranch, testSuite.MetaData.TargetBranch
+
+	testSuite.MockGitMR.EXPECT().GetInternalID().Return(testSuite.MetaData.MRIID).AnyTimes()
+	testSuite.MockGitMR.EXPECT().GetSourceBranch().Return(source).AnyTimes()
+	testSuite.MockGitMR.EXPECT().GetTargetBranch().Return(target).AnyTimes()
+	testSuite.MockGitClient.EXPECT().GetMergeRequest(gomock.Any(), testSuite.MetaData.MRIID, project).Return(testSuite.MockGitMR, nil)
+	testSuite.MockGitClient.EXPECT().GetRepoFile(gomock.Any(), project, ".tfbuddy.yaml", source).Return(testSuite.MetaData.TFBuddyConfig, nil)
+	testSuite.MockGitClient.EXPECT().GetMergeRequestModifiedFiles(gomock.Any(), testSuite.MetaData.MRIID, project).
+		Return([]string{"services/a/b-c/main.tf", "services/a-b/c/main.tf"}, nil)
+
+	// The source branch has the new path, the target branch the old one.
+	testSuite.MockGitClient.EXPECT().ListRepoDirectories(gomock.Any(), project, "services/a", source).Return([]string{"services/a/b-c"}, nil).AnyTimes()
+	testSuite.MockGitClient.EXPECT().ListRepoDirectories(gomock.Any(), project, "services/a-b", source).Return(nil, nil).AnyTimes()
+	testSuite.MockGitClient.EXPECT().ListRepoDirectories(gomock.Any(), project, "services/a", target).Return(nil, nil).AnyTimes()
+	testSuite.MockGitClient.EXPECT().ListRepoDirectories(gomock.Any(), project, "services/a-b", target).Return([]string{"services/a-b/c"}, nil).AnyTimes()
+
+	// One workspace, released once.
+	testSuite.MockApiClient.EXPECT().GetWorkspaceByName(gomock.Any(), "zapier-test", ws).Return(&tfe.Workspace{ID: ws}, nil)
+	testSuite.MockApiClient.EXPECT().GetTagsByQuery(gomock.Any(), ws, "tfbuddylock-101").Return([]string{"tfbuddylock-101"}, nil)
+	testSuite.MockApiClient.EXPECT().RemoveTagsByName(gomock.Any(), ws, []string{"tfbuddylock-101"}).Return(nil)
+	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(gomock.Any(), testSuite.MetaData.MRIID, project,
+		"Released locks for workspaces: "+ws).Return(testSuite.MockGitDisc, nil)
+
+	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
+		Action:                   tfc_trigger.PlanAction,
+		Branch:                   source,
+		CommitSHA:                "abcd12233",
+		ProjectNameWithNamespace: project,
+		MergeRequestIID:          testSuite.MetaData.MRIID,
+		TriggerSource:            tfc_trigger.MergeRequestEventTrigger,
+	})
+	trigger := tfc_trigger.NewTFCTrigger(config.C, testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
+	if err := trigger.TriggerCleanupEvent(ctx); err != nil {
+		t.Fatalf("cleanup failed: %v", err)
 	}
 }

@@ -22,6 +22,9 @@ const ProjectConfigFilename = `.tfbuddy.yaml`
 
 type ProjectConfig struct {
 	Workspaces []*TFCWorkspace `yaml:"workspaces"`
+	// Discover derives further workspaces from the repository's directory
+	// layout; see DiscoverRule.
+	Discover []*DiscoverRule `yaml:"discover,omitempty"`
 }
 
 // Finds the workspace with the deepest matching directory suffix.
@@ -161,6 +164,10 @@ type TFCWorkspace struct {
 	Mode         string   `yaml:"mode" default:"apply-before-merge" validate:"one_of=apply-before-merge,merge-before-apply,tfc-vcs-repo"`
 	TriggerDirs  []string `yaml:"triggerDirs"`
 	AutoMerge    bool     `yaml:"autoMerge" default:"true"`
+
+	// Discovered marks a workspace derived by a DiscoverRule rather than
+	// listed in the config file. It cannot be set from YAML.
+	Discovered bool `yaml:"-"`
 }
 
 func getProjectConfigFile(ctx context.Context, gl vcs.GitClient, trigger *TFCTrigger) (*ProjectConfig, error) {
@@ -189,15 +196,37 @@ func loadProjectConfig(appCfg config.Config, b []byte) (*ProjectConfig, error) {
 		return nil, fmt.Errorf("could not parse Project config file (.tfbuddy.yaml): %v. %w", err, utils.ErrPermanent)
 	}
 
+	// An empty list item, such as `- ` or `null`, decodes to nil.
+	for i, ws := range cfg.Workspaces {
+		if ws == nil {
+			return nil, utils.CreatePermanentError(fmt.Errorf("workspaces[%d] in %s is empty", i, ProjectConfigFilename))
+		}
+	}
+	for i, r := range cfg.Discover {
+		if r == nil {
+			return nil, utils.CreatePermanentError(fmt.Errorf("discover[%d] in %s is empty", i, ProjectConfigFilename))
+		}
+	}
+
 	defaultOrgName := getDefaultOrgName(appCfg)
 	for _, ws := range cfg.Workspaces {
 		if ws.Organization == "" {
 			ws.Organization = defaultOrgName
 		}
 	}
+	for _, r := range cfg.Discover {
+		if r.Organization == "" {
+			r.Organization = defaultOrgName
+		}
+	}
 
 	if err := validate.Validate(cfg); err != nil {
 		return nil, utils.CreatePermanentError(err)
+	}
+	for _, r := range cfg.Discover {
+		if err := r.validate(); err != nil {
+			return nil, utils.CreatePermanentError(err)
+		}
 	}
 
 	return cfg, nil

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -502,6 +503,55 @@ func (g *GitlabClient) GetRepoFile(ctx context.Context, project, file, ref strin
 	return backoff.RetryWithData(func() ([]byte, error) {
 		b, resp, err := g.client.RepositoryFiles.GetRawFile(project, file, &gogitlab.GetRawFileOptions{Ref: &ref}, gogitlab.WithContext(ctx))
 		return b, permanentError(resp, err)
+	}, createBackOffWithRetries(ctx))
+}
+
+// ListRepoDirectories returns every directory below dir at ref, recursively,
+// relative to the repo root. A dir that does not exist at ref yields nothing.
+func (g *GitlabClient) ListRepoDirectories(ctx context.Context, project, dir, ref string) ([]string, error) {
+	_, span := otel.Tracer("TFC").Start(ctx, "ListRepoDirectories")
+	defer span.End()
+
+	if ref == "" {
+		ref = "HEAD"
+	}
+	const maxPerPage = 100
+	return backoff.RetryWithData(func() ([]string, error) {
+		var dirs []string
+		nextPage := 1
+
+		for {
+			opts := &gogitlab.ListTreeOptions{
+				ListOptions: gogitlab.ListOptions{
+					PerPage: maxPerPage,
+					Page:    nextPage,
+				},
+				Ref:       &ref,
+				Recursive: gogitlab.Ptr(true),
+			}
+			if dir != "" {
+				opts.Path = &dir
+			}
+			nodes, resp, err := g.client.Repositories.ListTree(project, opts, gogitlab.WithContext(ctx))
+			if err != nil {
+				if resp != nil && resp.StatusCode == http.StatusNotFound {
+					return nil, nil
+				}
+				return nil, permanentError(resp, err)
+			}
+
+			for _, n := range nodes {
+				if n.Type == "tree" {
+					dirs = append(dirs, n.Path)
+				}
+			}
+			if resp.NextPage == 0 {
+				break
+			}
+			nextPage = resp.NextPage
+		}
+
+		return dirs, nil
 	}, createBackOffWithRetries(ctx))
 }
 

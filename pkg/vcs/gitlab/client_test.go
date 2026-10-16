@@ -117,3 +117,52 @@ func TestCloneMergeRequestRetriesProjectLookup(t *testing.T) {
 		t.Fatalf("project lookup should have succeeded on retry: %v", err)
 	}
 }
+
+func TestListRepoDirectoriesPaginatesAndKeepsOnlyTrees(t *testing.T) {
+	pages := map[string]string{
+		"1": `[{"path":"services/api/staging","type":"tree"},{"path":"services/api/staging/main.tf","type":"blob"}]`,
+		"2": `[{"path":"services/api/staging/main-us-west-2","type":"tree"}]`,
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.EscapedPath(), "/projects/zapier%2Fterraform-services/repository/tree") {
+			t.Errorf("unexpected request path %s", r.URL.EscapedPath())
+		}
+		q := r.URL.Query()
+		if q.Get("path") != "services/api" || q.Get("ref") != "feature" || q.Get("recursive") != "true" {
+			t.Errorf("unexpected query %s", r.URL.RawQuery)
+		}
+		page := q.Get("page")
+		if page == "1" {
+			w.Header().Set("X-Next-Page", "2")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(pages[page]))
+	}))
+	t.Cleanup(server.Close)
+
+	dirs, err := newNoRetryTestClient(t, server).ListRepoDirectories(context.Background(), "zapier/terraform-services", "services/api", "feature")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"services/api/staging", "services/api/staging/main-us-west-2"}
+	if strings.Join(dirs, ",") != strings.Join(want, ",") {
+		t.Fatalf("expected %v, got %v", want, dirs)
+	}
+}
+
+func TestListRepoDirectoriesMissingDirIsEmpty(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"message":"404 Tree Not Found"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	dirs, err := newNoRetryTestClient(t, server).ListRepoDirectories(context.Background(), "zapier/terraform-services", "services/gone", "feature")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dirs) != 0 {
+		t.Fatalf("expected no directories, got %v", dirs)
+	}
+}
