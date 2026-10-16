@@ -22,6 +22,9 @@ const ProjectConfigFilename = `.tfbuddy.yaml`
 
 type ProjectConfig struct {
 	Workspaces []*TFCWorkspace `yaml:"workspaces"`
+	// Discover derives further workspaces from the repository's directory
+	// layout; see DiscoverRule.
+	Discover []*DiscoverRule `yaml:"discover,omitempty"`
 }
 
 // Finds the workspace with the deepest matching directory suffix.
@@ -161,9 +164,15 @@ type TFCWorkspace struct {
 	Mode         string   `yaml:"mode" default:"apply-before-merge" validate:"one_of=apply-before-merge,merge-before-apply,tfc-vcs-repo"`
 	TriggerDirs  []string `yaml:"triggerDirs"`
 	AutoMerge    bool     `yaml:"autoMerge" default:"true"`
+
+	// Discovered marks a workspace derived by a DiscoverRule rather than
+	// listed in the config file. It cannot be set from YAML.
+	Discovered bool `yaml:"-"`
 }
 
-func getProjectConfigFile(ctx context.Context, gl vcs.GitClient, trigger *TFCTrigger) (*ProjectConfig, error) {
+// getProjectConfigFile returns the project config and the branch it was read
+// from, which is also the branch its discover rules list directories on.
+func getProjectConfigFile(ctx context.Context, gl vcs.GitClient, trigger *TFCTrigger) (*ProjectConfig, string, error) {
 	ctx, span := otel.Tracer(trigger.tracerName()).Start(ctx, "getProjectConfigFile")
 	defer span.End()
 
@@ -175,11 +184,12 @@ func getProjectConfigFile(ctx context.Context, gl vcs.GitClient, trigger *TFCTri
 			log.Info().Err(err).Msg(fmt.Sprintf("no file on branch %s", branch))
 			continue
 		}
-		return loadProjectConfig(trigger.appCfg, b)
+		cfg, err := loadProjectConfig(trigger.appCfg, b)
+		return cfg, branch, err
 	}
 	log.Warn().Msg("could not retrieve .tfbuddy.yaml for repo")
 
-	return nil, utils.CreatePermanentError(errors.New("could not retrieve .tfbuddy.yaml for repo"))
+	return nil, "", utils.CreatePermanentError(errors.New("could not retrieve .tfbuddy.yaml for repo"))
 }
 
 func loadProjectConfig(appCfg config.Config, b []byte) (*ProjectConfig, error) {
@@ -195,9 +205,19 @@ func loadProjectConfig(appCfg config.Config, b []byte) (*ProjectConfig, error) {
 			ws.Organization = defaultOrgName
 		}
 	}
+	for _, r := range cfg.Discover {
+		if r.Organization == "" {
+			r.Organization = defaultOrgName
+		}
+	}
 
 	if err := validate.Validate(cfg); err != nil {
 		return nil, utils.CreatePermanentError(err)
+	}
+	for _, r := range cfg.Discover {
+		if err := r.validate(); err != nil {
+			return nil, utils.CreatePermanentError(err)
+		}
 	}
 
 	return cfg, nil

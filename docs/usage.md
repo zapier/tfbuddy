@@ -175,6 +175,50 @@ TF Buddy uses [doublestar](https://github.com/bmatcuk/doublestar#about) for its 
 * `terraform/staging/{foo,bar}/**` - anything that has `terraform/staging/foo` or `terraform/staging/bar` as an ancestor
 * `terraform/staging/**/[^0-9]*` - anything that has `terraform/staging` as an ancestor and does _not_ start with an integer
 
+##### Discovering workspaces from the directory layout
+
+When workspace names follow the directory layout, a `discover` rule can stand in
+for one entry per workspace. A repo with one workspace per
+`services/<service>/<env>/<cell>/` directory needs only this:
+
+```yaml
+discover:
+    # Every directory matching dir is a workspace. Each `*` matches exactly one
+    # directory name; there is no `**` here.
+  - dir: services/*/*/*/
+    # Directories that dir matches but that are not workspaces.
+    exclude:
+      - services/*/*/files
+    # {1}, {2}, {3} are the names the first, second and third `*` matched.
+    # The name must use every `*`, so that two directories never share a name.
+    name: services-{1}-{2}-{3}
+    triggerDirs:
+      - services/{1}/{2}
+      - services/{1}/{2}/files/**
+    # organization, mode and autoMerge work as they do for a workspace entry.
+workspaces:
+  - name: workspaces-root
+    dir: workspaces/
+```
+
+With this rule, `services/api/staging/main-us-west-2/` is the workspace
+`services-api-staging-main-us-west-2`, planned when an MR changes a file in that
+directory, in `services/api/staging/`, or under `services/api/staging/files/`.
+
+* Workspaces are found on the MR's source branch, so a new directory is planned
+  in the MR that adds it, and a deleted one is no longer planned.
+* TF Buddy only lists the directories an MR's changes can reach; for the rule
+  above, that is one listing per `services/<service>/<env>/` changed. A
+  `tfc plan -w <name>` for a workspace the MR does not touch lists everything
+  the rule matches.
+* An entry under `workspaces` takes precedence over a discovered workspace with
+  the same name or `dir`, which is how to name one directory differently.
+* If two directories produce the same workspace name, the run fails rather than
+  pointing both at one workspace; add an explicit entry for one of them.
+* YAML treats `{` as syntax at the start of a value and anywhere inside a
+  `[a, b]` list, so quote such values (`name: "{1}-{2}"`) or use block lists
+  as above.
+
 ### GitLab auto-merge
 
 TFBuddy records the complete set of workspaces affected by each GitLab MR commit.

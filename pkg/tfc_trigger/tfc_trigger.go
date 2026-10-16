@@ -310,7 +310,7 @@ func (t *TFCTrigger) getTriggeredWorkspaces(ctx context.Context, modifiedFiles [
 	ctx, span := otel.Tracer(t.tracerName()).Start(ctx, "getTriggeredWorkspaces")
 	defer span.End()
 
-	cfg, err := getProjectConfigFile(ctx, t.gl, t)
+	cfg, cfgBranch, err := getProjectConfigFile(ctx, t.gl, t)
 	if err != nil {
 		if t.GetTriggerSource() == CommentTrigger {
 			return nil, nil, fmt.Errorf("could not read .tfbuddy.yml file for this repo. %w", err)
@@ -320,15 +320,34 @@ func (t *TFCTrigger) getTriggeredWorkspaces(ctx context.Context, modifiedFiles [
 		return nil, nil, nil
 	}
 
+	listDirs := func(ctx context.Context, dir string) ([]string, error) {
+		return t.gl.ListRepoDirectories(ctx, t.GetProjectNameWithNamespace(), dir, cfgBranch)
+	}
+	if err := cfg.discoverWorkspaces(ctx, listDirs, modifiedFiles); err != nil {
+		return nil, nil, fmt.Errorf("could not discover workspaces. %w", err)
+	}
+
 	affectedWorkspaces := cfg.triggeredWorkspaces(modifiedFiles)
 	var triggeredWorkspaces []*TFCWorkspace
 	if t.GetWorkspace() != "" {
-		var providedWS *TFCWorkspace
-		for _, ws := range cfg.Workspaces {
-			log.Debug().Msg(ws.Name)
-			if t.GetWorkspace() == ws.Name {
-				providedWS = ws
+		findProvidedWS := func() *TFCWorkspace {
+			var providedWS *TFCWorkspace
+			for _, ws := range cfg.Workspaces {
+				log.Debug().Msg(ws.Name)
+				if t.GetWorkspace() == ws.Name {
+					providedWS = ws
+				}
 			}
+			return providedWS
+		}
+		providedWS := findProvidedWS()
+		if providedWS == nil && len(cfg.Discover) > 0 {
+			// The MR's changes do not reach the named workspace, so only a
+			// listing of every directory the rules could match can find it.
+			if err := cfg.discoverAllWorkspaces(ctx, listDirs); err != nil {
+				return nil, nil, fmt.Errorf("could not discover workspaces. %w", err)
+			}
+			providedWS = findProvidedWS()
 		}
 		if providedWS == nil {
 			log.Warn().Str("workspace_arg", t.GetWorkspace()).Msg("provided workspace not configured for project")

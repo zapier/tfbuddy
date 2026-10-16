@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -1481,5 +1482,139 @@ func TestTFCEvents_UnlockAlreadyUnlocked_StillRemovesTags(t *testing.T) {
 	}
 	if len(triggeredWS.Executed) != 1 {
 		t.Fatal("expected unlock to still proceed and remove tags")
+	}
+}
+
+func discoverProjectConfig() *tfc_trigger.ProjectConfig {
+	return &tfc_trigger.ProjectConfig{
+		Discover: []*tfc_trigger.DiscoverRule{{
+			Dir:          "services/*/*/*/",
+			Exclude:      []string{"services/*/*/files"},
+			Name:         "services-{1}-{2}-{3}",
+			Organization: "zapier-test",
+			Mode:         "apply-before-merge",
+			TriggerDirs:  []string{"services/{1}/{2}", "services/{1}/{2}/files/**"},
+			AutoMerge:    true,
+		}},
+	}
+}
+
+// TestTFCEvents_DiscoveredWorkspacesPlan verifies that an env-level change
+// plans every cell a discover rule finds in that env, listing only the env.
+func TestTFCEvents_DiscoveredWorkspacesPlan(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: discoverProjectConfig()}, t)
+	testSuite.MockGitClient.EXPECT().GetMergeRequestModifiedFiles(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS).Return([]string{"services/api/staging/variables.tf"}, nil).AnyTimes()
+	testSuite.MockGitClient.EXPECT().ListRepoDirectories(gomock.Any(), testSuite.MetaData.ProjectNameNS, "services/api/staging", testSuite.MetaData.SourceBranch).Return([]string{
+		"services/api/staging/main-us-west-2",
+		"services/api/staging/global-us-east-1",
+		"services/api/staging/files",
+	}, nil).Times(1)
+
+	for _, ws := range []string{"services-api-staging-main-us-west-2", "services-api-staging-global-us-east-1"} {
+		testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, fmt.Sprintf("Starting TFC plan for Workspace: `zapier-test/%s`.\n<!-- tfbuddy:ws=%s:action=plan -->", ws, ws)).Return(testSuite.MockGitDisc, nil)
+	}
+	var runDirs []string
+	testSuite.MockApiClient.EXPECT().CreateRunFromSource(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, opts *tfc_api.ApiRunOptions) (*tfe.Run, error) {
+		runDirs = append(runDirs, opts.Workspace+"="+opts.Path)
+		return &tfe.Run{
+			ID: "101",
+			Workspace: &tfe.Workspace{Name: opts.Workspace,
+				Organization: &tfe.Organization{Name: "zapier-test"},
+			},
+			ConfigurationVersion: &tfe.ConfigurationVersion{Speculative: true}}, nil
+	}).Times(2)
+	mockRunPollingTask := mocks.NewMockRunPollingTask(mockCtrl)
+	mockRunPollingTask.EXPECT().Schedule(gomock.Any()).Times(2)
+	testSuite.MockStreamClient.EXPECT().NewTFRunPollingTask(gomock.Any(), time.Second*1).Return(mockRunPollingTask).Times(2)
+
+	testSuite.InitTestSuite()
+
+	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
+		Action:                   tfc_trigger.PlanAction,
+		Branch:                   testSuite.MetaData.SourceBranch,
+		CommitSHA:                "abcd12233",
+		ProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
+		MergeRequestIID:          testSuite.MetaData.MRIID,
+		TriggerSource:            tfc_trigger.CommentTrigger,
+	})
+	trigger := tfc_trigger.NewTFCTrigger(config.C, testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	triggeredWS, err := trigger.TriggerTFCEvents(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(triggeredWS.Errored) > 0 {
+		t.Fatal("unexpected failed workspaces", triggeredWS.Errored)
+	}
+	executed := append([]string(nil), triggeredWS.Executed...)
+	sort.Strings(executed)
+	want := []string{"services-api-staging-global-us-east-1", "services-api-staging-main-us-west-2"}
+	if strings.Join(executed, ",") != strings.Join(want, ",") {
+		t.Fatalf("expected workspaces %v, got %v", want, executed)
+	}
+	for _, rd := range runDirs {
+		ws, dir, _ := strings.Cut(rd, "=")
+		cell := strings.TrimPrefix(ws, "services-api-staging-")
+		if !strings.HasSuffix(dir, "services/api/staging/"+cell) && !strings.HasSuffix(dir, "services/api/staging/"+cell+"/") {
+			t.Errorf("workspace %s ran from %q, want its cell directory", ws, dir)
+		}
+	}
+}
+
+// TestTFCEvents_DiscoveredWorkspaceNamedExplicitly verifies that `-w` reaches
+// a discovered workspace the MR's changes do not touch.
+func TestTFCEvents_DiscoveredWorkspaceNamedExplicitly(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: discoverProjectConfig()}, t)
+	testSuite.MockGitClient.EXPECT().GetMergeRequestModifiedFiles(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS).Return([]string{"services/api/staging/main-us-west-2/main.tf"}, nil).AnyTimes()
+	gomock.InOrder(
+		testSuite.MockGitClient.EXPECT().ListRepoDirectories(gomock.Any(), testSuite.MetaData.ProjectNameNS, "services/api/staging", testSuite.MetaData.SourceBranch).Return([]string{
+			"services/api/staging/main-us-west-2",
+		}, nil),
+		testSuite.MockGitClient.EXPECT().ListRepoDirectories(gomock.Any(), testSuite.MetaData.ProjectNameNS, "services", testSuite.MetaData.SourceBranch).Return([]string{
+			"services/api",
+			"services/api/staging",
+			"services/api/staging/main-us-west-2",
+			"services/web",
+			"services/web/production",
+			"services/web/production/main-us-east-1",
+		}, nil),
+	)
+
+	const ws = "services-web-production-main-us-east-1"
+	testSuite.MockGitClient.EXPECT().CreateMergeRequestDiscussion(gomock.Any(), testSuite.MetaData.MRIID, testSuite.MetaData.ProjectNameNS, fmt.Sprintf("Starting TFC plan for Workspace: `zapier-test/%s`.\n<!-- tfbuddy:ws=%s:action=plan -->", ws, ws)).Return(testSuite.MockGitDisc, nil)
+	testSuite.MockApiClient.EXPECT().CreateRunFromSource(gomock.Any(), gomock.Any()).Return(&tfe.Run{
+		ID: "101",
+		Workspace: &tfe.Workspace{Name: ws,
+			Organization: &tfe.Organization{Name: "zapier-test"},
+		},
+		ConfigurationVersion: &tfe.ConfigurationVersion{Speculative: true}}, nil)
+	mockRunPollingTask := mocks.NewMockRunPollingTask(mockCtrl)
+	mockRunPollingTask.EXPECT().Schedule(gomock.Any())
+	testSuite.MockStreamClient.EXPECT().NewTFRunPollingTask(gomock.Any(), time.Second*1).Return(mockRunPollingTask)
+
+	testSuite.InitTestSuite()
+
+	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
+		Action:                   tfc_trigger.PlanAction,
+		Branch:                   testSuite.MetaData.SourceBranch,
+		CommitSHA:                "abcd12233",
+		ProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
+		MergeRequestIID:          testSuite.MetaData.MRIID,
+		TriggerSource:            tfc_trigger.CommentTrigger,
+		Workspace:                ws,
+	})
+	trigger := tfc_trigger.NewTFCTrigger(config.C, testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	triggeredWS, err := trigger.TriggerTFCEvents(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(triggeredWS.Errored) > 0 {
+		t.Fatal("unexpected failed workspaces", triggeredWS.Errored)
+	}
+	if len(triggeredWS.Executed) != 1 || triggeredWS.Executed[0] != ws {
+		t.Fatalf("expected workspace %s, got %v", ws, triggeredWS.Executed)
 	}
 }

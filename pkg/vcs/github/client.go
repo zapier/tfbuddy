@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -293,6 +294,69 @@ func (c *Client) GetRepoFile(ctx context.Context, fullName string, file string, 
 		}
 
 		return []byte(contents), nil
+	}, createBackOffWithRetries())
+}
+
+// ListRepoDirectories returns every directory below dir at ref, recursively,
+// relative to the repo root. A dir that does not exist at ref yields nothing.
+func (c *Client) ListRepoDirectories(ctx context.Context, fullName, dir, ref string) ([]string, error) {
+	ctx, span := otel.Tracer("TFC").Start(ctx, "ListRepoDirectories")
+	defer span.End()
+
+	if ref == "" {
+		ref = "HEAD"
+	}
+	parts, err := splitFullName(fullName)
+	if err != nil {
+		return nil, err
+	}
+	return backoff.RetryWithData(func() ([]string, error) {
+		// The trees API takes a tree SHA or a ref, so a subdirectory is resolved
+		// to its tree SHA through its parent's listing first.
+		treeSHA := ref
+		if dir != "" {
+			parent := filepath.ToSlash(filepath.Dir(dir))
+			if parent == "." {
+				parent = ""
+			}
+			_, entries, resp, err := c.client.Repositories.GetContents(ctx, parts[0], parts[1], parent, &gogithub.RepositoryContentGetOptions{Ref: ref})
+			if err != nil {
+				if resp != nil && resp.StatusCode == http.StatusNotFound {
+					return nil, nil
+				}
+				return nil, permanentError(resp, err)
+			}
+			treeSHA = ""
+			for _, e := range entries {
+				if e.GetPath() == dir && e.GetType() == "dir" {
+					treeSHA = e.GetSHA()
+				}
+			}
+			if treeSHA == "" {
+				return nil, nil
+			}
+		}
+
+		tree, resp, err := c.client.Git.GetTree(ctx, parts[0], parts[1], treeSHA, true)
+		if err != nil {
+			if resp != nil && resp.StatusCode == http.StatusNotFound {
+				return nil, nil
+			}
+			return nil, permanentError(resp, err)
+		}
+		// A truncated tree would silently drop directories, and with them the
+		// workspaces discovered from them.
+		if tree.GetTruncated() {
+			return nil, utils.CreatePermanentError(fmt.Errorf("tree of %q at %s is too large to list", dir, ref))
+		}
+
+		var dirs []string
+		for _, e := range tree.Entries {
+			if e.GetType() == "tree" {
+				dirs = append(dirs, filepath.ToSlash(filepath.Join(dir, e.GetPath())))
+			}
+		}
+		return dirs, nil
 	}, createBackOffWithRetries())
 }
 
