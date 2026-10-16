@@ -155,6 +155,8 @@ func TestDiscoverRule_listRoots(t *testing.T) {
 		{"service-level file", []string{"services/api/README.md"}, nil},
 		{"unrelated file", []string{"README.md", "scripts/check.py"}, nil},
 		{"nested dir inside a cell", []string{"services/api/staging/main-us-west-2/modules/x/main.tf"}, nil},
+		{"directory ending with a cell", []string{"archive/services/api/staging/main-us-west-2/main.tf"}, []string{"services/api/staging"}},
+		{"directory name ending with a cell's first segment", []string{"oldservices/api/staging/main-us-west-2/main.tf"}, []string{"services/api/staging"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -265,6 +267,8 @@ workspaces:
 		{"services/api/production/main-us-east-1/main.tf", "services/web/staging/main-us-west-2/main.tf"},
 		{"services/api/README.md"},
 		{"README.md"},
+		{"archive/services/api/staging/main-us-west-2/main.tf"},
+		{"oldservices/api/staging/main-us-west-2/main.tf"},
 	} {
 		cfg := mustLoadDiscoverConfig(t, tfbuddyYamlDiscover)
 		cfg.Workspaces = nil
@@ -581,5 +585,78 @@ func Test_placeholderInClass(t *testing.T) {
 		if got := placeholderInClass(glob); got != want {
 			t.Errorf("placeholderInClass(%q) = %v, want %v", glob, got, want)
 		}
+	}
+}
+
+func TestProjectConfig_discoverWorkspacesTwoNamesForOneDir(t *testing.T) {
+	// Each rule is triggered by its own dependency. Without the check, a
+	// change to blue/ would plan services/api/prod as blue-api-prod and a
+	// change to green/ would plan it as green-api-prod.
+	const rules = `---
+discover:
+  - dir: services/*/*/
+    name: blue-{1}-{2}
+    organization: foo-corp
+    triggerDirs:
+      - blue/{1}/{2}
+  - dir: services/*/*/
+    name: green-{1}-{2}
+    organization: foo-corp
+    triggerDirs:
+      - green/{1}/{2}
+`
+	for _, modified := range []string{"blue/api/prod/x.tf", "green/api/prod/x.tf", "services/api/prod/main.tf"} {
+		cfg := mustLoadDiscoverConfig(t, rules)
+		repo := &fakeRepo{dirs: []string{"services", "services/api", "services/api/prod"}}
+		err := cfg.discoverWorkspaces(context.Background(), repo.list, []string{modified})
+		if err == nil || !strings.Contains(err.Error(), `for dir "services/api/prod"`) && !strings.Contains(err.Error(), `for dir "services/api/prod/"`) {
+			t.Errorf("%s: expected an error naming services/api/prod, got %v", modified, err)
+		}
+	}
+
+	// Excluding the directory from one rule resolves it.
+	cfg := mustLoadDiscoverConfig(t, strings.Replace(rules, "    name: green-{1}-{2}\n", "    name: green-{1}-{2}\n    exclude: [services/api/prod]\n", 1))
+	repo := &fakeRepo{dirs: []string{"services", "services/api", "services/api/prod"}}
+	if err := cfg.discoverWorkspaces(context.Background(), repo.list, []string{"blue/api/prod/x.tf"}); err != nil {
+		t.Fatalf("expected the exclusion to resolve it, got %v", err)
+	}
+}
+
+func TestDiscoverRule_listRootsLeadingWildcardSuffix(t *testing.T) {
+	// The suffix "foo/api" of "x/foo/api" may start part-way into a
+	// directory name ("oo/api"), so the leading wildcard stays unset and the
+	// whole repo is listed.
+	cfg := mustLoadDiscoverConfig(t, `---
+discover:
+  - dir: "*/api/"
+    name: "{1}-api"
+    organization: foo-corp
+`)
+	if diff := cmp.Diff([]string{""}, cfg.Discover[0].listRoots([]string{"x/foo/api/main.tf"})); diff != "" {
+		t.Errorf("listRoots() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestProjectConfig_discoverWorkspacesSuffixMatchesExplicitConfig(t *testing.T) {
+	// The example from review: an explicit services/api/ is triggered by a
+	// change in archive/services/api/, so the discovered one must be too.
+	modified := []string{"archive/services/api/main.tf"}
+	explicit := mustLoadDiscoverConfig(t, "workspaces:\n  - name: services-api\n    organization: foo-corp\n    dir: services/api/\n")
+	cfg := mustLoadDiscoverConfig(t, `---
+discover:
+  - dir: services/*/
+    name: services-{1}
+    organization: foo-corp
+`)
+	repo := &fakeRepo{dirs: []string{"services", "services/api", "archive", "archive/services", "archive/services/api"}}
+	if err := cfg.discoverWorkspaces(context.Background(), repo.list, modified); err != nil {
+		t.Fatal(err)
+	}
+	want := workspaceNames(explicit.triggeredWorkspaces(modified))
+	if diff := cmp.Diff([]string{"services-api"}, want); diff != "" {
+		t.Fatalf("explicit config no longer suffix-matches (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(want, workspaceNames(cfg.triggeredWorkspaces(modified))); diff != "" {
+		t.Errorf("triggered workspaces mismatch (-explicit +discovered):\n%s", diff)
 	}
 }

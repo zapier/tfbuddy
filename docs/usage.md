@@ -209,6 +209,9 @@ directory, in `services/api/staging/`, or under `services/api/staging/files/`.
   in the MR that adds it, and a deleted one is no longer planned. When an MR is
   merged or closed, TF Buddy also looks on the target branch to release its
   locks, since the source branch may already be deleted.
+* As with explicit entries, a change in a directory whose path ends with a
+  workspace's `dir` also triggers it: `archive/services/api/staging/main-us-west-2/`
+  triggers `services-api-staging-main-us-west-2`.
 * TF Buddy only lists the directories an MR's changes can reach; for the rule
   above, that is one listing per `services/<service>/<env>/` changed. A
   `tfc plan -w <name>` for a workspace the MR does not touch lists everything

@@ -168,6 +168,42 @@ func (r *DiscoverRule) matchDir(dir string) ([]string, bool) {
 	return captures, true
 }
 
+// matchDirSuffix reports whether some directory the rule matches could
+// trigger through dir, and returns the wildcard values that pins down.
+// workspaceForDir triggers a workspace whose dir ends dir as a string, so
+// dir "services/api/" is triggered by a change in "archive/services/api/"
+// and even in "oldservices/api/". The first segment of such a suffix may be
+// only part of a directory name, so a wildcard there stays unset ("").
+func (r *DiscoverRule) matchDirSuffix(dir string) ([]string, bool) {
+	if captures, ok := r.matchDir(dir); ok {
+		return captures, true
+	}
+	pattern := r.dirSegments()
+	segs := strings.Split(strings.Trim(dir, "/"), "/")
+	if len(segs) < len(pattern) {
+		return nil, false
+	}
+	tail := segs[len(segs)-len(pattern):]
+	captures := make([]string, r.wildcards())
+	w := 0
+	for i, seg := range pattern {
+		switch {
+		case seg == "*":
+			if i > 0 {
+				captures[w] = tail[i]
+			}
+			w++
+		case i == 0:
+			if !strings.HasSuffix(tail[0], seg) {
+				return nil, false
+			}
+		case seg != tail[i]:
+			return nil, false
+		}
+	}
+	return captures, true
+}
+
 // matchTriggerDir reports whether p matches the triggerDir template td, and
 // returns whichever of the rule's wildcards td pins down. A placeholder only
 // pins its wildcard when it fills a whole path segment ahead of any `**` or
@@ -224,7 +260,7 @@ func (r *DiscoverRule) listRoots(modifiedFiles []string) []string {
 	var roots []string
 	for _, mf := range modifiedFiles {
 		dir := path.Dir(mf)
-		if captures, ok := r.matchDir(dir); ok {
+		if captures, ok := r.matchDirSuffix(dir); ok {
 			roots = append(roots, r.listRoot(captures))
 		}
 		for _, td := range r.TriggerDirs {
@@ -522,8 +558,9 @@ func (cfg *ProjectConfig) discoverFromRoots(ctx context.Context, idx *dirIndex, 
 	return discovered, nil
 }
 
-// checkNamesUnique fails when a directory the listings so far did not reach
-// would derive the same workspace name as one discovered. Two MRs would then
+// checkNamesUnique fails when another rule would give a discovered
+// directory a different workspace name, or when a directory the listings so
+// far did not reach would derive the same workspace name as one discovered. Two MRs would then
 // plan different directories against one workspace, and neither MR's listing
 // shows the other directory. For each discovered name it works out every
 // directory any rule could derive that name from, and checks whether those
@@ -531,6 +568,22 @@ func (cfg *ProjectConfig) discoverFromRoots(ctx context.Context, idx *dirIndex, 
 // listing everything every rule matches.
 func (cfg *ProjectConfig) checkNamesUnique(ctx context.Context, idx *dirIndex, discovered []discoveredWorkspace) error {
 	for _, d := range discovered {
+		// Every rule that matches the directory must give it the same name, or
+		// the workspace an MR plans would depend on which rule's triggerDirs it
+		// happened to touch.
+		dir := strings.TrimSuffix(d.ws.Dir, "/")
+		for _, r := range cfg.Discover {
+			if r == d.rule || r.excluded(dir) {
+				continue
+			}
+			if captures, ok := r.matchDir(dir); ok {
+				if name := r.workspace(dir, captures).Name; name != d.ws.Name {
+					return utils.CreatePermanentError(fmt.Errorf(
+						"discover rules derive both workspace %q and workspace %q for dir %q; exclude it from one rule or add an explicit workspace entry",
+						d.ws.Name, name, dir))
+				}
+			}
+		}
 		for _, r := range cfg.Discover {
 			splits, complete := r.nameSplits(d.ws.Name)
 			if !complete {
