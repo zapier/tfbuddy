@@ -185,3 +185,37 @@ GitLab still enforces approvals, conflicts, and required pipeline checks.
 Every affected workspace must use `mode: apply-before-merge` and have
 `autoMerge: true`. If any affected workspace disables auto-merge, TFBuddy will
 not auto-merge that commit. Targeted applies never satisfy the aggregate.
+
+### Workspace locks
+
+`tfc apply` locks the workspace for its merge request by tagging it
+`tfbuddylock-<MR number>`. Until that MR merges or closes, TFBuddy refuses
+applies to the workspace from any other MR. TFBuddy removes the tag when the MR
+merges or closes; if that was missed, the next apply from another MR removes it.
+
+#### Locks held by automation
+
+Automation that applies through the Terraform Cloud API rather than an MR can
+hold the same lock, so that TFBuddy and the automation never apply one
+workspace at the same time. Its tag is `tfbuddylock-<holder>`, where `<holder>`
+starts with a letter and uses only lowercase letters, digits, `-`, `_` and `:`,
+for example `tfbuddylock-selfserve-payments-api`.
+
+While such a tag is on a workspace, TFBuddy refuses `tfc apply` and names the
+holder in the MR. It never removes the tag itself, because no MR state says when
+it is stale; `tfc unlock -w <workspace>` clears every `tfbuddylock-*` tag on the
+workspace, including this one, if a holder fails without releasing it.
+
+Tags are not an atomic lock, so a holder acquires it in this order:
+
+1. List the workspace's tags matching `tfbuddylock`. If any lock tag other
+   than its own is present, wait and retry.
+2. Add its own `tfbuddylock-<holder>` tag.
+3. List the tags again. If a lock tag appeared that was not there in step 1,
+   remove its own tag and retry later.
+4. Run the plan and apply.
+5. Remove its own tag by its exact name.
+
+TFBuddy follows the same order: after adding its tag it lists the tags again
+and backs off, releasing the tag it just added, if another lock appeared in the
+meantime.
