@@ -41,11 +41,13 @@ const (
 
 const tfPrefix = "tfbuddylock"
 
-var tagRegex = regexp.MustCompile(fmt.Sprintf("%s\\-(\\d+)", tfPrefix))
+// tagRegex matches a lock held by a merge request. It is anchored so that an
+// external holder containing "tfbuddylock-<n>" is never read as MR <n>.
+var tagRegex = regexp.MustCompile(fmt.Sprintf("^%s-(\\d+)$", tfPrefix))
 
 // externalLockRegex matches a lock held by something other than a merge
 // request, such as automation that applies through the TFC API. The holder
-// starts with a letter so it can never be read as an MR number, and uses only
+// starts with a letter, so no tag matches both this and tagRegex, and uses only
 // characters TFC allows in a tag (which it also lowercases).
 var externalLockRegex = regexp.MustCompile(fmt.Sprintf("^%s-([a-z][a-z0-9_:-]*)$", tfPrefix))
 
@@ -282,11 +284,7 @@ func FindLockingMR(ctx context.Context, tags []string, thisMR string) string {
 // acquires or releases these itself; it only refuses to apply while one exists.
 func FindExternalLock(tags []string) string {
 	for _, tag := range tags {
-		tag = strings.TrimSpace(tag)
-		if tagRegex.MatchString(tag) {
-			continue
-		}
-		if matches := externalLockRegex.FindStringSubmatch(tag); matches != nil {
+		if matches := externalLockRegex.FindStringSubmatch(strings.TrimSpace(tag)); matches != nil {
 			return matches[1]
 		}
 	}
@@ -336,20 +334,20 @@ func (t *TFCTrigger) postUpdate(ctx context.Context, msg string) error {
 
 }
 
-// getLockTags returns the workspace's tfbuddylock-* tags. A lookup error is
-// logged and treated as no tags, so a TFC API blip does not block applies.
-func (t *TFCTrigger) getLockTags(ctx context.Context, workspace string) []string {
+// getLockTags returns the workspace's tfbuddylock-* tags.
+func (t *TFCTrigger) getLockTags(ctx context.Context, workspace string) ([]string, error) {
 	ctx, span := otel.Tracer("TFC").Start(ctx, "getLockTags")
 	defer span.End()
 
 	tags, err := t.tfc.GetTagsByQuery(ctx, workspace, tfPrefix)
 	if err != nil {
 		log.Error().Err(err).Str("workspace", workspace).Msg("could not read lock tags")
+		return nil, err
 	}
 	if len(tags) == 0 {
 		log.Info().Msg("no tags returned")
 	}
-	return tags
+	return tags, nil
 }
 
 func (t *TFCTrigger) getTriggeredWorkspaces(ctx context.Context, modifiedFiles []string) ([]*TFCWorkspace, []*TFCWorkspace, error) {
@@ -892,7 +890,12 @@ func (t *TFCTrigger) triggerRunForWorkspace(ctx context.Context, cfgWS *TFCWorks
 	// Otherwise, TFC wil queue an apply, which might put them out of order
 	if isApply {
 		thisMR := fmt.Sprintf("%d", t.GetMergeRequestIID())
-		lockTags := t.getLockTags(ctx, ws.ID)
+		// An unreadable lock state is not an unlocked one: refuse rather than
+		// apply over a lock we could not see.
+		lockTags, err := t.getLockTags(ctx, ws.ID)
+		if err != nil {
+			return fmt.Errorf("could not read the workspace lock tags. %w", err)
+		}
 		lockingMR := FindLockingMR(ctx, lockTags, thisMR)
 		externalLock := FindExternalLock(lockTags)
 		if ws.Locked {
@@ -956,13 +959,24 @@ func (t *TFCTrigger) triggerRunForWorkspace(ctx context.Context, cfgWS *TFCWorks
 		}
 		// Tags are not an atomic lock: another writer can pass the same checks
 		// before either tag lands. Re-read and back off if a lock appeared since
-		// the check above, so the two writers never both apply.
-		if contender := newLockHolder(ctx, lockTags, t.getLockTags(ctx, ws.ID), thisMR); contender != "" {
-			if !alreadyHeld {
-				if removeErr := t.tfc.RemoveTagsByName(ctx, ws.ID, []string{ownTag}); removeErr != nil {
-					log.Warn().Err(removeErr).Str("workspace", wsName).Msg("could not release lock tag after losing the race")
-				}
+		// the check above, so the two writers never both apply. Backing off
+		// releases only a tag this attempt added; one held from an earlier apply
+		// still protects what that apply changed.
+		releaseNewTag := func() {
+			if alreadyHeld {
+				return
 			}
+			if removeErr := t.tfc.RemoveTagsByName(ctx, ws.ID, []string{ownTag}); removeErr != nil {
+				log.Warn().Err(removeErr).Str("workspace", wsName).Msg("could not release lock tag after backing off")
+			}
+		}
+		currentTags, err := t.getLockTags(ctx, ws.ID)
+		if err != nil {
+			releaseNewTag()
+			return fmt.Errorf("could not verify the workspace lock after acquiring it. %w", err)
+		}
+		if contender := newLockHolder(ctx, lockTags, currentTags, thisMR); contender != "" {
+			releaseNewTag()
 			return fmt.Errorf("workspace was locked by %s while this MR was acquiring the lock. Retry once it is released. %w", contender, utils.ErrPermanent)
 		}
 	}

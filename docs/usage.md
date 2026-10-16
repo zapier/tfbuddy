@@ -211,11 +211,15 @@ Tags are not an atomic lock, so a holder acquires it in this order:
 1. List the workspace's tags matching `tfbuddylock`. If any lock tag other
    than its own is present, wait and retry.
 2. Add its own `tfbuddylock-<holder>` tag.
-3. List the tags again. If a lock tag appeared that was not there in step 1,
-   remove its own tag and retry later.
+3. List the tags again. If a lock tag other than its own appeared that was not
+   there in step 1, remove its own tag and retry later.
 4. Run the plan and apply.
 5. Remove its own tag by its exact name.
 
+If either listing fails, treat the workspace as locked: do not apply, and if
+the tag was added in step 2, remove it.
+
 TFBuddy follows the same order: after adding its tag it lists the tags again
-and backs off, releasing the tag it just added, if another lock appeared in the
-meantime.
+and backs off if another lock appeared in the meantime. It also refuses the
+apply when it cannot list the tags. Backing off releases the tag only if this
+attempt added it, so a lock the MR already held from an earlier apply stays.
