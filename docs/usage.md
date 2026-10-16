@@ -191,7 +191,9 @@ not auto-merge that commit. Targeted applies never satisfy the aggregate.
 `tfc apply` locks the workspace for its merge request by tagging it
 `tfbuddylock-<MR number>`. Until that MR merges or closes, TFBuddy refuses
 applies to the workspace from any other MR. TFBuddy removes the tag when the MR
-merges or closes; if that was missed, the next apply from another MR removes it.
+merges or closes; if that was missed, the next apply from another MR removes it
+(by exact name) after checking that the MR has merged or closed. Every other
+MR's tag on the workspace is checked this way, not just the first one.
 
 #### Locks held by automation
 
@@ -213,8 +215,8 @@ Tags are not an atomic lock, so a holder acquires it in this order:
 1. List the workspace's tags matching `tfbuddylock`. If any lock tag other
    than its own is present, wait and retry.
 2. Add its own `tfbuddylock-<holder>` tag.
-3. List the tags again. If a lock tag other than its own appeared that was not
-   there in step 1, remove its own tag and retry later.
+3. List the tags again. If any lock tag other than its own is present, remove
+   its own tag and retry later.
 4. Run the plan and apply.
 5. Remove its own tag by its exact name.
 
@@ -222,7 +224,7 @@ If either listing fails, treat the workspace as locked: do not apply, and if
 the tag was added in step 2, remove it.
 
 TFBuddy follows the same order: after adding its tag it lists the tags again
-and backs off if another lock appeared in the meantime. It also refuses the
+and backs off if any lock other than its own is present. It also refuses the
 apply when it cannot list the tags. Backing off keeps the MR's tag, because
 every apply attempt for an MR shares that tag and another attempt may already
 be running under it. The MR therefore holds the workspace until it merges or
