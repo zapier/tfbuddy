@@ -114,6 +114,9 @@ func (r *DiscoverRule) validate() error {
 		if !doublestar.ValidatePattern(placeholderRE.ReplaceAllString(td, "*")) {
 			return fmt.Errorf("discover rule %q: invalid triggerDir pattern %q", r.Dir, td)
 		}
+		if placeholderInClass(td) {
+			return fmt.Errorf("discover rule %q: triggerDir %q has a placeholder inside [...], which makes it a set of characters rather than a directory name", r.Dir, td)
+		}
 	}
 	for _, ex := range r.Exclude {
 		if !doublestar.ValidatePattern(strings.Trim(ex, "/")) {
@@ -121,6 +124,29 @@ func (r *DiscoverRule) validate() error {
 		}
 	}
 	return nil
+}
+
+// placeholderInClass reports whether a placeholder sits inside a [...]
+// character class of glob. Matching a triggerDir before its placeholders are
+// filled stands `*` in for each one, which inside a class matches only a
+// literal `*`, so such a triggerDir would never find its workspaces.
+func placeholderInClass(glob string) bool {
+	inClass := false
+	for i := 0; i < len(glob); i++ {
+		switch c := glob[i]; {
+		case c == '\\':
+			i++ // the next character is literal
+		case c == '[' && !inClass:
+			inClass = true
+		case c == ']' && inClass:
+			inClass = false
+		case c == '{' && inClass:
+			if loc := placeholderRE.FindStringIndex(glob[i:]); loc != nil && loc[0] == 0 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // matchDir returns the directory names dir's wildcards matched, if dir

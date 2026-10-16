@@ -123,6 +123,7 @@ func Test_loadProjectConfig_discoverInvalid(t *testing.T) {
 		{"invalid exclude", "dir: services/*/\n    name: api-{1}\n    exclude: ['services/[']", "invalid exclude"},
 		{"invalid mode", "dir: services/*/\n    name: api-{1}\n    mode: sometimes", "one_of"},
 		{"missing name", "dir: services/*/", "Name"},
+		{"placeholder in character class", "dir: services/*/\n    name: api-{1}\n    triggerDirs: ['shared/[{1}]']", "inside [...]"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -563,5 +564,22 @@ func Test_loadProjectConfig_emptyEntries(t *testing.T) {
 				t.Fatalf("expected an empty-entry error, got %v", err)
 			}
 		})
+	}
+}
+
+func Test_placeholderInClass(t *testing.T) {
+	tests := map[string]bool{
+		"shared/[{1}]":       true,
+		"shared/x[a{1}]/y":   true,
+		"shared/{1}":         false,
+		"shared/[ab]/{1}":    false,
+		`shared/\[{1}\]`:     false,
+		"{shared,other}/{1}": false,
+		"services/{1}/[!.]*": false,
+	}
+	for glob, want := range tests {
+		if got := placeholderInClass(glob); got != want {
+			t.Errorf("placeholderInClass(%q) = %v, want %v", glob, got, want)
+		}
 	}
 }
