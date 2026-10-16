@@ -1357,8 +1357,9 @@ func TestTFCEvents_ExternalLock_RejectsApply(t *testing.T) {
 }
 
 // TestTFCEvents_LockRace_BacksOff verifies that when another writer tags the
-// workspace between this MR's check and its own tag, the MR releases its tag
-// and does not apply.
+// workspace between this MR's check and its own tag, the MR does not apply. It
+// keeps its tag: another apply attempt for the same MR may already be running
+// under it, so no RemoveTagsByName call is expected.
 func TestTFCEvents_LockRace_BacksOff(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
@@ -1369,7 +1370,6 @@ func TestTFCEvents_LockRace_BacksOff(t *testing.T) {
 		testSuite.MockApiClient.EXPECT().AddTags(gomock.Any(), gomock.Any(), "tfbuddylock", "101").Return(nil),
 		testSuite.MockApiClient.EXPECT().GetTagsByQuery(gomock.Any(), gomock.Any(), "tfbuddylock").
 			Return([]string{"tfbuddylock-101", "tfbuddylock-selfserve-zip502-canary"}, nil),
-		testSuite.MockApiClient.EXPECT().RemoveTagsByName(gomock.Any(), gomock.Any(), []string{"tfbuddylock-101"}).Return(nil),
 	)
 
 	triggeredWS := runLockTestApply(t, testSuite)
@@ -1481,39 +1481,18 @@ func TestTFCEvents_LockCheck_ReadFailure_Refuses(t *testing.T) {
 	}
 }
 
-// TestTFCEvents_LockVerify_ReadFailure_ReleasesNewTag verifies that a failed
-// re-read after acquiring refuses the apply and releases the tag it just added.
-func TestTFCEvents_LockVerify_ReadFailure_ReleasesNewTag(t *testing.T) {
+// TestTFCEvents_LockVerify_ReadFailure_KeepsTag verifies that a failed re-read
+// after acquiring refuses the apply but keeps the MR's tag. Two deliveries for
+// the same MR share that tag: if attempt A verified and started its run, a
+// failure in attempt B must not unlock the workspace under A's run, so no
+// RemoveTagsByName call is expected even though B added the tag itself.
+func TestTFCEvents_LockVerify_ReadFailure_KeepsTag(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	testSuite := lockTestSuite(t, mockCtrl)
 
 	gomock.InOrder(
 		testSuite.MockApiClient.EXPECT().GetTagsByQuery(gomock.Any(), gomock.Any(), "tfbuddylock").Return(nil, nil),
-		testSuite.MockApiClient.EXPECT().AddTags(gomock.Any(), gomock.Any(), "tfbuddylock", "101").Return(nil),
-		testSuite.MockApiClient.EXPECT().GetTagsByQuery(gomock.Any(), gomock.Any(), "tfbuddylock").
-			Return(nil, fmt.Errorf("tfc api blip")),
-		testSuite.MockApiClient.EXPECT().RemoveTagsByName(gomock.Any(), gomock.Any(), []string{"tfbuddylock-101"}).Return(nil),
-	)
-
-	triggeredWS := runLockTestApply(t, testSuite)
-
-	if len(triggeredWS.Executed) != 0 || len(triggeredWS.Errored) != 1 ||
-		!strings.Contains(triggeredWS.Errored[0].Error, "could not verify the workspace lock after acquiring it") {
-		t.Fatalf("expected a lock-verify error, got executed=%v errored=%v", triggeredWS.Executed, triggeredWS.Errored)
-	}
-}
-
-// TestTFCEvents_LockVerify_ReadFailure_KeepsLockAlreadyHeld verifies that a
-// failed re-read does not release a lock this MR held from an earlier apply.
-func TestTFCEvents_LockVerify_ReadFailure_KeepsLockAlreadyHeld(t *testing.T) {
-	mockCtrl := gomock.NewController(t)
-	defer mockCtrl.Finish()
-	testSuite := lockTestSuite(t, mockCtrl)
-
-	gomock.InOrder(
-		testSuite.MockApiClient.EXPECT().GetTagsByQuery(gomock.Any(), gomock.Any(), "tfbuddylock").
-			Return([]string{"tfbuddylock-101"}, nil),
 		testSuite.MockApiClient.EXPECT().AddTags(gomock.Any(), gomock.Any(), "tfbuddylock", "101").Return(nil),
 		testSuite.MockApiClient.EXPECT().GetTagsByQuery(gomock.Any(), gomock.Any(), "tfbuddylock").
 			Return(nil, fmt.Errorf("tfc api blip")),

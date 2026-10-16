@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -947,8 +946,6 @@ func (t *TFCTrigger) triggerRunForWorkspace(ctx context.Context, cfgWS *TFCWorks
 			}
 		}
 		// Acquire the tag-based lock for the current MR
-		ownTag := fmt.Sprintf("%s-%s", tfPrefix, thisMR)
-		alreadyHeld := slices.Contains(lockTags, ownTag)
 		err = t.tfc.AddTags(ctx,
 			ws.ID,
 			tfPrefix,
@@ -959,25 +956,19 @@ func (t *TFCTrigger) triggerRunForWorkspace(ctx context.Context, cfgWS *TFCWorks
 		}
 		// Tags are not an atomic lock: another writer can pass the same checks
 		// before either tag lands. Re-read and back off if a lock appeared since
-		// the check above, so the two writers never both apply. Backing off
-		// releases only a tag this attempt added; one held from an earlier apply
-		// still protects what that apply changed.
-		releaseNewTag := func() {
-			if alreadyHeld {
-				return
-			}
-			if removeErr := t.tfc.RemoveTagsByName(ctx, ws.ID, []string{ownTag}); removeErr != nil {
-				log.Warn().Err(removeErr).Str("workspace", wsName).Msg("could not release lock tag after backing off")
-			}
-		}
+		// the check above, so the two writers never both apply.
+		//
+		// Backing off keeps the tag. Every apply attempt for this MR shares it,
+		// so removing it here could drop the lock another attempt's run is
+		// relying on. Like after any apply, the MR holds the workspace until it
+		// merges or closes, or until `tfc unlock` clears it.
 		currentTags, err := t.getLockTags(ctx, ws.ID)
 		if err != nil {
-			releaseNewTag()
 			return fmt.Errorf("could not verify the workspace lock after acquiring it. %w", err)
 		}
 		if contender := newLockHolder(ctx, lockTags, currentTags, thisMR); contender != "" {
-			releaseNewTag()
-			return fmt.Errorf("workspace was locked by %s while this MR was acquiring the lock. Retry once it is released. %w", contender, utils.ErrPermanent)
+			return fmt.Errorf("workspace was locked by %s while this MR was acquiring the lock. Retry once it is released, or clear both locks with `tfc unlock -w %s`. %w",
+				contender, wsName, utils.ErrPermanent)
 		}
 	}
 	// create a new Merge Request discussion thread where status updates will be nested

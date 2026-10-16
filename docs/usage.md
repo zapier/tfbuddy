@@ -198,8 +198,10 @@ merges or closes; if that was missed, the next apply from another MR removes it.
 Automation that applies through the Terraform Cloud API rather than an MR can
 hold the same lock, so that TFBuddy and the automation never apply one
 workspace at the same time. Its tag is `tfbuddylock-<holder>`, where `<holder>`
-starts with a letter and uses only lowercase letters, digits, `-`, `_` and `:`,
-for example `tfbuddylock-selfserve-payments-api`.
+starts with a letter and uses only lowercase letters, digits, `-`, `_` and `:`.
+Make the holder unique to each attempt, for example by including the workflow
+run ID (`tfbuddylock-selfserve-payments-api-run-8f2c`), so that one attempt
+removing its tag can never unlock the workspace under another attempt.
 
 While such a tag is on a workspace, TFBuddy refuses `tfc apply` and names the
 holder in the MR. It never removes the tag itself, because no MR state says when
@@ -221,5 +223,8 @@ the tag was added in step 2, remove it.
 
 TFBuddy follows the same order: after adding its tag it lists the tags again
 and backs off if another lock appeared in the meantime. It also refuses the
-apply when it cannot list the tags. Backing off releases the tag only if this
-attempt added it, so a lock the MR already held from an earlier apply stays.
+apply when it cannot list the tags. Backing off keeps the MR's tag, because
+every apply attempt for an MR shares that tag and another attempt may already
+be running under it. The MR therefore holds the workspace until it merges or
+closes, as after any apply. If two MRs collide this way, both stay locked until
+one of them runs `tfc unlock -w <workspace>`.
