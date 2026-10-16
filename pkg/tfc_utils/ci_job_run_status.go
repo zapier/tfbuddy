@@ -12,6 +12,7 @@ import (
 
 	"github.com/zapier/tfbuddy/internal/config"
 	"github.com/zapier/tfbuddy/pkg/tfc_api"
+	"github.com/zapier/tfbuddy/pkg/vcs"
 	"github.com/zapier/tfbuddy/pkg/vcs/gitlab"
 	"go.opentelemetry.io/otel"
 
@@ -19,7 +20,6 @@ import (
 	gogitlab "gitlab.com/gitlab-org/api/client-go"
 )
 
-const TFC_RUN_STATUS_PREFIX = `Terraform Cloud/`
 const TFC_POLICY_STATUS_PREFIX = `sentinel/`
 const TFC_NO_CHANGE = "Run not triggered: Terraform working directories did not change."
 
@@ -59,8 +59,8 @@ func MonitorRunStatus() {
 	commentBody := ""
 	wg := sync.WaitGroup{}
 	for _, s := range statuses {
-		if strings.HasPrefix(s.Name, TFC_RUN_STATUS_PREFIX) {
-			workspace := strings.Replace(s.Name, TFC_RUN_STATUS_PREFIX, "", 1)
+		if strings.HasPrefix(s.Name, vcs.CommitStatusPrefix) {
+			workspace := strings.TrimPrefix(s.Name, vcs.CommitStatusPrefix)
 			if s.Description != TFC_NO_CHANGE {
 				// extract runID from targetURL
 				urlParts := strings.SplitAfter(s.TargetURL, "/")
