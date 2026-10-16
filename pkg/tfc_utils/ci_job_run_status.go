@@ -2,187 +2,124 @@ package tfc_utils
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"os"
-	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/zapier/tfbuddy/internal/config"
-	"github.com/zapier/tfbuddy/pkg/tfc_api"
 	"github.com/zapier/tfbuddy/pkg/vcs"
 	"github.com/zapier/tfbuddy/pkg/vcs/gitlab"
-	"go.opentelemetry.io/otel"
 
-	"github.com/hashicorp/go-tfe"
 	gogitlab "gitlab.com/gitlab-org/api/client-go"
 )
 
-const TFC_POLICY_STATUS_PREFIX = `sentinel/`
-const TFC_NO_CHANGE = "Run not triggered: Terraform working directories did not change."
-
-var (
-	glClient  *gitlab.GitlabClient
-	tfcClient tfc_api.ApiClient
+// Terminal states a TFBuddy commit status can reach. Anything else (pending,
+// running, created) is still in flight.
+const (
+	statusSuccess  = "success"
+	statusFailed   = "failed"
+	statusCanceled = "canceled"
 )
 
-const MR_COMMENT_FORMAT = `
-### Terraform Cloud
-%s
-`
-const MR_RUN_DETAILS_FORMAT = `
-#### Workspace: %s
+// How often the job re-reads commit statuses while waiting, and the ceiling
+// for a plan that TFBuddy has started but not finished.
+const (
+	statusPollInterval = 15 * time.Second
+	planWait           = 60 * time.Minute
+)
 
-**Status**: %s
+// verdict is what MonitorRunStatus decided about a commit's TFBuddy statuses.
+type verdict int
 
-[%s](%s)
+const (
+	// verdictWaiting: TFBuddy has not published anything for the commit yet.
+	verdictWaiting verdict = iota
+	// verdictPlanning: TFBuddy has started at least one plan that is not done.
+	verdictPlanning
+	// verdictFailed: a plan or apply ended in failure.
+	verdictFailed
+	// verdictOK: every plan finished without failure. A pending apply is not
+	// waited for; it is the user's `tfc apply` comment that clears it, and the
+	// pending status already keeps the pipeline from reporting success.
+	verdictOK
+)
 
-%s
----
-`
-
+// MonitorRunStatus is the body of the `tfc status` CI job. It fails the job
+// when TFBuddy never published a commit status for the pipeline's commit, which
+// is the case when the webhook for the push was not delivered, and when a plan
+// TFBuddy did run failed. Both would otherwise leave the merge request pipeline
+// green with no Terraform plan behind it.
 func MonitorRunStatus() {
 	cfg, err := config.Load()
 	if err != nil {
-		log.Printf("error loading config: %v", err)
-		return
+		log.Fatalf("error loading config: %v", err)
 	}
-	glClient = gitlab.NewGitlabClient(cfg)
-	tfcClient = tfc_api.NewTFCClient()
+	glClient := gitlab.NewGitlabClient(cfg)
 	ctx := context.Background()
 
 	projectID := os.Getenv("CI_PROJECT_ID")
 	sha := os.Getenv("CI_COMMIT_SHA")
-	statuses := glClient.GetCommitStatuses(ctx, projectID, sha)
-	commentBody := ""
-	wg := sync.WaitGroup{}
-	for _, s := range statuses {
-		if strings.HasPrefix(s.Name, vcs.CommitStatusPrefix) {
-			workspace := strings.TrimPrefix(s.Name, vcs.CommitStatusPrefix)
-			if s.Description != TFC_NO_CHANGE {
-				// extract runID from targetURL
-				urlParts := strings.SplitAfter(s.TargetURL, "/")
-				runID := urlParts[len(urlParts)-1]
 
-				description := s.Description
-				switch s.Status {
-				case "pending":
-					description = ""
-					commentBody += fmt.Sprintf(MR_RUN_DETAILS_FORMAT, workspace, s.Status, s.TargetURL, s.TargetURL, description)
-					st := s
-					wg.Add(1)
-					go waitForRunCompletionOrFailure(ctx, &wg, st, workspace, runID)
-				case "success":
-					fallthrough
-				case "failed":
-					// get run summary
-					postRunSummary(ctx, s, workspace, runID)
-				}
+	triggerDeadline := time.Now().Add(cfg.StatusTriggerWait)
+	planDeadline := time.Now().Add(planWait)
+	for {
+		statuses := tfbuddyStatuses(glClient.GetCommitStatuses(ctx, projectID, sha))
+		v := evaluate(statuses)
+		for _, s := range statuses {
+			log.Printf("%s: %s %s", s.Name, s.Status, s.TargetURL)
+		}
+
+		switch v {
+		case verdictOK:
+			log.Printf("TFBuddy planned %s; see the merge request for plan output.", sha)
+			return
+		case verdictFailed:
+			log.Fatalf("a TFBuddy run for %s failed; fix the plan and push again.", sha)
+		case verdictWaiting:
+			if time.Now().After(triggerDeadline) {
+				log.Fatalf("TFBuddy published no commit status for %s within %s. "+
+					"It did not see this commit (the GitLab webhook may not have been delivered). "+
+					"Comment `tfc plan` on the merge request, then retry this job.",
+					sha, cfg.StatusTriggerWait)
+			}
+			log.Printf("no TFBuddy status on %s yet; waiting", sha)
+		case verdictPlanning:
+			if time.Now().After(planDeadline) {
+				log.Fatalf("a TFBuddy plan for %s has not finished within %s.", sha, planWait)
 			}
 		}
+		time.Sleep(statusPollInterval)
 	}
-	postCommentBody(ctx, commentBody)
-
-	wg.Wait()
 }
 
-func postCommentBody(ctx context.Context, commentBody string) {
-	if commentBody != "" {
-		projectID := os.Getenv("CI_PROJECT_ID")
-		mrIID, err := strconv.Atoi(os.Getenv("CI_MERGE_REQUEST_IID"))
-		if err != nil {
-			log.Printf("erroring posting comment: %v", err)
+// tfbuddyStatuses keeps only the statuses TFBuddy publishes; everything else on
+// the commit is the project's own CI.
+func tfbuddyStatuses(statuses []*gogitlab.CommitStatus) []*gogitlab.CommitStatus {
+	var out []*gogitlab.CommitStatus
+	for _, s := range statuses {
+		if strings.HasPrefix(s.Name, vcs.CommitStatusPrefix) {
+			out = append(out, s)
 		}
-		glClient.CreateMergeRequestComment(ctx, mrIID, projectID, fmt.Sprintf(MR_COMMENT_FORMAT, commentBody))
 	}
+	return out
 }
 
-var successPlanSummaryFormat = `
-  * Additions: %d
-  * Changes: %d
-  * Destructions: %d
-
-*Click Terraform Cloud URL to see detailed plan output*
-
-**Merge MR to apply changes**
-`
-
-var failedPlanSummaryFormat = `
-*Click Terraform Cloud URL to see detailed plan output*
-`
-
-func postRunSummary(ctx context.Context, commitStatus *gogitlab.CommitStatus, wsName, runID string) {
-	//run, _ := tfcClient.Client.Runs.ReadWithOptions(context.Background(), runID, &tfe.RunReadOptions{Include: "plan"})
-	run, err := tfcClient.GetRun(ctx, runID)
-	if err != nil {
-		log.Printf("err: %v\n", err)
-		return
+// evaluate turns TFBuddy's statuses for a commit into a verdict. Status names
+// are "<prefix><action>/<workspace>"; only the plan action has to settle.
+func evaluate(statuses []*gogitlab.CommitStatus) verdict {
+	if len(statuses) == 0 {
+		return verdictWaiting
 	}
-
-	description := ""
-
-	switch run.Status {
-	case tfe.RunErrored:
-		description = failedPlanSummaryFormat
-	default:
-		description = fmt.Sprintf(successPlanSummaryFormat, run.Plan.ResourceAdditions, run.Plan.ResourceChanges, run.Plan.ResourceDestructions)
-	}
-
-	commentBody := fmt.Sprintf(MR_RUN_DETAILS_FORMAT, wsName, run.Status, commitStatus.TargetURL, commitStatus.TargetURL, description)
-	postCommentBody(ctx, commentBody)
-}
-
-func waitForRunCompletionOrFailure(ctx context.Context, wg *sync.WaitGroup, commitStatus *gogitlab.CommitStatus, wsName, runID string) {
-	ctx, span := otel.Tracer("TFC").Start(ctx, "waitForRunCompletionOrFailure")
-	defer span.End()
-	defer wg.Done()
-
-	attempts := 360
-	retryInterval := 10 * time.Second
-
-	for i := 0; i < attempts; i++ {
-		time.Sleep(retryInterval)
-
-		log.Println("Reading Run details.", runID)
-		run, err := tfcClient.GetRun(ctx, runID)
-		if err != nil {
-			log.Printf("err: %v\n", err)
+	v := verdictOK
+	for _, s := range statuses {
+		action, _, _ := strings.Cut(strings.TrimPrefix(s.Name, vcs.CommitStatusPrefix), "/")
+		switch {
+		case s.Status == statusFailed || s.Status == statusCanceled:
+			return verdictFailed
+		case action == "plan" && s.Status != statusSuccess:
+			v = verdictPlanning
 		}
-
-		printRunInfo(run, "Run Details", wsName)
-		if isRunning(run) {
-			continue
-		}
-
-		postRunSummary(ctx, commitStatus, wsName, runID)
-		break
 	}
-}
-
-func isRunning(run *tfe.Run) bool {
-	// Get current run
-	if run == nil {
-		return false
-	}
-
-	switch run.Status {
-	case "apply_queued":
-		fallthrough
-	case "applying":
-		fallthrough
-	case "cost_estimating":
-		fallthrough
-	case "plan_queued":
-		fallthrough
-	case "policy_checking":
-		fallthrough
-	case "planning":
-		fallthrough
-	case "pending":
-		return true
-	}
-
-	return false
+	return v
 }
