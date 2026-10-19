@@ -575,12 +575,24 @@ func (cfg *ProjectConfig) checkNamesUnique(ctx context.Context, idx *dirIndex, d
 			if r == d.rule || r.excluded(dir) {
 				continue
 			}
-			if captures, ok := r.matchDir(dir); ok {
-				if other := r.workspace(dir, captures); !sameWorkspace(other, d.ws) {
-					return utils.CreatePermanentError(fmt.Errorf(
-						"discover rules derive both workspace %q and workspace %q for dir %q; exclude it from one rule or add an explicit workspace entry",
-						workspaceID(d.ws), workspaceID(other), dir))
+			captures, ok := r.matchDir(dir)
+			if !ok {
+				continue
+			}
+			switch other := r.workspace(dir, captures); {
+			case cfg.hasExplicit(other):
+				// An explicit entry claims that workspace, so the rule does
+				// not derive it here; addDiscovered skips it the same way.
+			case sameWorkspace(other, d.ws):
+				// Whichever rules the MR reached, the workspace gets every
+				// rule's triggerDirs.
+				if err := mergeDefinition(d.ws, other); err != nil {
+					return err
 				}
+			default:
+				return utils.CreatePermanentError(fmt.Errorf(
+					"discover rules derive both workspace %q and workspace %q for dir %q; exclude it from one rule or add an explicit workspace entry",
+					workspaceID(d.ws), workspaceID(other), dir))
 			}
 		}
 		for _, r := range cfg.Discover {
@@ -613,6 +625,16 @@ func (cfg *ProjectConfig) checkNamesUnique(ctx context.Context, idx *dirIndex, d
 	return nil
 }
 
+// hasExplicit reports whether an explicit entry claims ws's workspace or dir.
+func (cfg *ProjectConfig) hasExplicit(ws *TFCWorkspace) bool {
+	for _, existing := range cfg.Workspaces {
+		if !existing.Discovered && (sameWorkspace(existing, ws) || sameDir(existing.Dir, ws.Dir)) {
+			return true
+		}
+	}
+	return false
+}
+
 func (cfg *ProjectConfig) hasExplicitDir(dir string) bool {
 	for _, ws := range cfg.Workspaces {
 		if !ws.Discovered && sameDir(ws.Dir, dir) {
@@ -625,7 +647,8 @@ func (cfg *ProjectConfig) hasExplicitDir(dir string) bool {
 // addDiscovered adds ws unless an explicit workspace already claims the same
 // workspace or dir, which lets an explicit entry override discovery for one
 // directory, and reports whether it did. A workspace is its organization and
-// name. Two discovered directories claiming one workspace, or one directory
+// name. Another rule deriving the same workspace for the same dir merges into
+// it (see mergeDefinition). Two discovered directories claiming one workspace, or one directory
 // claimed as two workspaces, is a config error: planning both would let each
 // overwrite the other, or put one directory's code in two states.
 func (cfg *ProjectConfig) addDiscovered(ws *TFCWorkspace) (bool, error) {
@@ -634,8 +657,11 @@ func (cfg *ProjectConfig) addDiscovered(ws *TFCWorkspace) (bool, error) {
 		if !same && !sameDir(existing.Dir, ws.Dir) {
 			continue
 		}
-		if !existing.Discovered || (same && sameDir(existing.Dir, ws.Dir)) {
+		if !existing.Discovered {
 			return false, nil
+		}
+		if same && sameDir(existing.Dir, ws.Dir) {
+			return false, mergeDefinition(existing, ws)
 		}
 		return false, utils.CreatePermanentError(fmt.Errorf(
 			"discover rules derive workspace %q for dir %q and workspace %q for dir %q; add an explicit workspace entry to resolve it",
@@ -643,6 +669,24 @@ func (cfg *ProjectConfig) addDiscovered(ws *TFCWorkspace) (bool, error) {
 	}
 	cfg.Workspaces = append(cfg.Workspaces, ws)
 	return true, nil
+}
+
+// mergeDefinition adds ws's triggerDirs to existing, the same workspace for
+// the same dir as derived by another rule, so each rule's dependencies
+// trigger it. Rules that disagree on how the workspace runs are a config
+// error.
+func mergeDefinition(existing, ws *TFCWorkspace) error {
+	if existing.Mode != ws.Mode || existing.AutoMerge != ws.AutoMerge {
+		return utils.CreatePermanentError(fmt.Errorf(
+			"discover rules derive workspace %q for dir %q with different mode or autoMerge; make the rules agree or add an explicit workspace entry",
+			workspaceID(ws), strings.TrimSuffix(ws.Dir, "/")))
+	}
+	for _, td := range ws.TriggerDirs {
+		if !slices.Contains(existing.TriggerDirs, td) {
+			existing.TriggerDirs = append(existing.TriggerDirs, td)
+		}
+	}
+	return nil
 }
 
 // sameWorkspace reports whether a and b are the same TFC workspace.

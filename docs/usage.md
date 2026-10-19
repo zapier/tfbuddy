@@ -219,7 +219,9 @@ directory, in `services/api/staging/`, or under `services/api/staging/files/`.
 * An entry under `workspaces` takes precedence over a discovered workspace with
   the same name or `dir`, which is how to name one directory differently.
 * If two rules give one directory different workspaces (a different name or
-  organization), the run fails; exclude the directory from one rule.
+  organization), the run fails; exclude the directory from one rule. Rules
+  that give it the same workspace combine their `triggerDirs`, and must agree
+  on `mode` and `autoMerge`.
 * If two directories produce the same workspace name, the run fails rather than
   pointing both at one workspace; add an explicit entry for one of them. With
   `services-{1}-{2}`, for example, `services/a-b/c/` and `services/a/b-c/` both

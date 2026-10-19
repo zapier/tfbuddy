@@ -742,3 +742,85 @@ discover:
 		t.Errorf("triggered workspaces mismatch (-explicit +discovered):\n%s", diff)
 	}
 }
+
+const tfbuddyYamlBlueGreenSameWorkspace = `---
+discover:
+  - dir: services/*/*/
+    name: svc-{1}-{2}
+    organization: foo-corp
+    triggerDirs:
+      - blue/{1}/{2}
+  - dir: services/*/*/
+    name: svc-{1}-{2}
+    organization: foo-corp
+    triggerDirs:
+      - green/{1}/{2}
+`
+
+func TestProjectConfig_discoverWorkspacesRulesForSameWorkspaceMerge(t *testing.T) {
+	dirs := []string{"services", "services/api", "services/api/dev", "services/api/prod"}
+
+	// The example from review: both dependencies change in one MR.
+	modified := []string{"blue/api/dev/x.tf", "green/api/prod/x.tf"}
+	cfg := mustLoadDiscoverConfig(t, tfbuddyYamlBlueGreenSameWorkspace)
+	if err := cfg.discoverWorkspaces(context.Background(), (&fakeRepo{dirs: dirs}).list, modified); err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff([]string{"svc-api-dev", "svc-api-prod"}, workspaceNames(cfg.triggeredWorkspaces(modified))); diff != "" {
+		t.Errorf("triggered workspaces mismatch (-want +got):\n%s", diff)
+	}
+
+	// Reaching only one rule still gives the workspace both rules'
+	// triggerDirs, which the target-branch divergence check relies on.
+	cfg = mustLoadDiscoverConfig(t, tfbuddyYamlBlueGreenSameWorkspace)
+	if err := cfg.discoverWorkspaces(context.Background(), (&fakeRepo{dirs: dirs}).list, []string{"blue/api/prod/x.tf"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, ws := range cfg.Workspaces {
+		if ws.Name == "svc-api-prod" {
+			if diff := cmp.Diff([]string{"blue/api/prod", "green/api/prod"}, ws.TriggerDirs); diff != "" {
+				t.Errorf("svc-api-prod triggerDirs mismatch (-want +got):\n%s", diff)
+			}
+		}
+	}
+}
+
+func TestProjectConfig_discoverWorkspacesRulesForSameWorkspaceMustAgree(t *testing.T) {
+	cfg := mustLoadDiscoverConfig(t, tfbuddyYamlBlueGreenSameWorkspace+"    mode: merge-before-apply\n")
+	dirs := []string{"services", "services/api", "services/api/prod"}
+	err := cfg.discoverWorkspaces(context.Background(), (&fakeRepo{dirs: dirs}).list, []string{"blue/api/prod/x.tf"})
+	if err == nil || !strings.Contains(err.Error(), "different mode or autoMerge") {
+		t.Fatalf("expected a conflicting-definition error, got %v", err)
+	}
+}
+
+func TestProjectConfig_discoverWorkspacesExplicitEntryClaimsOtherRulesWorkspace(t *testing.T) {
+	// The example from review: an explicit green-api elsewhere means the green
+	// rule does not derive green-api for services/api, which stays blue-api.
+	const rules = `---
+discover:
+  - dir: services/*/
+    name: blue-{1}
+    organization: foo-corp
+  - dir: services/*/
+    name: green-{1}
+    organization: foo-corp
+workspaces:
+  - name: green-api
+    organization: foo-corp
+    dir: legacy/api/
+`
+	dirs := []string{"services", "services/api", "legacy", "legacy/api"}
+	modified := []string{"services/api/main.tf"}
+	cfg := mustLoadDiscoverConfig(t, rules)
+	if err := cfg.discoverWorkspaces(context.Background(), (&fakeRepo{dirs: dirs}).list, modified); err != nil {
+		t.Fatalf("scoped discovery: unexpected error %v", err)
+	}
+	if diff := cmp.Diff([]string{"blue-api"}, workspaceNames(cfg.triggeredWorkspaces(modified))); diff != "" {
+		t.Errorf("triggered workspaces mismatch (-want +got):\n%s", diff)
+	}
+	full := mustLoadDiscoverConfig(t, rules)
+	if err := full.discoverAllWorkspaces(context.Background(), (&fakeRepo{dirs: dirs}).list); err != nil {
+		t.Fatalf("full discovery: unexpected error %v", err)
+	}
+}
