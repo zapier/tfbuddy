@@ -173,11 +173,9 @@ func (r *DiscoverRule) matchDir(dir string) ([]string, bool) {
 // workspaceForDir triggers a workspace whose dir ends dir as a string, so
 // dir "services/api/" is triggered by a change in "archive/services/api/"
 // and even in "oldservices/api/". The first segment of such a suffix may be
-// only part of a directory name, so a wildcard there stays unset ("").
+// only part of a directory name, so a wildcard there stays unset (""), even
+// when dir is exactly as deep as the rule: "oldfoo/api/" triggers "foo/api/".
 func (r *DiscoverRule) matchDirSuffix(dir string) ([]string, bool) {
-	if captures, ok := r.matchDir(dir); ok {
-		return captures, true
-	}
 	pattern := r.dirSegments()
 	segs := strings.Split(strings.Trim(dir, "/"), "/")
 	if len(segs) < len(pattern) {
@@ -559,8 +557,9 @@ func (cfg *ProjectConfig) discoverFromRoots(ctx context.Context, idx *dirIndex, 
 }
 
 // checkNamesUnique fails when another rule would give a discovered
-// directory a different workspace name, or when a directory the listings so
-// far did not reach would derive the same workspace name as one discovered. Two MRs would then
+// directory a different workspace (organization or name), or when a directory
+// the listings so far did not reach would derive the same workspace as one
+// discovered. Two MRs would then
 // plan different directories against one workspace, and neither MR's listing
 // shows the other directory. For each discovered name it works out every
 // directory any rule could derive that name from, and checks whether those
@@ -568,23 +567,28 @@ func (cfg *ProjectConfig) discoverFromRoots(ctx context.Context, idx *dirIndex, 
 // listing everything every rule matches.
 func (cfg *ProjectConfig) checkNamesUnique(ctx context.Context, idx *dirIndex, discovered []discoveredWorkspace) error {
 	for _, d := range discovered {
-		// Every rule that matches the directory must give it the same name, or
-		// the workspace an MR plans would depend on which rule's triggerDirs it
-		// happened to touch.
+		// Every rule that matches the directory must give it the same
+		// workspace, or the workspace an MR plans would depend on which rule's
+		// triggerDirs it happened to touch.
 		dir := strings.TrimSuffix(d.ws.Dir, "/")
 		for _, r := range cfg.Discover {
 			if r == d.rule || r.excluded(dir) {
 				continue
 			}
 			if captures, ok := r.matchDir(dir); ok {
-				if name := r.workspace(dir, captures).Name; name != d.ws.Name {
+				if other := r.workspace(dir, captures); !sameWorkspace(other, d.ws) {
 					return utils.CreatePermanentError(fmt.Errorf(
 						"discover rules derive both workspace %q and workspace %q for dir %q; exclude it from one rule or add an explicit workspace entry",
-						d.ws.Name, name, dir))
+						workspaceID(d.ws), workspaceID(other), dir))
 				}
 			}
 		}
 		for _, r := range cfg.Discover {
+			// A rule in another organization derives a different workspace,
+			// whatever its name.
+			if r.Organization != d.ws.Organization {
+				continue
+			}
 			splits, complete := r.nameSplits(d.ws.Name)
 			if !complete {
 				return cfg.discoverAll(ctx, idx)
@@ -601,7 +605,7 @@ func (cfg *ProjectConfig) checkNamesUnique(ctx context.Context, idx *dirIndex, d
 				if exists {
 					return utils.CreatePermanentError(fmt.Errorf(
 						"discover rules derive workspace %q from both %q and %q; add an explicit workspace entry for one of them",
-						d.ws.Name, strings.TrimSuffix(d.ws.Dir, "/"), dir))
+						workspaceID(d.ws), strings.TrimSuffix(d.ws.Dir, "/"), dir))
 				}
 			}
 		}
@@ -618,25 +622,37 @@ func (cfg *ProjectConfig) hasExplicitDir(dir string) bool {
 	return false
 }
 
-// addDiscovered adds ws unless an explicit workspace already claims its name
-// or dir, which lets an explicit entry override discovery for one directory,
-// and reports whether it did. Two discovered directories claiming one
-// workspace name is a config error: planning both against the same workspace
-// would let each overwrite the other.
+// addDiscovered adds ws unless an explicit workspace already claims the same
+// workspace or dir, which lets an explicit entry override discovery for one
+// directory, and reports whether it did. A workspace is its organization and
+// name. Two discovered directories claiming one workspace, or one directory
+// claimed as two workspaces, is a config error: planning both would let each
+// overwrite the other, or put one directory's code in two states.
 func (cfg *ProjectConfig) addDiscovered(ws *TFCWorkspace) (bool, error) {
 	for _, existing := range cfg.Workspaces {
-		if existing.Name != ws.Name && !sameDir(existing.Dir, ws.Dir) {
+		same := sameWorkspace(existing, ws)
+		if !same && !sameDir(existing.Dir, ws.Dir) {
 			continue
 		}
-		if !existing.Discovered || (existing.Name == ws.Name && sameDir(existing.Dir, ws.Dir)) {
+		if !existing.Discovered || (same && sameDir(existing.Dir, ws.Dir)) {
 			return false, nil
 		}
 		return false, utils.CreatePermanentError(fmt.Errorf(
 			"discover rules derive workspace %q for dir %q and workspace %q for dir %q; add an explicit workspace entry to resolve it",
-			existing.Name, existing.Dir, ws.Name, ws.Dir))
+			workspaceID(existing), existing.Dir, workspaceID(ws), ws.Dir))
 	}
 	cfg.Workspaces = append(cfg.Workspaces, ws)
 	return true, nil
+}
+
+// sameWorkspace reports whether a and b are the same TFC workspace.
+func sameWorkspace(a, b *TFCWorkspace) bool {
+	return a.Organization == b.Organization && a.Name == b.Name
+}
+
+// workspaceID names a workspace as organization/name.
+func workspaceID(ws *TFCWorkspace) string {
+	return ws.Organization + "/" + ws.Name
 }
 
 // sameDir compares workspace dirs, whose trailing slash is optional.

@@ -320,7 +320,7 @@ discover:
 `)
 	repo := &fakeRepo{dirs: []string{"services/a-b/c", "services/a/b-c"}}
 	err := cfg.discoverAllWorkspaces(context.Background(), repo.list)
-	if err == nil || !strings.Contains(err.Error(), `"services-a-b-c"`) {
+	if err == nil || !strings.Contains(err.Error(), `"foo-corp/services-a-b-c"`) {
 		t.Fatalf("expected a duplicate workspace error, got %v", err)
 	}
 }
@@ -387,7 +387,7 @@ discover:
 		wantErr string
 	}{
 		{name: "collision outside the listed root", dirs: []string{"services/a-b", "services/a-b/c", "services/a", "services/a/b-c"},
-			wantErr: `workspace "services-a-b-c" from both "services/a-b/c" and "services/a/b-c"`},
+			wantErr: `workspace "foo-corp/services-a-b-c" from both "services/a-b/c" and "services/a/b-c"`},
 		{name: "no other directory", dirs: []string{"services/a-b", "services/a-b/c", "services/a", "services/a/other"}},
 		{name: "explicit entry owns the other directory", dirs: []string{"services/a-b", "services/a-b/c", "services/a", "services/a/b-c"},
 			extra: "workspaces:\n  - name: legacy-a\n    organization: foo-corp\n    dir: services/a/b-c\n"},
@@ -455,7 +455,7 @@ discover:
 		"services/abcdefghijk", "services/abcdefghijk/lmnop", "services/abcdefghijk/lmnop/qrstuv",
 	}}
 	err := cfg.discoverWorkspaces(context.Background(), repo.list, []string{"services/abcdefghij/klmnop/qrstuv/main.tf"})
-	if err == nil || !strings.Contains(err.Error(), `"abcdefghijklmnopqrstuv"`) {
+	if err == nil || !strings.Contains(err.Error(), `"foo-corp/abcdefghijklmnopqrstuv"`) {
 		t.Fatalf("expected a duplicate workspace error, got %v", err)
 	}
 	if got := repo.listed[len(repo.listed)-1]; got != "services" {
@@ -654,6 +654,88 @@ discover:
 	}
 	want := workspaceNames(explicit.triggeredWorkspaces(modified))
 	if diff := cmp.Diff([]string{"services-api"}, want); diff != "" {
+		t.Fatalf("explicit config no longer suffix-matches (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(want, workspaceNames(cfg.triggeredWorkspaces(modified))); diff != "" {
+		t.Errorf("triggered workspaces mismatch (-explicit +discovered):\n%s", diff)
+	}
+}
+
+func TestProjectConfig_discoverWorkspacesTwoOrganizationsForOneDir(t *testing.T) {
+	// Same directory, same name, different organizations: two different
+	// workspaces, chosen by whichever rule's dependency an MR touched.
+	const rules = `---
+discover:
+  - dir: services/*/
+    name: svc-{1}
+    organization: org-a
+    triggerDirs:
+      - blue/{1}
+  - dir: services/*/
+    name: svc-{1}
+    organization: org-b
+    triggerDirs:
+      - green/{1}
+`
+	dirs := []string{"services", "services/api"}
+	for _, modified := range []string{"blue/api/x.tf", "green/api/x.tf", "services/api/main.tf"} {
+		cfg := mustLoadDiscoverConfig(t, rules)
+		err := cfg.discoverWorkspaces(context.Background(), (&fakeRepo{dirs: dirs}).list, []string{modified})
+		if err == nil || !strings.Contains(err.Error(), `"org-a/svc-api"`) || !strings.Contains(err.Error(), `"org-b/svc-api"`) {
+			t.Errorf("%s: expected an error naming both workspaces, got %v", modified, err)
+		}
+	}
+	cfg := mustLoadDiscoverConfig(t, rules)
+	if err := cfg.discoverAllWorkspaces(context.Background(), (&fakeRepo{dirs: dirs}).list); err == nil {
+		t.Error("full discovery: expected an error for one directory in two organizations")
+	}
+
+	// An explicit entry for the directory still takes precedence.
+	cfg = mustLoadDiscoverConfig(t, rules+"workspaces:\n  - name: svc-api\n    organization: org-a\n    dir: services/api\n")
+	if err := cfg.discoverWorkspaces(context.Background(), (&fakeRepo{dirs: dirs}).list, []string{"green/api/x.tf"}); err != nil {
+		t.Fatalf("expected the explicit entry to take precedence, got %v", err)
+	}
+	if got := cfg.triggeredWorkspaces([]string{"services/api/main.tf"}); len(got) != 1 || workspaceID(got[0]) != "org-a/svc-api" {
+		t.Errorf("expected only the explicit org-a/svc-api, got %v", got)
+	}
+}
+
+func TestProjectConfig_discoverWorkspacesSameNameOtherOrganization(t *testing.T) {
+	// "a-b" + "c" and "a" + "b-c" fill svc-{1}-{2} and svc-{1} with the same
+	// name, but in different organizations they are different workspaces.
+	cfg := mustLoadDiscoverConfig(t, `---
+discover:
+  - dir: services/*/*/
+    name: svc-{1}-{2}
+    organization: org-a
+  - dir: legacy/*/
+    name: svc-{1}
+    organization: org-b
+`)
+	repo := &fakeRepo{dirs: []string{"services/a", "services/a/b", "legacy", "legacy/a-b"}}
+	if err := cfg.discoverWorkspaces(context.Background(), repo.list, []string{"services/a/b/main.tf"}); err != nil {
+		t.Fatalf("expected no collision across organizations, got %v", err)
+	}
+}
+
+func TestProjectConfig_discoverWorkspacesLeadingWildcardSameDepthSuffix(t *testing.T) {
+	// The example from review: oldfoo/api/ ends with foo/api/, so the
+	// explicit foo/api/ is triggered even though oldfoo/api is excluded.
+	modified := []string{"oldfoo/api/main.tf"}
+	explicit := mustLoadDiscoverConfig(t, "workspaces:\n  - name: foo-api\n    organization: foo-corp\n    dir: foo/api/\n")
+	cfg := mustLoadDiscoverConfig(t, `---
+discover:
+  - dir: "*/api/"
+    name: "{1}-api"
+    organization: foo-corp
+    exclude: [oldfoo/api]
+`)
+	repo := &fakeRepo{dirs: []string{"foo", "foo/api", "oldfoo", "oldfoo/api"}}
+	if err := cfg.discoverWorkspaces(context.Background(), repo.list, modified); err != nil {
+		t.Fatal(err)
+	}
+	want := workspaceNames(explicit.triggeredWorkspaces(modified))
+	if diff := cmp.Diff([]string{"foo-api"}, want); diff != "" {
 		t.Fatalf("explicit config no longer suffix-matches (-want +got):\n%s", diff)
 	}
 	if diff := cmp.Diff(want, workspaceNames(cfg.triggeredWorkspaces(modified))); diff != "" {
