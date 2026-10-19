@@ -368,6 +368,29 @@ func (c *GitlabClient) CreateMergeRequestCommentWithID(
 	return 0, utils.CreatePermanentError(errors.New("comment is empty"))
 }
 
+// ListMergeRequestNotes returns every note on a merge request, across pages.
+// Errors are logged and yield an empty list: callers use this to avoid
+// duplicate comments, and a lookup failure should not stop the comment.
+func (c *GitlabClient) ListMergeRequestNotes(ctx context.Context, mrIID int, projectID string) []*gogitlab.Note {
+	_, span := otel.Tracer("TFC").Start(ctx, "ListMergeRequestNotes")
+	defer span.End()
+
+	var all []*gogitlab.Note
+	opts := &gogitlab.ListMergeRequestNotesOptions{ListOptions: gogitlab.ListOptions{PerPage: 100}}
+	for {
+		notes, resp, err := c.client.Notes.ListMergeRequestNotes(projectID, mrIID, opts, gogitlab.WithContext(ctx))
+		if err != nil {
+			log.Warn().Err(err).Str("projectID", projectID).Int("mrIID", mrIID).Msg("could not list merge request notes")
+			return nil
+		}
+		all = append(all, notes...)
+		if resp.NextPage == 0 {
+			return all
+		}
+		opts.Page = resp.NextPage
+	}
+}
+
 // UpdateMergeRequestComment replaces an existing merge request comment.
 func (c *GitlabClient) UpdateMergeRequestComment(
 	ctx context.Context,

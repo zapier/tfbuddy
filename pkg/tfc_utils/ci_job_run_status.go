@@ -2,8 +2,10 @@ package tfc_utils
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -48,13 +50,40 @@ func MonitorRunStatus() {
 			return
 		}
 		if time.Now().After(deadline) {
-			log.Fatalf("TFBuddy published no commit status for %s within %s. "+
+			msg := fmt.Sprintf("TFBuddy published no commit status for %s within %s. "+
 				"It did not see this commit (the GitLab webhook may not have been delivered). "+
 				"Comment `tfc plan` on the merge request, then retry this job.",
 				sha, cfg.StatusTriggerWait)
+			postMissingPlanComment(ctx, glClient, projectID, sha, cfg.StatusTriggerWait)
+			log.Fatal(msg)
 		}
 		log.Printf("no TFBuddy status on %s yet; waiting", sha)
 		time.Sleep(statusPollInterval)
+	}
+}
+
+// postMissingPlanComment tells the user on the merge request what to do, since
+// the job log is not where they are looking and `tfc plan` is typed there. The
+// marker keeps a retried job from posting the same comment twice for one SHA.
+func postMissingPlanComment(ctx context.Context, gl *gitlab.GitlabClient, projectID, sha string, waited time.Duration) {
+	mrIID, err := strconv.Atoi(os.Getenv("CI_MERGE_REQUEST_IID"))
+	if err != nil {
+		log.Printf("not a merge request pipeline; skipping the merge request comment")
+		return
+	}
+	marker := fmt.Sprintf("<!-- tfbuddy-status-missing-plan %s -->", sha)
+	for _, n := range gl.ListMergeRequestNotes(ctx, mrIID, projectID) {
+		if strings.Contains(n.Body, marker) {
+			return
+		}
+	}
+	body := fmt.Sprintf(":no_entry: **TFBuddy did not plan commit `%s`.**\n\n"+
+		"No TFBuddy status appeared on this commit within %s, which usually means GitLab did not deliver the webhook for the push. "+
+		"Nothing has been planned for it.\n\n"+
+		"To recover: comment `tfc plan` on this merge request, wait for the plan, then retry the `tfc:status` job.\n%s",
+		sha[:8], waited, marker)
+	if err := gl.CreateMergeRequestComment(ctx, mrIID, projectID, body); err != nil {
+		log.Printf("could not comment on merge request !%d: %v", mrIID, err)
 	}
 }
 
