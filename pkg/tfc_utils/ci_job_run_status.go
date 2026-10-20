@@ -7,182 +7,94 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/zapier/tfbuddy/internal/config"
-	"github.com/zapier/tfbuddy/pkg/tfc_api"
+	"github.com/zapier/tfbuddy/pkg/vcs"
 	"github.com/zapier/tfbuddy/pkg/vcs/gitlab"
-	"go.opentelemetry.io/otel"
 
-	"github.com/hashicorp/go-tfe"
 	gogitlab "gitlab.com/gitlab-org/api/client-go"
 )
 
-const TFC_RUN_STATUS_PREFIX = `Terraform Cloud/`
-const TFC_POLICY_STATUS_PREFIX = `sentinel/`
-const TFC_NO_CHANGE = "Run not triggered: Terraform working directories did not change."
+const statusPollInterval = 15 * time.Second
 
-var (
-	glClient  *gitlab.GitlabClient
-	tfcClient tfc_api.ApiClient
-)
-
-const MR_COMMENT_FORMAT = `
-### Terraform Cloud
-%s
-`
-const MR_RUN_DETAILS_FORMAT = `
-#### Workspace: %s
-
-**Status**: %s
-
-[%s](%s)
-
-%s
----
-`
-
+// MonitorRunStatus is the body of the `tfc status` CI job. It waits for TFBuddy
+// to publish at least one commit status for the pipeline's commit and fails if
+// none appears within the configured wait. No status means TFBuddy never saw
+// the commit, usually because the GitLab webhook for the push was not
+// delivered, and without this check the merge request pipeline would be green
+// with no Terraform plan behind it.
+//
+// Whether those runs pass or fail is not this job's concern: TFBuddy publishes
+// the outcome onto the same pipeline (a failed plan fails it, a pending apply
+// keeps it running), so the pipeline already carries that signal.
 func MonitorRunStatus() {
 	cfg, err := config.Load()
 	if err != nil {
-		log.Printf("error loading config: %v", err)
-		return
+		log.Fatalf("error loading config: %v", err)
 	}
-	glClient = gitlab.NewGitlabClient(cfg)
-	tfcClient = tfc_api.NewTFCClient()
+	glClient := gitlab.NewGitlabClient(cfg)
 	ctx := context.Background()
 
 	projectID := os.Getenv("CI_PROJECT_ID")
 	sha := os.Getenv("CI_COMMIT_SHA")
-	statuses := glClient.GetCommitStatuses(ctx, projectID, sha)
-	commentBody := ""
-	wg := sync.WaitGroup{}
-	for _, s := range statuses {
-		if strings.HasPrefix(s.Name, TFC_RUN_STATUS_PREFIX) {
-			workspace := strings.Replace(s.Name, TFC_RUN_STATUS_PREFIX, "", 1)
-			if s.Description != TFC_NO_CHANGE {
-				// extract runID from targetURL
-				urlParts := strings.SplitAfter(s.TargetURL, "/")
-				runID := urlParts[len(urlParts)-1]
 
-				description := s.Description
-				switch s.Status {
-				case "pending":
-					description = ""
-					commentBody += fmt.Sprintf(MR_RUN_DETAILS_FORMAT, workspace, s.Status, s.TargetURL, s.TargetURL, description)
-					st := s
-					wg.Add(1)
-					go waitForRunCompletionOrFailure(ctx, &wg, st, workspace, runID)
-				case "success":
-					fallthrough
-				case "failed":
-					// get run summary
-					postRunSummary(ctx, s, workspace, runID)
-				}
+	deadline := time.Now().Add(cfg.StatusTriggerWait)
+	for {
+		statuses := tfbuddyStatuses(glClient.GetCommitStatuses(ctx, projectID, sha))
+		if len(statuses) > 0 {
+			for _, s := range statuses {
+				log.Printf("%s: %s %s", s.Name, s.Status, s.TargetURL)
 			}
+			log.Printf("TFBuddy has seen %s.", sha)
+			return
 		}
-	}
-	postCommentBody(ctx, commentBody)
-
-	wg.Wait()
-}
-
-func postCommentBody(ctx context.Context, commentBody string) {
-	if commentBody != "" {
-		projectID := os.Getenv("CI_PROJECT_ID")
-		mrIID, err := strconv.Atoi(os.Getenv("CI_MERGE_REQUEST_IID"))
-		if err != nil {
-			log.Printf("erroring posting comment: %v", err)
+		if time.Now().After(deadline) {
+			msg := fmt.Sprintf("TFBuddy published no commit status for %s within %s. "+
+				"It did not see this commit (the GitLab webhook may not have been delivered). "+
+				"Comment `tfc plan` on the merge request, then retry this job.",
+				sha, cfg.StatusTriggerWait)
+			postMissingPlanComment(ctx, glClient, projectID, sha, cfg.StatusTriggerWait)
+			log.Fatal(msg)
 		}
-		glClient.CreateMergeRequestComment(ctx, mrIID, projectID, fmt.Sprintf(MR_COMMENT_FORMAT, commentBody))
+		log.Printf("no TFBuddy status on %s yet; waiting", sha)
+		time.Sleep(statusPollInterval)
 	}
 }
 
-var successPlanSummaryFormat = `
-  * Additions: %d
-  * Changes: %d
-  * Destructions: %d
-
-*Click Terraform Cloud URL to see detailed plan output*
-
-**Merge MR to apply changes**
-`
-
-var failedPlanSummaryFormat = `
-*Click Terraform Cloud URL to see detailed plan output*
-`
-
-func postRunSummary(ctx context.Context, commitStatus *gogitlab.CommitStatus, wsName, runID string) {
-	//run, _ := tfcClient.Client.Runs.ReadWithOptions(context.Background(), runID, &tfe.RunReadOptions{Include: "plan"})
-	run, err := tfcClient.GetRun(ctx, runID)
+// postMissingPlanComment tells the user on the merge request what to do, since
+// the job log is not where they are looking and `tfc plan` is typed there. The
+// marker keeps a retried job from posting the same comment twice for one SHA.
+func postMissingPlanComment(ctx context.Context, gl *gitlab.GitlabClient, projectID, sha string, waited time.Duration) {
+	mrIID, err := strconv.Atoi(os.Getenv("CI_MERGE_REQUEST_IID"))
 	if err != nil {
-		log.Printf("err: %v\n", err)
+		log.Printf("not a merge request pipeline; skipping the merge request comment")
 		return
 	}
-
-	description := ""
-
-	switch run.Status {
-	case tfe.RunErrored:
-		description = failedPlanSummaryFormat
-	default:
-		description = fmt.Sprintf(successPlanSummaryFormat, run.Plan.ResourceAdditions, run.Plan.ResourceChanges, run.Plan.ResourceDestructions)
+	marker := fmt.Sprintf("<!-- tfbuddy-status-missing-plan %s -->", sha)
+	for _, n := range gl.ListMergeRequestNotes(ctx, mrIID, projectID) {
+		if strings.Contains(n.Body, marker) {
+			return
+		}
 	}
-
-	commentBody := fmt.Sprintf(MR_RUN_DETAILS_FORMAT, wsName, run.Status, commitStatus.TargetURL, commitStatus.TargetURL, description)
-	postCommentBody(ctx, commentBody)
-}
-
-func waitForRunCompletionOrFailure(ctx context.Context, wg *sync.WaitGroup, commitStatus *gogitlab.CommitStatus, wsName, runID string) {
-	ctx, span := otel.Tracer("TFC").Start(ctx, "waitForRunCompletionOrFailure")
-	defer span.End()
-	defer wg.Done()
-
-	attempts := 360
-	retryInterval := 10 * time.Second
-
-	for i := 0; i < attempts; i++ {
-		time.Sleep(retryInterval)
-
-		log.Println("Reading Run details.", runID)
-		run, err := tfcClient.GetRun(ctx, runID)
-		if err != nil {
-			log.Printf("err: %v\n", err)
-		}
-
-		printRunInfo(run, "Run Details", wsName)
-		if isRunning(run) {
-			continue
-		}
-
-		postRunSummary(ctx, commitStatus, wsName, runID)
-		break
+	body := fmt.Sprintf(":no_entry: **TFBuddy did not plan commit `%s`.**\n\n"+
+		"No TFBuddy status appeared on this commit within %s, which usually means GitLab did not deliver the webhook for the push. "+
+		"Nothing has been planned for it.\n\n"+
+		"To recover: comment `tfc plan` on this merge request, wait for the plan, then retry the `tfc:status` job.\n%s",
+		sha[:8], waited, marker)
+	if err := gl.CreateMergeRequestComment(ctx, mrIID, projectID, body); err != nil {
+		log.Printf("could not comment on merge request !%d: %v", mrIID, err)
 	}
 }
 
-func isRunning(run *tfe.Run) bool {
-	// Get current run
-	if run == nil {
-		return false
+// tfbuddyStatuses keeps only the statuses TFBuddy publishes; everything else on
+// the commit is the project's own CI.
+func tfbuddyStatuses(statuses []*gogitlab.CommitStatus) []*gogitlab.CommitStatus {
+	var out []*gogitlab.CommitStatus
+	for _, s := range statuses {
+		if strings.HasPrefix(s.Name, vcs.CommitStatusPrefix) {
+			out = append(out, s)
+		}
 	}
-
-	switch run.Status {
-	case "apply_queued":
-		fallthrough
-	case "applying":
-		fallthrough
-	case "cost_estimating":
-		fallthrough
-	case "plan_queued":
-		fallthrough
-	case "policy_checking":
-		fallthrough
-	case "planning":
-		fallthrough
-	case "pending":
-		return true
-	}
-
-	return false
+	return out
 }
