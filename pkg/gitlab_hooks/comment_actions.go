@@ -93,6 +93,10 @@ func (w *GitlabEventWorker) processNoteEvent(ctx context.Context, event vcs.MRCo
 	switch opts.Args.Command {
 	case "apply":
 		log.Debug().Str("project", proj).Int("mergeRequestID", event.GetMR().GetInternalID()).Msg("Got TFC apply command")
+		// checkNotDraft posts its own reason, like checkPipelineStatus below.
+		if !w.checkNotDraft(ctx, event) {
+			return proj, nil
+		}
 		if !w.checkApproval(ctx, event) {
 			w.postMessageToMergeRequest(ctx, event, ":no_entry: Apply failed. Merge Request requires approval.")
 			return proj, nil
@@ -158,6 +162,40 @@ func (w *GitlabEventWorker) checkForMergeConflicts(ctx context.Context, event vc
 	}
 	// fail if the MR has conflicts only.
 	return !mr.HasConflicts()
+}
+
+// draftApplyBlockedMessage is posted when an apply is refused because the MR
+// is a Draft.
+const draftApplyBlockedMessage = ":no_entry: Apply blocked: this MR is a Draft. Mark it ready, then run `tfc apply` again — TFBuddy merges it as soon as the apply succeeds."
+
+// checkNotDraft reports whether an apply may proceed given the MR's Draft
+// state, and posts the reason to the MR when it may not. GitLab refuses to
+// merge a Draft, so an apply on one leaves live infrastructure ahead of the
+// target branch until someone marks it ready and merges by hand. The draft
+// flag is read from the API rather than the note payload: the vendored
+// MergeCommentEvent has no draft field, so it would not survive the NATS hop.
+func (w *GitlabEventWorker) checkNotDraft(ctx context.Context, event vcs.MRCommentEvent) bool {
+	if !w.cfg.BlockApplyOnDraft {
+		return true
+	}
+
+	ctx, span := otel.Tracer("hooks").Start(ctx, "checkNotDraft")
+	defer span.End()
+
+	mrIID := event.GetMR().GetInternalID()
+	proj := event.GetProject().GetPathWithNamespace()
+	mr, err := w.gl.GetMergeRequest(ctx, mrIID, proj)
+	if err != nil {
+		w.postErrorToMergeRequest(ctx, event, fmt.Errorf("could not get MergeRequest from GitlabAPI: %v", err))
+		return false
+	}
+	if !mr.IsDraft() {
+		return true
+	}
+
+	log.Info().Str("project", proj).Int("mergeRequestID", mrIID).Msg("refusing apply on a Draft merge request")
+	w.postMessageToMergeRequest(ctx, event, draftApplyBlockedMessage)
+	return false
 }
 
 func (w *GitlabEventWorker) postMessageToMergeRequest(ctx context.Context, event vcs.MRCommentEvent, msg string) {

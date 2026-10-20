@@ -777,6 +777,20 @@ func (mr *MockDetailedMRMockRecorder) HasConflicts() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HasConflicts", reflect.TypeOf((*MockDetailedMR)(nil).HasConflicts))
 }
 
+// IsDraft mocks base method.
+func (m *MockDetailedMR) IsDraft() bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsDraft")
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsDraft indicates an expected call of IsDraft.
+func (mr *MockDetailedMRMockRecorder) IsDraft() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsDraft", reflect.TypeOf((*MockDetailedMR)(nil).IsDraft))
+}
+
 // MockMR is a mock of MR interface.
 type MockMR struct {
 	ctrl     *gomock.Controller

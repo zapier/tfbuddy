@@ -37,6 +37,7 @@ const (
 	KeyTFCRateLimitBurst          = "tfc-rate-limit-burst"
 	KeyJetStreamDedupWindow       = "jetstream-dedup-window"
 	KeyRequirePipelineSuccess     = "require-pipeline-success"
+	KeyBlockApplyOnDraft          = "block-apply-on-draft"
 	KeyStatusTriggerWait          = "status-trigger-wait"
 )
 
@@ -66,6 +67,7 @@ type Config struct {
 	TFCRateLimitBurst          int           `mapstructure:"tfc-rate-limit-burst"`
 	JetStreamDedupWindow       time.Duration `mapstructure:"jetstream-dedup-window"`
 	RequirePipelineSuccess     bool          `mapstructure:"require-pipeline-success"`
+	BlockApplyOnDraft          bool          `mapstructure:"block-apply-on-draft"`
 	StatusTriggerWait          time.Duration `mapstructure:"status-trigger-wait"`
 }
 
@@ -110,6 +112,7 @@ var bindings = []binding{
 	// planning phase), short enough that JetStream's interest store stays bounded.
 	{key: KeyJetStreamDedupWindow, defaultValue: 30 * time.Minute, description: "Window during which JetStream remembers a Nats-Msg-Id to dedupe republishes. Applied to RUN_EVENTS and TFBUDDY_WORKSPACE_TRIGGERS streams. Accepts a Go duration string (e.g. 30m, 1h)."},
 	{key: KeyRequirePipelineSuccess, defaultValue: false, description: "Refuse `tfc apply` while the merge request pipeline for the commit has a job that has not succeeded. Only takes effect for GitLab projects that also set `only_allow_merge_if_pipeline_succeeds`. TFBuddy's own TFC/* commit statuses are ignored, so a pending apply status does not block itself."},
+	{key: KeyBlockApplyOnDraft, defaultValue: false, description: "Refuse `tfc apply` while the merge request is a Draft. A Draft cannot be merged, so an apply on one leaves live infrastructure ahead of the target branch. `tfc plan` is still allowed."},
 	{key: KeyStatusTriggerWait, defaultValue: 5 * time.Minute, description: "How long `tfc status` waits for TFBuddy to publish a commit status for the pipeline's commit before failing the job. Accepts a Go duration string (e.g. 5m)."},
 }
 

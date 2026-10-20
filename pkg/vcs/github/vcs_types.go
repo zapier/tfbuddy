@@ -36,6 +36,9 @@ func (gm *GithubPR) HasConflicts() bool {
 	// https://docs.github.com/en/graphql/reference/enums#mergeablestate
 	return !gm.PullRequest.GetMergeable() // TODO: does this really represent HasConflicts?
 }
+func (gm *GithubPR) IsDraft() bool {
+	return gm.PullRequest.GetDraft()
+}
 func (gm *GithubPR) GetSourceBranch() string {
 	return gm.PullRequest.GetHead().GetRef()
 }

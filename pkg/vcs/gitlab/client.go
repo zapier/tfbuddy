@@ -629,6 +629,9 @@ type GitlabMR struct {
 func (gm *GitlabMR) HasConflicts() bool {
 	return gm.MergeRequest.HasConflicts
 }
+func (gm *GitlabMR) IsDraft() bool {
+	return gm.MergeRequest.Draft
+}
 func (gm *GitlabMR) GetSourceBranch() string {
 	return gm.MergeRequest.SourceBranch
 }
