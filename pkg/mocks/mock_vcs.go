@@ -250,6 +250,21 @@ func (mr *MockGitClientMockRecorder) GetRepoFile(arg0, arg1, arg2, arg3 any) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRepoFile", reflect.TypeOf((*MockGitClient)(nil).GetRepoFile), arg0, arg1, arg2, arg3)
 }
 
+// ListRepoDirectories mocks base method.
+func (m *MockGitClient) ListRepoDirectories(ctx context.Context, project, dir, ref string) ([]string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListRepoDirectories", ctx, project, dir, ref)
+	ret0, _ := ret[0].([]string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListRepoDirectories indicates an expected call of ListRepoDirectories.
+func (mr *MockGitClientMockRecorder) ListRepoDirectories(ctx, project, dir, ref any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListRepoDirectories", reflect.TypeOf((*MockGitClient)(nil).ListRepoDirectories), ctx, project, dir, ref)
+}
+
 // MergeMR mocks base method.
 func (m *MockGitClient) MergeMR(ctx context.Context, mrIID int, project string) error {
 	m.ctrl.T.Helper()

@@ -14,6 +14,10 @@ type GitClient interface {
 	CreateMergeRequestDiscussion(ctx context.Context, mrID int, fullPath string, comment string) (MRDiscussionNotes, error)
 	GetMergeRequest(context.Context, int, string) (DetailedMR, error)
 	GetRepoFile(context.Context, string, string, string) ([]byte, error)
+	// ListRepoDirectories returns every directory below dir at ref, recursively,
+	// as paths relative to the repo root. A dir that does not exist at ref yields
+	// no paths rather than an error.
+	ListRepoDirectories(ctx context.Context, project, dir, ref string) ([]string, error)
 	GetMergeRequestModifiedFiles(ctx context.Context, mrIID int, projectID string) ([]string, error)
 	CloneMergeRequest(context.Context, string, MR, string) (GitRepo, error)
 	UpdateMergeRequestDiscussionNote(ctx context.Context, mrIID, noteID int, project, discussionID, comment string) (MRNote, error)
