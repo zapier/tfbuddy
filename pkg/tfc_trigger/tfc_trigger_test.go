@@ -87,6 +87,12 @@ func TestFindLockingMR(t *testing.T) {
 			"1",
 			"",
 		},
+		{
+			"External holder containing an MR tag",
+			[]string{"tfbuddylock-selfserve-tfbuddylock-2"},
+			"1",
+			"",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1128,7 +1134,7 @@ func TestTFCEvents_StaleLock_MergedMR_AutoCleans(t *testing.T) {
 	testSuite.MockGitClient.EXPECT().GetMergeRequest(gomock.Any(), 99, testSuite.MetaData.ProjectNameNS).Return(mockLockingMR, nil)
 
 	// Stale tag is auto-removed, then current MR (101) acquires its lock tag
-	testSuite.MockApiClient.EXPECT().RemoveTagsByQuery(gomock.Any(), gomock.Any(), "tfbuddylock-99").Return(nil)
+	testSuite.MockApiClient.EXPECT().RemoveTagsByName(gomock.Any(), gomock.Any(), []string{"tfbuddylock-99"}).Return(nil)
 	testSuite.MockApiClient.EXPECT().AddTags(gomock.Any(), gomock.Any(), "tfbuddylock", "101").Return(nil)
 
 	testSuite.MockGitRepo.EXPECT().GetModifiedFileNamesBetweenCommits(testSuite.MetaData.CommonSHA, "main").Return([]string{}, nil)
@@ -1239,7 +1245,7 @@ func TestTFCEvents_StaleLock_RemovalFailure_Errors(t *testing.T) {
 	testSuite.MockGitClient.EXPECT().GetMergeRequest(gomock.Any(), 99, testSuite.MetaData.ProjectNameNS).Return(mockLockingMR, nil)
 
 	// Tag removal fails → apply should abort with error
-	testSuite.MockApiClient.EXPECT().RemoveTagsByQuery(gomock.Any(), gomock.Any(), "tfbuddylock-99").Return(fmt.Errorf("tfc api blip"))
+	testSuite.MockApiClient.EXPECT().RemoveTagsByName(gomock.Any(), gomock.Any(), []string{"tfbuddylock-99"}).Return(fmt.Errorf("tfc api blip"))
 
 	testSuite.MockGitRepo.EXPECT().GetModifiedFileNamesBetweenCommits(testSuite.MetaData.CommonSHA, "main").Return([]string{}, nil)
 
@@ -1265,6 +1271,305 @@ func TestTFCEvents_StaleLock_RemovalFailure_Errors(t *testing.T) {
 	}
 	if !strings.Contains(triggeredWS.Errored[0].Error, "failed to auto-clean stale lock tag from MR https://gitlab.com/zapier/tfbuddy/-/merge_requests/99") {
 		t.Fatalf("expected stale-lock cleanup error with URL, got: %s", triggeredWS.Errored[0].Error)
+	}
+}
+
+func TestFindExternalLock(t *testing.T) {
+	tests := []struct {
+		name string
+		tags []string
+		want string
+	}{
+		{"no tags", nil, ""},
+		{"only MR locks", []string{"tfbuddylock-2", "tfbuddylock-101"}, ""},
+		{"external lock", []string{"tfbuddylock-2", "tfbuddylock-selfserve-zip502-canary"}, "selfserve-zip502-canary"},
+		{"word after prefix", []string{"tfbuddylock-pineapple"}, "pineapple"},
+		{"holder containing an MR tag", []string{"tfbuddylock-selfserve-tfbuddylock-101"}, "selfserve-tfbuddylock-101"},
+		{"holder starting with a digit reads as an MR", []string{"tfbuddylock-2fa"}, ""},
+		{"prefix must start the tag", []string{"my-tfbuddylock-selfserve"}, ""},
+		{"empty holder", []string{"tfbuddylock-"}, ""},
+		{"unrelated tags", []string{"foo", "gl-lock-mr"}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tfc_trigger.FindExternalLock(tt.tags); got != tt.want {
+				t.Fatalf("FindExternalLock(%v) = %q, want %q", tt.tags, got, tt.want)
+			}
+		})
+	}
+}
+
+func lockTestSuite(t *testing.T, mockCtrl *gomock.Controller) *mocks.TestSuite {
+	ws := &tfc_trigger.ProjectConfig{
+		Workspaces: []*tfc_trigger.TFCWorkspace{{
+			Name:         "service-tfbuddy",
+			Organization: "zapier-test",
+			Mode:         "apply-before-merge",
+		}}}
+	return mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: ws}, t)
+}
+
+func runLockTestApply(t *testing.T, testSuite *mocks.TestSuite) *tfc_trigger.TriggeredTFCWorkspaces {
+	t.Helper()
+	testSuite.InitTestSuite()
+	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
+		Action:                   tfc_trigger.ApplyAction,
+		Branch:                   testSuite.MetaData.SourceBranch,
+		CommitSHA:                "abcd12233",
+		ProjectNameWithNamespace: testSuite.MetaData.ProjectNameNS,
+		MergeRequestIID:          testSuite.MetaData.MRIID,
+		TriggerSource:            tfc_trigger.CommentTrigger,
+	})
+	trigger := tfc_trigger.NewTFCTrigger(config.C, testSuite.MockGitClient, testSuite.MockApiClient, testSuite.MockStreamClient, tCfg)
+	ctx, _ := otel.Tracer("FAKE").Start(context.Background(), "TEST")
+	triggeredWS, err := trigger.TriggerTFCEvents(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return triggeredWS
+}
+
+// TestTFCEvents_ExternalLock_RejectsApply verifies that a lock held by
+// automation (not an MR) blocks the apply, is never auto-cleaned, and is not
+// taken over by the MR.
+func TestTFCEvents_ExternalLock_RejectsApply(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := lockTestSuite(t, mockCtrl)
+
+	testSuite.MockApiClient.EXPECT().GetTagsByQuery(gomock.Any(), gomock.Any(), "tfbuddylock").
+		Return([]string{"tfbuddylock-selfserve-zip502-canary"}, nil)
+	testSuite.MockApiClient.EXPECT().AddTags(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _, _, _ string) error {
+			t.Fatal("must not acquire a lock held externally")
+			return nil
+		}).AnyTimes()
+
+	triggeredWS := runLockTestApply(t, testSuite)
+
+	if len(triggeredWS.Errored) != 1 {
+		t.Fatalf("expected 1 errored workspace, got: %d", len(triggeredWS.Errored))
+	}
+	got := triggeredWS.Errored[0].Error
+	if !strings.Contains(got, "workspace is locked by selfserve-zip502-canary (tag `tfbuddylock-selfserve-zip502-canary`)") ||
+		!strings.Contains(got, "tfc unlock -w service-tfbuddy") {
+		t.Fatalf("expected external-lock error naming the holder and the unlock command, got: %s", got)
+	}
+}
+
+// TestTFCEvents_LockRace_BacksOff verifies that when another writer tags the
+// workspace between this MR's check and its own tag, the MR does not apply. It
+// keeps its tag: another apply attempt for the same MR may already be running
+// under it, so no RemoveTagsByName call is expected.
+func TestTFCEvents_LockRace_BacksOff(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := lockTestSuite(t, mockCtrl)
+
+	gomock.InOrder(
+		testSuite.MockApiClient.EXPECT().GetTagsByQuery(gomock.Any(), gomock.Any(), "tfbuddylock").Return(nil, nil),
+		testSuite.MockApiClient.EXPECT().AddTags(gomock.Any(), gomock.Any(), "tfbuddylock", "101").Return(nil),
+		testSuite.MockApiClient.EXPECT().GetTagsByQuery(gomock.Any(), gomock.Any(), "tfbuddylock").
+			Return([]string{"tfbuddylock-101", "tfbuddylock-selfserve-zip502-canary"}, nil),
+	)
+
+	triggeredWS := runLockTestApply(t, testSuite)
+
+	if len(triggeredWS.Executed) != 0 || len(triggeredWS.Errored) != 1 {
+		t.Fatalf("expected the apply to back off, got executed=%v errored=%v", triggeredWS.Executed, triggeredWS.Errored)
+	}
+	if !strings.Contains(triggeredWS.Errored[0].Error, "workspace was locked by selfserve-zip502-canary while this MR was acquiring the lock") {
+		t.Fatalf("expected lock-race error naming the contender, got: %s", triggeredWS.Errored[0].Error)
+	}
+}
+
+// TestTFCEvents_LockRace_KeepsLockAlreadyHeld verifies that losing the race
+// does not release a lock this MR already held from an earlier apply, since
+// that lock still protects what the earlier apply changed.
+func TestTFCEvents_LockRace_KeepsLockAlreadyHeld(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := lockTestSuite(t, mockCtrl)
+
+	gomock.InOrder(
+		testSuite.MockApiClient.EXPECT().GetTagsByQuery(gomock.Any(), gomock.Any(), "tfbuddylock").
+			Return([]string{"tfbuddylock-101"}, nil),
+		testSuite.MockApiClient.EXPECT().AddTags(gomock.Any(), gomock.Any(), "tfbuddylock", "101").Return(nil),
+		testSuite.MockApiClient.EXPECT().GetTagsByQuery(gomock.Any(), gomock.Any(), "tfbuddylock").
+			Return([]string{"tfbuddylock-101", "tfbuddylock-102"}, nil),
+	)
+
+	triggeredWS := runLockTestApply(t, testSuite)
+
+	if len(triggeredWS.Executed) != 0 || len(triggeredWS.Errored) != 1 {
+		t.Fatalf("expected the apply to back off, got executed=%v errored=%v", triggeredWS.Executed, triggeredWS.Errored)
+	}
+	if !strings.Contains(triggeredWS.Errored[0].Error, "workspace was locked by MR 102 while this MR was acquiring the lock") {
+		t.Fatalf("expected lock-race error naming the contending MR, got: %s", triggeredWS.Errored[0].Error)
+	}
+}
+
+// TestTFCEvents_LockVerify_OwnTagOnly_Applies verifies that the re-read after
+// acquiring lets the apply through when the only new tag is this MR's own.
+func TestTFCEvents_LockVerify_OwnTagOnly_Applies(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := lockTestSuite(t, mockCtrl)
+
+	gomock.InOrder(
+		testSuite.MockApiClient.EXPECT().GetTagsByQuery(gomock.Any(), gomock.Any(), "tfbuddylock").Return(nil, nil),
+		testSuite.MockApiClient.EXPECT().AddTags(gomock.Any(), gomock.Any(), "tfbuddylock", "101").Return(nil),
+		testSuite.MockApiClient.EXPECT().GetTagsByQuery(gomock.Any(), gomock.Any(), "tfbuddylock").
+			Return([]string{"tfbuddylock-101"}, nil),
+	)
+	testSuite.MockApiClient.EXPECT().CreateRunFromSource(gomock.Any(), gomock.Any()).Return(&tfe.Run{
+		ID: "101",
+		Workspace: &tfe.Workspace{Name: "service-tfbuddy",
+			Organization: &tfe.Organization{Name: "zapier-test"},
+		},
+		ConfigurationVersion: &tfe.ConfigurationVersion{Speculative: false}}, nil)
+
+	triggeredWS := runLockTestApply(t, testSuite)
+
+	if len(triggeredWS.Errored) != 0 || len(triggeredWS.Executed) != 1 {
+		t.Fatalf("expected the apply to proceed, got executed=%v errored=%v", triggeredWS.Executed, triggeredWS.Errored)
+	}
+}
+
+// TestTFCEvents_ExternalLock_NestedPrefix_RejectsApply verifies that an
+// external holder whose name contains this MR's own tag is still an external
+// lock, not this MR's lock.
+func TestTFCEvents_ExternalLock_NestedPrefix_RejectsApply(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := lockTestSuite(t, mockCtrl)
+
+	testSuite.MockApiClient.EXPECT().GetTagsByQuery(gomock.Any(), gomock.Any(), "tfbuddylock").
+		Return([]string{"tfbuddylock-selfserve-tfbuddylock-101"}, nil)
+	testSuite.MockApiClient.EXPECT().AddTags(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _, _, _ string) error {
+			t.Fatal("must not acquire a lock held externally")
+			return nil
+		}).AnyTimes()
+
+	triggeredWS := runLockTestApply(t, testSuite)
+
+	if len(triggeredWS.Errored) != 1 || !strings.Contains(triggeredWS.Errored[0].Error, "workspace is locked by selfserve-tfbuddylock-101") {
+		t.Fatalf("expected external-lock error, got: %v", triggeredWS.Errored)
+	}
+}
+
+// TestTFCEvents_StaleLock_MixedWithOpenMR_Rejects verifies that every foreign
+// MR lock is checked, not just the first: a stale lock is cleaned, but an open
+// MR's lock behind it still refuses the apply before this MR takes the lock.
+func TestTFCEvents_StaleLock_MixedWithOpenMR_Rejects(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := lockTestSuite(t, mockCtrl)
+
+	testSuite.MockApiClient.EXPECT().GetTagsByQuery(gomock.Any(), gomock.Any(), "tfbuddylock").
+		Return([]string{"tfbuddylock-99", "tfbuddylock-102"}, nil)
+
+	staleMR := mocks.NewMockDetailedMR(mockCtrl)
+	staleMR.EXPECT().GetState().Return("merged")
+	testSuite.MockGitClient.EXPECT().GetMergeRequest(gomock.Any(), 99, testSuite.MetaData.ProjectNameNS).Return(staleMR, nil)
+	testSuite.MockApiClient.EXPECT().RemoveTagsByName(gomock.Any(), gomock.Any(), []string{"tfbuddylock-99"}).Return(nil)
+
+	openMR := mocks.NewMockDetailedMR(mockCtrl)
+	openMR.EXPECT().GetState().Return("opened")
+	openMR.EXPECT().GetWebURL().Return("https://gitlab.com/zapier/tfbuddy/-/merge_requests/102")
+	testSuite.MockGitClient.EXPECT().GetMergeRequest(gomock.Any(), 102, testSuite.MetaData.ProjectNameNS).Return(openMR, nil)
+
+	testSuite.MockApiClient.EXPECT().AddTags(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _, _, _ string) error {
+			t.Fatal("must not acquire a lock another open MR holds")
+			return nil
+		}).AnyTimes()
+
+	triggeredWS := runLockTestApply(t, testSuite)
+
+	if len(triggeredWS.Errored) != 1 ||
+		!strings.Contains(triggeredWS.Errored[0].Error, "workspace is locked by another MR! https://gitlab.com/zapier/tfbuddy/-/merge_requests/102") {
+		t.Fatalf("expected locked-by-MR-102 error, got: %v", triggeredWS.Errored)
+	}
+}
+
+// TestTFCEvents_StaleLock_CleanupKeepsExternalLock verifies the interleaving
+// where automation acquires a lock whose name contains the stale MR tag while
+// this MR is cleaning that stale tag. Cleanup removes only the exact stale tag,
+// so the external lock survives and the re-read backs off. RemoveTagsByQuery
+// has no expectation here, so a substring removal would fail the test.
+func TestTFCEvents_StaleLock_CleanupKeepsExternalLock(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := lockTestSuite(t, mockCtrl)
+
+	staleMR := mocks.NewMockDetailedMR(mockCtrl)
+	staleMR.EXPECT().GetState().Return("merged")
+	testSuite.MockGitClient.EXPECT().GetMergeRequest(gomock.Any(), 99, testSuite.MetaData.ProjectNameNS).Return(staleMR, nil)
+
+	gomock.InOrder(
+		testSuite.MockApiClient.EXPECT().GetTagsByQuery(gomock.Any(), gomock.Any(), "tfbuddylock").
+			Return([]string{"tfbuddylock-99"}, nil),
+		testSuite.MockApiClient.EXPECT().RemoveTagsByName(gomock.Any(), gomock.Any(), []string{"tfbuddylock-99"}).Return(nil),
+		testSuite.MockApiClient.EXPECT().AddTags(gomock.Any(), gomock.Any(), "tfbuddylock", "101").Return(nil),
+		testSuite.MockApiClient.EXPECT().GetTagsByQuery(gomock.Any(), gomock.Any(), "tfbuddylock").
+			Return([]string{"tfbuddylock-101", "tfbuddylock-selfserve-tfbuddylock-99"}, nil),
+	)
+
+	triggeredWS := runLockTestApply(t, testSuite)
+
+	if len(triggeredWS.Executed) != 0 || len(triggeredWS.Errored) != 1 ||
+		!strings.Contains(triggeredWS.Errored[0].Error, "workspace was locked by selfserve-tfbuddylock-99 while this MR was acquiring the lock") {
+		t.Fatalf("expected the apply to back off for the external lock, got executed=%v errored=%v", triggeredWS.Executed, triggeredWS.Errored)
+	}
+}
+
+// TestTFCEvents_LockCheck_ReadFailure_Refuses verifies that an unreadable lock
+// state refuses the apply before any tag is added.
+func TestTFCEvents_LockCheck_ReadFailure_Refuses(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := lockTestSuite(t, mockCtrl)
+
+	testSuite.MockApiClient.EXPECT().GetTagsByQuery(gomock.Any(), gomock.Any(), "tfbuddylock").
+		Return(nil, fmt.Errorf("tfc api blip"))
+	testSuite.MockApiClient.EXPECT().AddTags(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _, _, _ string) error {
+			t.Fatal("must not acquire a lock it could not check")
+			return nil
+		}).AnyTimes()
+
+	triggeredWS := runLockTestApply(t, testSuite)
+
+	if len(triggeredWS.Executed) != 0 || len(triggeredWS.Errored) != 1 ||
+		!strings.Contains(triggeredWS.Errored[0].Error, "could not read the workspace lock tags") {
+		t.Fatalf("expected a lock-read error, got executed=%v errored=%v", triggeredWS.Executed, triggeredWS.Errored)
+	}
+}
+
+// TestTFCEvents_LockVerify_ReadFailure_KeepsTag verifies that a failed re-read
+// after acquiring refuses the apply but keeps the MR's tag. Two deliveries for
+// the same MR share that tag: if attempt A verified and started its run, a
+// failure in attempt B must not unlock the workspace under A's run, so no
+// RemoveTagsByName call is expected even though B added the tag itself.
+func TestTFCEvents_LockVerify_ReadFailure_KeepsTag(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+	testSuite := lockTestSuite(t, mockCtrl)
+
+	gomock.InOrder(
+		testSuite.MockApiClient.EXPECT().GetTagsByQuery(gomock.Any(), gomock.Any(), "tfbuddylock").Return(nil, nil),
+		testSuite.MockApiClient.EXPECT().AddTags(gomock.Any(), gomock.Any(), "tfbuddylock", "101").Return(nil),
+		testSuite.MockApiClient.EXPECT().GetTagsByQuery(gomock.Any(), gomock.Any(), "tfbuddylock").
+			Return(nil, fmt.Errorf("tfc api blip")),
+	)
+
+	triggeredWS := runLockTestApply(t, testSuite)
+
+	if len(triggeredWS.Executed) != 0 || len(triggeredWS.Errored) != 1 ||
+		!strings.Contains(triggeredWS.Errored[0].Error, "could not verify the workspace lock after acquiring it") {
+		t.Fatalf("expected a lock-verify error, got executed=%v errored=%v", triggeredWS.Executed, triggeredWS.Errored)
 	}
 }
 

@@ -74,6 +74,7 @@ The full list of supported environment variables and flags is described below:
 |`TFBUDDY_TFC_RATE_LIMIT_BURST`|`--tfc-rate-limit-burst`|Burst capacity for the TFC API token-bucket rate limiter.|`30`|
 |`TFBUDDY_JETSTREAM_DEDUP_WINDOW`|`--jetstream-dedup-window`|Window during which JetStream remembers a Nats-Msg-Id to dedupe republishes. Applied to RUN_EVENTS and TFBUDDY_WORKSPACE_TRIGGERS streams. Accepts a Go duration string (e.g. 30m, 1h).|`30m0s`|
 |`TFBUDDY_REQUIRE_PIPELINE_SUCCESS`|`--require-pipeline-success`|Refuse `tfc apply` while the merge request pipeline for the commit has a job that has not succeeded. Only takes effect for GitLab projects that also set `only_allow_merge_if_pipeline_succeeds`. TFBuddy's own TFC/* commit statuses are ignored, so a pending apply status does not block itself.|`false`|
+|`TFBUDDY_STATUS_TRIGGER_WAIT`|`--status-trigger-wait`|How long `tfc status` waits for TFBuddy to publish a commit status for the pipeline's commit before failing the job. Accepts a Go duration string (e.g. 5m).|`5m0s`|
 <!-- END GENERATED CONFIGURATION -->
 
 For sensitive environment variables use `secrets.envs` which can contain a list of key/value pairs
@@ -242,3 +243,48 @@ GitLab still enforces approvals, conflicts, and required pipeline checks.
 Every affected workspace must use `mode: apply-before-merge` and have
 `autoMerge: true`. If any affected workspace disables auto-merge, TFBuddy will
 not auto-merge that commit. Targeted applies never satisfy the aggregate.
+
+### Workspace locks
+
+`tfc apply` locks the workspace for its merge request by tagging it
+`tfbuddylock-<MR number>`. Until that MR merges or closes, TFBuddy refuses
+applies to the workspace from any other MR. TFBuddy removes the tag when the MR
+merges or closes; if that was missed, the next apply from another MR removes it
+(by exact name) after checking that the MR has merged or closed. Every other
+MR's tag on the workspace is checked this way, not just the first one.
+
+#### Locks held by automation
+
+Automation that applies through the Terraform Cloud API rather than an MR can
+hold the same lock, so that TFBuddy and the automation never apply one
+workspace at the same time. Its tag is `tfbuddylock-<holder>`, where `<holder>`
+starts with a letter and uses only lowercase letters, digits, `-`, `_` and `:`.
+Make the holder unique to each attempt, for example by including the workflow
+run ID (`tfbuddylock-selfserve-payments-api-run-8f2c`), so that one attempt
+removing its tag can never unlock the workspace under another attempt.
+
+While such a tag is on a workspace, TFBuddy refuses `tfc apply` and names the
+holder in the MR. It never removes the tag itself, because no MR state says when
+it is stale; `tfc unlock -w <workspace>` clears every `tfbuddylock-*` tag on the
+workspace, including this one, if a holder fails without releasing it.
+
+Tags are not an atomic lock, so a holder acquires it in this order:
+
+1. List the workspace's tags matching `tfbuddylock`. If any lock tag other
+   than its own is present, wait and retry.
+2. Add its own `tfbuddylock-<holder>` tag.
+3. List the tags again. If any lock tag other than its own is present, remove
+   its own tag and retry later.
+4. Run the plan and apply.
+5. Remove its own tag by its exact name.
+
+If either listing fails, treat the workspace as locked: do not apply, and if
+the tag was added in step 2, remove it.
+
+TFBuddy follows the same order: after adding its tag it lists the tags again
+and backs off if any lock other than its own is present. It also refuses the
+apply when it cannot list the tags. Backing off keeps the MR's tag, because
+every apply attempt for an MR shares that tag and another attempt may already
+be running under it. The MR therefore holds the workspace until it merges or
+closes, as after any apply. If two MRs collide this way, both stay locked until
+one of them runs `tfc unlock -w <workspace>`.
