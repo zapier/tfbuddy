@@ -64,6 +64,23 @@ func TestDeleteOldCommentsCanBeEnabledFromEnv(t *testing.T) {
 	}
 }
 
+func TestBlockApplyOnDraftDefaultsToFalse(t *testing.T) {
+	resetViperForTest(t)
+
+	if C.BlockApplyOnDraft {
+		t.Fatal("C.BlockApplyOnDraft = true, want false")
+	}
+}
+
+func TestBlockApplyOnDraftCanBeEnabledFromEnv(t *testing.T) {
+	t.Setenv("TFBUDDY_BLOCK_APPLY_ON_DRAFT", "true")
+	resetViperForTest(t)
+
+	if !C.BlockApplyOnDraft {
+		t.Fatal("C.BlockApplyOnDraft = false, want true")
+	}
+}
+
 func TestSentinelSoftFailDefaultsToFalse(t *testing.T) {
 	resetViperForTest(t)
 

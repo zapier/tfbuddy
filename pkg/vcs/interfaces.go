@@ -55,6 +55,9 @@ type MRNote interface {
 }
 type DetailedMR interface {
 	HasConflicts() bool
+	// IsDraft reports whether the merge request is a Draft, which GitLab and
+	// GitHub both refuse to merge.
+	IsDraft() bool
 	MR
 	GetWebURL() string
 	GetTitle() string

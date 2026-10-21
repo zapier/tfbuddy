@@ -96,6 +96,10 @@ func (h *GithubHooksHandler) processIssueComment(ctx context.Context, msg *Githu
 	switch opts.Args.Command {
 	case "apply":
 		log.Info().Msg("Got TFC apply command")
+		if h.cfg.BlockApplyOnDraft && pullReq.IsDraft() {
+			h.postPullRequestComment(ctx, event, draftApplyBlockedMessage)
+			return nil
+		}
 		if !pullReq.IsApproved() {
 			h.postPullRequestComment(ctx, event, ":no_entry: Apply failed. Pull Request requires approval.")
 			return nil
@@ -123,6 +127,10 @@ func (h *GithubHooksHandler) processIssueComment(ctx context.Context, msg *Githu
 	}
 	return tfError
 }
+
+// draftApplyBlockedMessage is posted when an apply is refused because the PR
+// is a Draft, which GitHub will not merge.
+const draftApplyBlockedMessage = ":no_entry: Apply blocked: this PR is a Draft. Mark it ready for review, then run `tfc apply` again — TFBuddy merges it as soon as the apply succeeds."
 
 func (h *GithubHooksHandler) postPullRequestComment(ctx context.Context, event *gogithub.IssueCommentEvent, body string) error {
 	ctx, span := otel.Tracer("hooks").Start(ctx, "postPullRequestComment")

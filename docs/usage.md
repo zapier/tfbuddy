@@ -74,6 +74,7 @@ The full list of supported environment variables and flags is described below:
 |`TFBUDDY_TFC_RATE_LIMIT_BURST`|`--tfc-rate-limit-burst`|Burst capacity for the TFC API token-bucket rate limiter.|`30`|
 |`TFBUDDY_JETSTREAM_DEDUP_WINDOW`|`--jetstream-dedup-window`|Window during which JetStream remembers a Nats-Msg-Id to dedupe republishes. Applied to RUN_EVENTS and TFBUDDY_WORKSPACE_TRIGGERS streams. Accepts a Go duration string (e.g. 30m, 1h).|`30m0s`|
 |`TFBUDDY_REQUIRE_PIPELINE_SUCCESS`|`--require-pipeline-success`|Refuse `tfc apply` while the merge request pipeline for the commit has a job that has not succeeded. Only takes effect for GitLab projects that also set `only_allow_merge_if_pipeline_succeeds`. TFBuddy's own TFC/* commit statuses are ignored, so a pending apply status does not block itself.|`false`|
+|`TFBUDDY_BLOCK_APPLY_ON_DRAFT`|`--block-apply-on-draft`|Refuse `tfc apply` while the merge request is a Draft. A Draft cannot be merged, so an apply on one leaves live infrastructure ahead of the target branch. `tfc plan` is still allowed.|`false`|
 |`TFBUDDY_STATUS_TRIGGER_WAIT`|`--status-trigger-wait`|How long `tfc status` waits for TFBuddy to publish a commit status for the pipeline's commit before failing the job. Accepts a Go duration string (e.g. 5m).|`5m0s`|
 <!-- END GENERATED CONFIGURATION -->
 
@@ -141,6 +142,23 @@ If the commit has no pipeline other than the external one GitLab creates for
 TFBuddy's own statuses, there is no CI to wait on and the apply proceeds.
 
 This setting applies to GitLab only. The GitHub path is unaffected.
+
+##### Refusing apply on a Draft
+
+Set `TFBUDDY_BLOCK_APPLY_ON_DRAFT=true` to make TFBuddy refuse `tfc apply` on a
+Draft merge request. GitLab will not merge a Draft, so an apply on one leaves
+live infrastructure ahead of the target branch, and TFBuddy cannot merge it after
+the apply succeeds. Like the approval and merge-conflict checks, TFBuddy posts
+the reason as a merge request comment and does not start a Terraform Cloud run:
+
+> :no_entry: Apply blocked: this MR is a Draft. Mark it ready, then run `tfc apply` again — TFBuddy merges it as soon as the apply succeeds.
+
+`tfc plan`, `tfc lock`, and `tfc unlock` still work on a Draft, and there is no
+per-comment override. TFBuddy reads the Draft state from the API when the
+comment is processed, so marking the MR ready and commenting again is enough.
+
+The setting also covers GitHub, where the same check refuses `tfc apply` on a
+Draft pull request and asks for it to be marked ready for review.
 
 ##### .tfbuddy.yaml
 
