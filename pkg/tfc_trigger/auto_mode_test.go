@@ -27,7 +27,7 @@ autoMode:
     - name: new-service
       authors: [new-service-bot]
       paths: ["services/**"]
-    - name: empty-plan
+    - name: safe-plan
       authors: [renovate-bot]
       paths: ["**/versions.tf", "**/.terraform.lock.hcl"]
 `
@@ -112,7 +112,7 @@ func TestAutoModeClassFor(t *testing.T) {
 			author:  "renovate-bot",
 			files:   []string{"services/api/prod/main-us-east-1/versions.tf", "services/api/prod/main-us-east-1/.terraform.lock.hcl"},
 			commits: commitsBy("renovate@example.com"),
-			want:    "empty-plan",
+			want:    "safe-plan",
 		},
 		{
 			name:    "no commits never counts as the author's",

@@ -337,7 +337,7 @@ autoMode:
   - name: tags
     authors: [tags-bot]
     paths: ["services/*/*/*/tags.auto.tfvars.json"]
-  - name: empty-plan
+  - name: safe-plan
     authors: [renovate-bot]
     paths: ["**/versions.tf", "**/.terraform.lock.hcl"]
 ```
