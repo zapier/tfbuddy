@@ -353,11 +353,12 @@ mode2:
   committer email is not one of the author's `commitEmails`. Those emails are
   declared by whoever makes the commit, so this check is evidence, not proof:
   anyone who can push to the branch can claim them.
-* Every plan and apply run of a Mode 2 merge request names its class in the
-  run message, straight after the MR number:
-  `MR [!123]: [tfbuddy-class=tags] Sync tags`. A Sentinel policy can read it
-  there. TFBuddy removes anything that looks like a class marker from every MR
-  title, and refuses to create a Mode 2 run without a class.
+* Every plan and apply run of a Mode 2 merge request has a run message that
+  TFBuddy builds from fixed fields only, without the MR title:
+  `MR [!123] [tfbuddy-class=tags] sha=<head SHA> actor=service-atlas-bot`.
+  A Sentinel policy reads the class there. TFBuddy refuses to create a Mode 2
+  run without a class. Runs of other merge requests keep the title, so a
+  marker in a person's title can only restrict their own run.
 * TFBuddy posts a `TFC/class` commit status on the head commit: pending while
   the plans run, success once every workspace's plan has passed, and failed
   when any plan errored, was canceled, failed a policy (soft failures

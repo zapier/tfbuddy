@@ -141,11 +141,13 @@ type TFCTriggerOptions struct {
 	Target            string `short:"t" long:"target" description:"A specific terraform target to use" required:"false"`
 	AllowEmptyRun     bool   `short:"e" long:"allow_empty_run" description:"A specific terraform AllowEmptyRun" required:"false"`
 
-	// Mode2 marks a merge request whose author runs in Mode 2, ChangeClass is
-	// its change class and ClassWorkspaces the workspaces whose plans decide
-	// TFC/class. TFBuddy sets all three from the target branch's
-	// .tfbuddy.yaml; they have no flags, so no comment can set them.
+	// Mode2 marks a merge request whose author runs in Mode 2, Mode2Actor is
+	// that author, ChangeClass is its change class and ClassWorkspaces the
+	// workspaces whose plans decide TFC/class. TFBuddy sets all four from the
+	// target branch's .tfbuddy.yaml; they have no flags, so no comment can set
+	// them.
 	Mode2           bool
+	Mode2Actor      string
 	ChangeClass     string
 	ClassWorkspaces []string
 }

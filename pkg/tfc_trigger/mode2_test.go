@@ -193,45 +193,23 @@ func TestParseMode2Config(t *testing.T) {
 	}
 }
 
-func TestStripClassMarkers(t *testing.T) {
-	tests := map[string]string{
-		"Bump provider":                           "Bump provider",
-		"Bump  provider":                          "Bump  provider",
-		"Tag sync [tfbuddy-class=tags]":           "Tag sync",
-		"[TFBUDDY-CLASS=tags] Tag sync":           "Tag sync",
-		"Tag sync tfbuddy-class=tags":             "Tag sync",
-		"Tag sync [tfbuddy-class = tags] please":  "Tag sync please",
-		"Tag [tfbuddy-class=tags sync":            "Tag sync",
-		"a [tfbuddy-class=x] b [tfbuddy-class=y]": "a b",
-	}
-	for title, want := range tests {
-		got := StripClassMarkers(title)
-		if got != want {
-			t.Errorf("StripClassMarkers(%q) = %q, want %q", title, got, want)
-		}
-		if strings.Contains(strings.ToLower(got), "tfbuddy-class=") {
-			t.Errorf("StripClassMarkers(%q) = %q still holds a marker", title, got)
-		}
-	}
-}
-
 func TestRunMessage(t *testing.T) {
 	mode1 := &TFCTrigger{cfg: &TFCTriggerOptions{MergeRequestIID: 7}}
 	got, err := mode1.runMessage("Add bucket [tfbuddy-class=tags]")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "MR [!7]: Add bucket" {
-		t.Errorf("Mode 1 message = %q, want the title without its marker", got)
+	if got != "MR [!7]: Add bucket [tfbuddy-class=tags]" {
+		t.Errorf("Mode 1 message = %q, want the title unchanged", got)
 	}
 
-	mode2 := &TFCTrigger{cfg: &TFCTriggerOptions{MergeRequestIID: 7, Mode2: true, ChangeClass: "tags"}}
-	got, err = mode2.runMessage("Sync tags [tfbuddy-class=new-service]")
+	mode2 := &TFCTrigger{cfg: &TFCTriggerOptions{MergeRequestIID: 7, CommitSHA: "1a2b3c4", Mode2: true, Mode2Actor: "service-atlas-bot", ChangeClass: "tags"}}
+	got, err = mode2.runMessage("Sync tags [tfbuddy-class=reviewed]")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "MR [!7]: [tfbuddy-class=tags] Sync tags" {
-		t.Errorf("Mode 2 message = %q, want TFBuddy's marker before the title", got)
+	if got != "MR [!7] [tfbuddy-class=tags] sha=1a2b3c4 actor=service-atlas-bot" {
+		t.Errorf("Mode 2 message = %q, want fixed fields only and no title", got)
 	}
 
 	noClass := &TFCTrigger{cfg: &TFCTriggerOptions{MergeRequestIID: 7, Mode2: true}}

@@ -24,10 +24,6 @@ const ClassReviewed = "reviewed"
 // out of a run message without ambiguity.
 var classNameRegex = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
-// classMarkerRegex matches anything in an MR title that could be read as a
-// class marker, bracketed or not.
-var classMarkerRegex = regexp.MustCompile(`(?i)\[?\s*tfbuddy-class\s*=\s*[^\]\s]*\s*\]?`)
-
 // Mode2Config is the `mode2` section of .tfbuddy.yaml. TFBuddy only ever reads
 // it from the merge request's target branch, so an MR can neither add its
 // author to the list nor widen a class.
@@ -195,20 +191,12 @@ func ClassMarker(class string) string {
 	return fmt.Sprintf("[tfbuddy-class=%s]", class)
 }
 
-// StripClassMarkers removes anything that looks like a class marker from an
-// MR title, so that only TFBuddy ever puts one in a run message.
-func StripClassMarkers(title string) string {
-	if !classMarkerRegex.MatchString(title) {
-		return title
-	}
-	return strings.Join(strings.Fields(classMarkerRegex.ReplaceAllString(title, " ")), " ")
-}
-
 // runMessage is the message of every run TFBuddy creates for the MR. A Mode 2
-// run names its class straight after the MR number, so that no title, however
-// long, can push the marker out of the message.
+// run's message is built from fixed fields only and leaves the MR title out,
+// so nothing a person or a bot writes can add a second marker or push the
+// marker out of the message. It keeps the `MR [!<iid>]` prefix that other
+// tools find TFBuddy's runs by.
 func (t *TFCTrigger) runMessage(title string) (string, error) {
-	title = StripClassMarkers(title)
 	if !t.cfg.Mode2 {
 		return fmt.Sprintf("MR [!%d]: %s", t.GetMergeRequestIID(), title), nil
 	}
@@ -218,7 +206,7 @@ func (t *TFCTrigger) runMessage(title string) (string, error) {
 	if !classNameRegex.MatchString(t.cfg.ChangeClass) {
 		return "", fmt.Errorf("refusing to create a Mode 2 run without a valid change class (got %q). %w", t.cfg.ChangeClass, utils.ErrPermanent)
 	}
-	return fmt.Sprintf("MR [!%d]: %s %s", t.GetMergeRequestIID(), ClassMarker(t.cfg.ChangeClass), title), nil
+	return fmt.Sprintf("MR [!%d] %s sha=%s actor=%s", t.GetMergeRequestIID(), ClassMarker(t.cfg.ChangeClass), t.GetCommitSHA(), t.cfg.Mode2Actor), nil
 }
 
 // resolveMode2 decides whether mr runs in Mode 2 and, when it does, records its
@@ -252,6 +240,7 @@ func (t *TFCTrigger) resolveMode2(ctx context.Context, mr vcs.DetailedMR, affect
 	}
 
 	t.cfg.Mode2 = true
+	t.cfg.Mode2Actor = author.Username
 	t.cfg.ChangeClass = mode2.ClassFor(author, files, commits)
 	t.cfg.ClassWorkspaces = make([]string, 0, len(affected))
 	for _, ws := range affected {

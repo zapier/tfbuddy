@@ -171,8 +171,8 @@ func TestTFCEvents_Mode2PlanCarriesClass(t *testing.T) {
 	if len(triggered.Errored) != 0 {
 		t.Fatalf("unexpected failed workspaces: %v", triggered.Errored)
 	}
-	if opts.Message != "MR [!101]: [tfbuddy-class=tags] MR Title" {
-		t.Errorf("run message = %q, want the tags class marker", opts.Message)
+	if opts.Message != "MR [!101] [tfbuddy-class=tags] sha=abcd12233 actor=service-atlas-bot" {
+		t.Errorf("run message = %q, want the tags class marker and no title", opts.Message)
 	}
 	if rmd.ChangeClass != "tags" || !slices.Equal(rmd.ClassWorkspaces, []string{"service-tfbuddy"}) {
 		t.Errorf("run metadata class = %q over %v, want tags over [service-tfbuddy]", rmd.ChangeClass, rmd.ClassWorkspaces)
@@ -182,7 +182,7 @@ func TestTFCEvents_Mode2PlanCarriesClass(t *testing.T) {
 	}
 }
 
-func TestTFCEvents_Mode2PersonTitleMarkerIsStripped(t *testing.T) {
+func TestTFCEvents_PersonTitleIsKept(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	ts := mocks.CreateTestSuite(ctrl, mocks.TestOverrides{ProjectConfig: mode2Workspaces()}, t)
 	ts.MockGitMR.EXPECT().GetTitle().Return("Add bucket [tfbuddy-class=tags]").AnyTimes()
@@ -194,8 +194,9 @@ func TestTFCEvents_Mode2PersonTitleMarkerIsStripped(t *testing.T) {
 	if _, err := newMode2Trigger(mode2AppConfig(), ts, tfc_trigger.PlanAction).TriggerTFCEvents(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if opts.Message != "MR [!101]: Add bucket" {
-		t.Errorf("run message = %q, want the title without its marker", opts.Message)
+	// A marker in a person's own title can only restrict their own run.
+	if opts.Message != "MR [!101]: Add bucket [tfbuddy-class=tags]" {
+		t.Errorf("run message = %q, want the title unchanged", opts.Message)
 	}
 	if rmd.ChangeClass != "" {
 		t.Errorf("a person's run has no class, got %q", rmd.ChangeClass)
