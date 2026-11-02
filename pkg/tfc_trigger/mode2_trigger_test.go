@@ -26,11 +26,11 @@ workspaces:
     organization: zapier-test
 mode2:
   authors:
-    - username: service-atlas-bot
-      commitEmails: [atlas@example.com]
+    - username: tags-bot
+      commitEmails: [tags-bot@example.com]
   classes:
     - name: tags
-      authors: [service-atlas-bot]
+      authors: [tags-bot]
       paths: ["**/tags.auto.tfvars.json"]
 `
 
@@ -71,7 +71,7 @@ func expectMR(ctrl *gomock.Controller, ts *mocks.TestSuite, author, targetConfig
 	}
 }
 
-var atlasCommits = []vcs.MRCommit{{SHA: "c1", AuthorEmail: "atlas@example.com", CommitterEmail: "atlas@example.com"}}
+var tagsBotCommits = []vcs.MRCommit{{SHA: "c1", AuthorEmail: "tags-bot@example.com", CommitterEmail: "tags-bot@example.com"}}
 
 // capturePlanRun expects one speculative plan run and returns where its
 // options and metadata land.
@@ -124,8 +124,8 @@ func TestLoadMode2Config_ReadsTargetBranchOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Author("service-atlas-bot") == nil {
-		t.Fatal("expected service-atlas-bot to be a Mode 2 author")
+	if cfg.Author("tags-bot") == nil {
+		t.Fatal("expected tags-bot to be a Mode 2 author")
 	}
 }
 
@@ -154,7 +154,7 @@ func TestLoadMode2Config_TransientErrorFails(t *testing.T) {
 func TestTFCEvents_Mode2PlanCarriesClass(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	ts := mocks.CreateTestSuite(ctrl, mocks.TestOverrides{ProjectConfig: mode2Workspaces()}, t)
-	expectMR(ctrl, ts, "service-atlas-bot", mode2TargetConfig, []string{mode2TagsFile}, atlasCommits)
+	expectMR(ctrl, ts, "tags-bot", mode2TargetConfig, []string{mode2TagsFile}, tagsBotCommits)
 	opts, rmd := capturePlanRun(ctrl, ts)
 	var classStatuses []vcs.ClassStatus
 	ts.MockGitClient.EXPECT().SetClassStatus(gomock.Any(), gomock.Any()).
@@ -171,7 +171,7 @@ func TestTFCEvents_Mode2PlanCarriesClass(t *testing.T) {
 	if len(triggered.Errored) != 0 {
 		t.Fatalf("unexpected failed workspaces: %v", triggered.Errored)
 	}
-	if opts.Message != "MR [!101] [tfbuddy-class=tags] sha=abcd12233 actor=service-atlas-bot" {
+	if opts.Message != "MR [!101] [tfbuddy-class=tags] sha=abcd12233 actor=tags-bot" {
 		t.Errorf("run message = %q, want the tags class marker and no title", opts.Message)
 	}
 	if rmd.ChangeClass != "tags" || !slices.Equal(rmd.ClassWorkspaces, []string{"service-tfbuddy"}) {
@@ -252,7 +252,7 @@ func TestTFCEvents_Mode2DisabledIsMode1(t *testing.T) {
 func TestTFCEvents_Mode2DivergenceCheckFailsClosed(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	ts := mocks.CreateTestSuite(ctrl, mocks.TestOverrides{ProjectConfig: mode2Workspaces()}, t)
-	expectMR(ctrl, ts, "service-atlas-bot", mode2TargetConfig, []string{mode2TagsFile}, atlasCommits)
+	expectMR(ctrl, ts, "tags-bot", mode2TargetConfig, []string{mode2TagsFile}, tagsBotCommits)
 	ts.MockGitRepo.EXPECT().GetModifiedFileNamesBetweenCommits(ts.MetaData.CommonSHA, ts.MetaData.TargetBranch).
 		Return(nil, errors.New("could not diff"))
 	var statuses []vcs.WorkspaceStatus
@@ -278,7 +278,7 @@ func TestTFCEvents_Mode2ApplyRequiresAutoMerge(t *testing.T) {
 	workspaces := mode2Workspaces()
 	workspaces.Workspaces[0].AutoMerge = false
 	ts := mocks.CreateTestSuite(ctrl, mocks.TestOverrides{ProjectConfig: workspaces}, t)
-	expectMR(ctrl, ts, "service-atlas-bot", mode2TargetConfig, []string{mode2TagsFile}, atlasCommits)
+	expectMR(ctrl, ts, "tags-bot", mode2TargetConfig, []string{mode2TagsFile}, tagsBotCommits)
 	ts.InitTestSuite()
 
 	_, err := newMode2Trigger(mode2AppConfig(), ts, tfc_trigger.ApplyAction).TriggerTFCEvents(context.Background())

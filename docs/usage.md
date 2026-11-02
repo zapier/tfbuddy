@@ -328,17 +328,17 @@ Turn it on with `TFBUDDY_MODE2_ENABLED=true`, and list the automation users in
 mode2:
   authors:
     # Matched against the merge request author from the GitLab API.
-  - username: service-atlas-bot
+  - username: tags-bot
     # The git author and committer emails its commits carry.
-    commitEmails: [service-atlas-bot@example.com]
-  - username: zapier-renovate-bot
+    commitEmails: [tags-bot@example.com]
+  - username: renovate-bot
     commitEmails: [bot@renovateapp.com]
   classes:
   - name: tags
-    authors: [service-atlas-bot]
+    authors: [tags-bot]
     paths: ["services/*/*/*/tags.auto.tfvars.json"]
   - name: empty-plan
-    authors: [zapier-renovate-bot]
+    authors: [renovate-bot]
     paths: ["**/versions.tf", "**/.terraform.lock.hcl"]
 ```
 
@@ -355,7 +355,7 @@ mode2:
   anyone who can push to the branch can claim them.
 * Every plan and apply run of a Mode 2 merge request has a run message that
   TFBuddy builds from fixed fields only, without the MR title:
-  `MR [!123] [tfbuddy-class=tags] sha=<head SHA> actor=service-atlas-bot`.
+  `MR [!123] [tfbuddy-class=tags] sha=<head SHA> actor=tags-bot`.
   A Sentinel policy reads the class there. TFBuddy refuses to create a Mode 2
   run without a class. Runs of other merge requests keep the title, so a
   marker in a person's title can only restrict their own run.

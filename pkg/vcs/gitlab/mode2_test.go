@@ -34,7 +34,7 @@ func TestGetMergeRequestApprovalStateReadsApprovedAt(t *testing.T) {
 		_, _ = w.Write([]byte(`{
 			"approved": true,
 			"approved_by": [
-				{"user": {"username": "prjiracheck"}, "approved_at": "2026-11-02T10:01:00.000Z"},
+				{"user": {"username": "approver-bot"}, "approved_at": "2026-11-02T10:01:00.000Z"},
 				{"user": {"username": "old-gitlab"}}
 			]
 		}`))
@@ -49,8 +49,8 @@ func TestGetMergeRequestApprovalStateReadsApprovedAt(t *testing.T) {
 		t.Fatalf("unexpected approval state: %+v", state)
 	}
 	want := time.Date(2026, 11, 2, 10, 1, 0, 0, time.UTC)
-	if a := state.ApprovedBy[0]; a.Username != "prjiracheck" || a.ApprovedAt == nil || !a.ApprovedAt.Equal(want) {
-		t.Errorf("first approval = %+v, want prjiracheck at %s", a, want)
+	if a := state.ApprovedBy[0]; a.Username != "approver-bot" || a.ApprovedAt == nil || !a.ApprovedAt.Equal(want) {
+		t.Errorf("first approval = %+v, want approver-bot at %s", a, want)
 	}
 	if a := state.ApprovedBy[1]; a.ApprovedAt != nil {
 		t.Errorf("an approval without approved_at must have no time, got %s", a.ApprovedAt)

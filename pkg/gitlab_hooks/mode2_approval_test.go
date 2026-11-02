@@ -19,11 +19,11 @@ import (
 const mode2TargetConfig = `
 mode2:
   authors:
-    - username: service-atlas-bot
-      commitEmails: [atlas@example.com]
+    - username: tags-bot
+      commitEmails: [tags-bot@example.com]
   classes:
     - name: tags
-      authors: [service-atlas-bot]
+      authors: [tags-bot]
       paths: ["**/tags.auto.tfvars.json"]
 `
 
@@ -34,7 +34,7 @@ var (
 )
 
 func approvedBy(at *time.Time) *vcs.MRApprovalState {
-	return &vcs.MRApprovalState{Approved: true, ApprovedBy: []vcs.MRApproval{{Username: "prjiracheck", ApprovedAt: at}}}
+	return &vcs.MRApprovalState{Approved: true, ApprovedBy: []vcs.MRApproval{{Username: "approver-bot", ApprovedAt: at}}}
 }
 
 func headVersions() []vcs.MRVersion {
@@ -177,7 +177,7 @@ func (f *mode2Fixture) expectMR(author string) {
 	a.EXPECT().GetUsername().Return(author).AnyTimes()
 	f.mr.EXPECT().GetAuthor().Return(a).AnyTimes()
 	f.mr.EXPECT().GetTargetBranch().Return("main").AnyTimes()
-	f.mr.EXPECT().GetSourceBranch().Return("atlas/tags").AnyTimes()
+	f.mr.EXPECT().GetSourceBranch().Return("tags-bot/tags").AnyTimes()
 	f.mr.EXPECT().GetInternalID().Return(gateMRIID).AnyTimes()
 	f.mr.EXPECT().GetState().Return("opened").AnyTimes()
 	f.mr.EXPECT().IsDraft().Return(false).AnyTimes()
@@ -205,7 +205,7 @@ func mergeEventMsg(action string) *MergeRequestEventMsg {
 	event.Project.PathWithNamespace = gateProject
 	event.ObjectAttributes.IID = gateMRIID
 	event.ObjectAttributes.Action = action
-	event.ObjectAttributes.SourceBranch = "atlas/tags"
+	event.ObjectAttributes.SourceBranch = "tags-bot/tags"
 	event.ObjectAttributes.LastCommit.ID = gateCommitSHA
 	event.ObjectAttributes.Source = &gogitlab.Repository{PathWithNamespace: gateProject}
 	return &MergeRequestEventMsg{Payload: event, DeliveryID: "delivery-1", Context: context.Background()}
@@ -213,7 +213,7 @@ func mergeEventMsg(action string) *MergeRequestEventMsg {
 
 func TestMode2Approval_StartsApplyForMode2MR(t *testing.T) {
 	f := newMode2Fixture(t, true)
-	f.expectMR("service-atlas-bot")
+	f.expectMR("tags-bot")
 	f.expectGates(afterPush, "success")
 	f.trigger.EXPECT().TriggerTFCEvents(gomock.Any()).Return(&tfc_trigger.TriggeredTFCWorkspaces{Executed: []string{"svc-a"}}, nil)
 
@@ -262,7 +262,7 @@ func TestMode2Approval_DoesNotApply(t *testing.T) {
 			mode2Enabled: true,
 			action:       "approved",
 			setup: func(f *mode2Fixture) {
-				f.expectMR("service-atlas-bot")
+				f.expectMR("tags-bot")
 				f.expectGates(beforePush, "success")
 			},
 			wantComment: "before the head commit was pushed",
@@ -272,7 +272,7 @@ func TestMode2Approval_DoesNotApply(t *testing.T) {
 			mode2Enabled: true,
 			action:       "approved",
 			setup: func(f *mode2Fixture) {
-				f.expectMR("service-atlas-bot")
+				f.expectMR("tags-bot")
 				f.expectGates(afterPush, "running")
 			},
 			wantComment: "still waiting on: aa:code-review (running)",

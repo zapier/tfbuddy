@@ -14,21 +14,21 @@ workspaces:
   - name: ignored-here
 mode2:
   authors:
-    - username: service-atlas-bot
-      commitEmails: [atlas@example.com]
-    - username: selfserve-bot
-      commitEmails: [selfserve@example.com]
-    - username: zapier-renovate-bot
+    - username: tags-bot
+      commitEmails: [tags-bot@example.com]
+    - username: new-service-bot
+      commitEmails: [new-service-bot@example.com]
+    - username: renovate-bot
       commitEmails: [renovate@example.com]
   classes:
     - name: tags
-      authors: [service-atlas-bot]
+      authors: [tags-bot]
       paths: ["services/*/*/*/tags.auto.tfvars.json"]
     - name: new-service
-      authors: [selfserve-bot]
+      authors: [new-service-bot]
       paths: ["services/**"]
     - name: empty-plan
-      authors: [zapier-renovate-bot]
+      authors: [renovate-bot]
       paths: ["**/versions.tf", "**/.terraform.lock.hcl"]
 `
 
@@ -65,67 +65,67 @@ func TestMode2ClassFor(t *testing.T) {
 	}{
 		{
 			name:    "every file matches the author's class",
-			author:  "service-atlas-bot",
+			author:  "tags-bot",
 			files:   []string{tagsFile, "services/api/staging/main-us-east-1/tags.auto.tfvars.json"},
-			commits: commitsBy("atlas@example.com"),
+			commits: commitsBy("tags-bot@example.com"),
 			want:    "tags",
 		},
 		{
 			name:    "usernames and emails match case-insensitively",
-			author:  "Service-Atlas-Bot",
+			author:  "Tags-Bot",
 			files:   []string{tagsFile},
-			commits: commitsBy("ATLAS@example.com"),
+			commits: commitsBy("TAGS-BOT@example.com"),
 			want:    "tags",
 		},
 		{
 			name:    "one file outside the class paths",
-			author:  "service-atlas-bot",
+			author:  "tags-bot",
 			files:   []string{tagsFile, "services/api/prod/main-us-east-1/main.tf"},
-			commits: commitsBy("atlas@example.com"),
+			commits: commitsBy("tags-bot@example.com"),
 			want:    ClassReviewed,
 		},
 		{
 			name:    "a commit by another author",
-			author:  "service-atlas-bot",
+			author:  "tags-bot",
 			files:   []string{tagsFile},
-			commits: commitsBy("atlas@example.com", "someone@example.com"),
+			commits: commitsBy("tags-bot@example.com", "someone@example.com"),
 			want:    ClassReviewed,
 		},
 		{
 			name:   "a commit committed by another identity",
-			author: "service-atlas-bot",
+			author: "tags-bot",
 			files:  []string{tagsFile},
 			commits: []vcs.MRCommit{
-				{SHA: "a", AuthorEmail: "atlas@example.com", CommitterEmail: "someone@example.com"},
+				{SHA: "a", AuthorEmail: "tags-bot@example.com", CommitterEmail: "someone@example.com"},
 			},
 			want: ClassReviewed,
 		},
 		{
 			name:    "the files fit a class the author is not on",
-			author:  "zapier-renovate-bot",
+			author:  "renovate-bot",
 			files:   []string{tagsFile},
 			commits: commitsBy("renovate@example.com"),
 			want:    ClassReviewed,
 		},
 		{
 			name:    "first matching class wins",
-			author:  "zapier-renovate-bot",
+			author:  "renovate-bot",
 			files:   []string{"services/api/prod/main-us-east-1/versions.tf", "services/api/prod/main-us-east-1/.terraform.lock.hcl"},
 			commits: commitsBy("renovate@example.com"),
 			want:    "empty-plan",
 		},
 		{
 			name:    "no commits never counts as the author's",
-			author:  "service-atlas-bot",
+			author:  "tags-bot",
 			files:   []string{tagsFile},
 			commits: nil,
 			want:    ClassReviewed,
 		},
 		{
 			name:    "no changed files never matches a class",
-			author:  "service-atlas-bot",
+			author:  "tags-bot",
 			files:   nil,
-			commits: commitsBy("atlas@example.com"),
+			commits: commitsBy("tags-bot@example.com"),
 			want:    ClassReviewed,
 		},
 	}
@@ -148,7 +148,7 @@ func TestMode2AuthorNotListed(t *testing.T) {
 		t.Fatalf("a-person is not on the list, got %+v", a)
 	}
 	var none *Mode2Config
-	if a := none.Author("service-atlas-bot"); a != nil {
+	if a := none.Author("tags-bot"); a != nil {
 		t.Fatal("a repo without a mode2 section has no Mode 2 authors")
 	}
 }
@@ -203,12 +203,12 @@ func TestRunMessage(t *testing.T) {
 		t.Errorf("Mode 1 message = %q, want the title unchanged", got)
 	}
 
-	mode2 := &TFCTrigger{cfg: &TFCTriggerOptions{MergeRequestIID: 7, CommitSHA: "1a2b3c4", Mode2: true, Mode2Actor: "service-atlas-bot", ChangeClass: "tags"}}
+	mode2 := &TFCTrigger{cfg: &TFCTriggerOptions{MergeRequestIID: 7, CommitSHA: "1a2b3c4", Mode2: true, Mode2Actor: "tags-bot", ChangeClass: "tags"}}
 	got, err = mode2.runMessage("Sync tags [tfbuddy-class=reviewed]")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "MR [!7] [tfbuddy-class=tags] sha=1a2b3c4 actor=service-atlas-bot" {
+	if got != "MR [!7] [tfbuddy-class=tags] sha=1a2b3c4 actor=tags-bot" {
 		t.Errorf("Mode 2 message = %q, want fixed fields only and no title", got)
 	}
 
