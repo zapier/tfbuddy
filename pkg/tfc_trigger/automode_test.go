@@ -9,10 +9,10 @@ import (
 	"github.com/zapier/tfbuddy/pkg/vcs"
 )
 
-const testMode2YAML = `
+const testAutomodeYAML = `
 workspaces:
   - name: ignored-here
-mode2:
+automode:
   authors:
     - username: tags-bot
       commitEmails: [tags-bot@example.com]
@@ -32,14 +32,14 @@ mode2:
       paths: ["**/versions.tf", "**/.terraform.lock.hcl"]
 `
 
-func mustParseMode2(t *testing.T) *Mode2Config {
+func mustParseAutomode(t *testing.T) *AutomodeConfig {
 	t.Helper()
-	cfg, err := parseMode2Config([]byte(testMode2YAML))
+	cfg, err := parseAutomodeConfig([]byte(testAutomodeYAML))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cfg == nil {
-		t.Fatal("expected a mode2 section")
+		t.Fatal("expected a automode section")
 	}
 	return cfg
 }
@@ -52,8 +52,8 @@ func commitsBy(emails ...string) []vcs.MRCommit {
 	return commits
 }
 
-func TestMode2ClassFor(t *testing.T) {
-	cfg := mustParseMode2(t)
+func TestAutomodeClassFor(t *testing.T) {
+	cfg := mustParseAutomode(t)
 	tagsFile := "services/api/prod/main-us-east-1/tags.auto.tfvars.json"
 
 	tests := []struct {
@@ -133,7 +133,7 @@ func TestMode2ClassFor(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			author := cfg.Author(tt.author)
 			if author == nil {
-				t.Fatalf("%s should be a Mode 2 author", tt.author)
+				t.Fatalf("%s should be an automode author", tt.author)
 			}
 			if got := cfg.ClassFor(author, tt.files, tt.commits); got != tt.want {
 				t.Errorf("ClassFor() = %q, want %q", got, tt.want)
@@ -142,47 +142,47 @@ func TestMode2ClassFor(t *testing.T) {
 	}
 }
 
-func TestMode2AuthorNotListed(t *testing.T) {
-	cfg := mustParseMode2(t)
+func TestAutomodeAuthorNotListed(t *testing.T) {
+	cfg := mustParseAutomode(t)
 	if a := cfg.Author("a-person"); a != nil {
 		t.Fatalf("a-person is not on the list, got %+v", a)
 	}
-	var none *Mode2Config
+	var none *AutomodeConfig
 	if a := none.Author("tags-bot"); a != nil {
-		t.Fatal("a repo without a mode2 section has no Mode 2 authors")
+		t.Fatal("a repo without a automode section has no automode authors")
 	}
 }
 
-func TestParseMode2Config(t *testing.T) {
-	cfg, err := parseMode2Config([]byte("workspaces:\n  - name: ws\n"))
+func TestParseAutomodeConfig(t *testing.T) {
+	cfg, err := parseAutomodeConfig([]byte("workspaces:\n  - name: ws\n"))
 	if err != nil || cfg != nil {
-		t.Fatalf("a file without mode2 has no Mode 2 config, got %+v, %v", cfg, err)
+		t.Fatalf("a file without automode has no automode config, got %+v, %v", cfg, err)
 	}
 
 	invalid := map[string]string{
-		"reserved name": `mode2:
+		"reserved name": `automode:
   authors: [{username: bot}]
   classes: [{name: reviewed, authors: [bot], paths: ["**"]}]`,
-		"name a policy cannot read": `mode2:
+		"name a policy cannot read": `automode:
   authors: [{username: bot}]
   classes: [{name: "tags]", authors: [bot], paths: ["**"]}]`,
-		"repeated name": `mode2:
+		"repeated name": `automode:
   authors: [{username: bot}]
   classes:
     - {name: tags, authors: [bot], paths: ["a"]}
     - {name: tags, authors: [bot], paths: ["b"]}`,
-		"no paths": `mode2:
+		"no paths": `automode:
   authors: [{username: bot}]
   classes: [{name: tags, authors: [bot]}]`,
-		"bad glob": `mode2:
+		"bad glob": `automode:
   authors: [{username: bot}]
   classes: [{name: tags, authors: [bot], paths: ["services/[a"]}]`,
-		"author without username": `mode2:
+		"author without username": `automode:
   authors: [{commitEmails: [a@example.com]}]`,
 	}
 	for name, body := range invalid {
 		t.Run(name, func(t *testing.T) {
-			_, err := parseMode2Config([]byte(body))
+			_, err := parseAutomodeConfig([]byte(body))
 			if err == nil {
 				t.Fatal("expected an error")
 			}
@@ -203,17 +203,17 @@ func TestRunMessage(t *testing.T) {
 		t.Errorf("Mode 1 message = %q, want the title unchanged", got)
 	}
 
-	mode2 := &TFCTrigger{cfg: &TFCTriggerOptions{MergeRequestIID: 7, CommitSHA: "1a2b3c4", Mode2: true, Mode2Actor: "tags-bot", ChangeClass: "tags"}}
-	got, err = mode2.runMessage("Sync tags [tfbuddy-class=reviewed]")
+	automode := &TFCTrigger{cfg: &TFCTriggerOptions{MergeRequestIID: 7, CommitSHA: "1a2b3c4", Automode: true, AutomodeActor: "tags-bot", ChangeClass: "tags"}}
+	got, err = automode.runMessage("Sync tags [tfbuddy-class=reviewed]")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got != "MR [!7] [tfbuddy-class=tags] sha=1a2b3c4 actor=tags-bot" {
-		t.Errorf("Mode 2 message = %q, want fixed fields only and no title", got)
+		t.Errorf("automode message = %q, want fixed fields only and no title", got)
 	}
 
-	noClass := &TFCTrigger{cfg: &TFCTriggerOptions{MergeRequestIID: 7, Mode2: true}}
+	noClass := &TFCTrigger{cfg: &TFCTriggerOptions{MergeRequestIID: 7, Automode: true}}
 	if _, err := noClass.runMessage("Sync tags"); !errors.Is(err, utils.ErrPermanent) {
-		t.Errorf("a Mode 2 run without a class must be refused, got %v", err)
+		t.Errorf("an automode run without a class must be refused, got %v", err)
 	}
 }

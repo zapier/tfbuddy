@@ -40,7 +40,7 @@ type GitClient interface {
 	// GetMergeRequestVersions returns a merge request's diff versions, one per
 	// push, in the order GitLab lists them.
 	GetMergeRequestVersions(ctx context.Context, mrIID int, project string) ([]MRVersion, error)
-	// SetClassStatus publishes the TFC/class commit status of a Mode 2 merge
+	// SetClassStatus publishes the TFC/class commit status of an automode merge
 	// request.
 	SetClassStatus(ctx context.Context, status ClassStatus) error
 }

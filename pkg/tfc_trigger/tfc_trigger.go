@@ -141,13 +141,13 @@ type TFCTriggerOptions struct {
 	Target            string `short:"t" long:"target" description:"A specific terraform target to use" required:"false"`
 	AllowEmptyRun     bool   `short:"e" long:"allow_empty_run" description:"A specific terraform AllowEmptyRun" required:"false"`
 
-	// Mode2 marks a merge request whose author runs in Mode 2, Mode2Actor is
+	// Automode marks a merge request whose author runs in automode, AutomodeActor is
 	// that author, ChangeClass is its change class and ClassWorkspaces the
 	// workspaces whose plans decide TFC/class. TFBuddy sets all four from the
 	// target branch's .tfbuddy.yaml; they have no flags, so no comment can set
 	// them.
-	Mode2           bool
-	Mode2Actor      string
+	Automode        bool
+	AutomodeActor   string
 	ChangeClass     string
 	ClassWorkspaces []string
 }
@@ -639,9 +639,9 @@ func (t *TFCTrigger) beginAutoMergeApply(workspaces []*TFCWorkspace) error {
 		case t.cfg.AutoMergeSequence > 0:
 			t.cfg.AutoMergeGeneration = fmt.Sprintf("gitlab-note-%d", t.cfg.AutoMergeSequence)
 		default:
-			if t.cfg.Mode2 {
-				// Mode 2 must merge what it applies.
-				return errors.New("a Mode 2 apply needs auto-merge, and this apply has no stable GitLab delivery or note ID")
+			if t.cfg.Automode {
+				// Automode must merge what it applies.
+				return errors.New("an automode apply needs auto-merge, and this apply has no stable GitLab delivery or note ID")
 			}
 			log.Warn().Msg("auto-merge disabled for apply without a stable GitLab delivery or note ID")
 			return nil
@@ -687,15 +687,15 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 		return &TriggeredTFCWorkspaces{}, nil
 	}
 
-	if err := t.resolveMode2(ctx, mr, affectedWorkspaces); err != nil {
+	if err := t.resolveAutomode(ctx, mr, affectedWorkspaces); err != nil {
 		t.postWorkspaceStatusForAll(ctx, triggeredWorkspaces, vcs.CommitStateFailed,
-			fmt.Sprintf("could not decide whether this MR runs in Mode 2: %v", err))
-		return nil, fmt.Errorf("could not decide whether this MR runs in Mode 2: %w", err)
+			fmt.Sprintf("could not decide whether this MR runs in automode: %v", err))
+		return nil, fmt.Errorf("could not decide whether this MR runs in automode: %w", err)
 	}
-	if t.cfg.Mode2 && t.GetAction() == ApplyAction && !autoMergeEligible(t.appCfg, affectedWorkspaces) {
-		// Mode 2 must merge what it applies, or live state stays ahead of the
+	if t.cfg.Automode && t.GetAction() == ApplyAction && !autoMergeEligible(t.appCfg, affectedWorkspaces) {
+		// Automode must merge what it applies, or live state stays ahead of the
 		// target branch with nobody watching.
-		err := errors.New("refusing a Mode 2 apply: auto-merge must be enabled, and every affected workspace must use mode apply-before-merge with autoMerge enabled")
+		err := errors.New("refusing an automode apply: auto-merge must be enabled, and every affected workspace must use mode apply-before-merge with autoMerge enabled")
 		t.postWorkspaceStatusForAll(ctx, triggeredWorkspaces, vcs.CommitStateFailed, err.Error())
 		return nil, utils.CreatePermanentError(err)
 	}
@@ -713,8 +713,8 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 	}()
 
 	blocked, err := t.getModifiedWorkspacesOnTargetBranch(ctx, mr, repo, triggeredWorkspaces)
-	if err != nil && t.cfg.Mode2 {
-		// Mode 2 has nobody reading a warning, so a divergence check that
+	if err != nil && t.cfg.Automode {
+		// Automode has nobody reading a warning, so a divergence check that
 		// cannot run blocks every workspace instead.
 		t.postWorkspaceStatusForAll(ctx, triggeredWorkspaces, vcs.CommitStateFailed,
 			"blocked: could not check the target branch for changes to workspace paths")
@@ -722,7 +722,7 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 			t.postClassStatus(ctx, vcs.CommitStateFailed, fmt.Sprintf(
 				"class %s failed: could not check the target branch; the MR falls back to reviewed", t.cfg.ChangeClass))
 		}
-		return nil, utils.CreatePermanentError(fmt.Errorf("could not check the target branch for a Mode 2 MR: %w", err))
+		return nil, utils.CreatePermanentError(fmt.Errorf("could not check the target branch for an automode MR: %w", err))
 	}
 	if err != nil {
 		if err := t.postUpdate(ctx, MRCommentTargetBranchEvalFailed); err != nil {
@@ -741,7 +741,7 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 		return nil, fmt.Errorf("could not initialize apply generation: %w", err)
 	}
 
-	classPlan := t.cfg.Mode2 && t.GetAction() == PlanAction && t.GetWorkspace() == ""
+	classPlan := t.cfg.Automode && t.GetAction() == PlanAction && t.GetWorkspace() == ""
 	if classPlan {
 		t.postClassStatus(ctx, vcs.CommitStatePending, fmt.Sprintf("class %s: waiting for plans", t.cfg.ChangeClass))
 	}
@@ -1219,7 +1219,7 @@ func (t *TFCTrigger) publishRunToStream(ctx context.Context, run *tfe.Run, cfgWS
 		AutoMergeGeneration:                  t.cfg.AutoMergeGeneration,
 		AutoMergeSequence:                    t.cfg.AutoMergeSequence,
 	}
-	if t.cfg.Mode2 {
+	if t.cfg.Automode {
 		rmd.ChangeClass = t.cfg.ChangeClass
 		rmd.ClassWorkspaces = t.cfg.ClassWorkspaces
 	}

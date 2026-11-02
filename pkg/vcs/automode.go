@@ -3,7 +3,7 @@ package vcs
 import "time"
 
 // ClassStatusName is the commit status TFBuddy posts on the head commit of a
-// Mode 2 merge request. It starts with CommitStatusPrefix, so the pipeline gate
+// Automode merge request. It starts with CommitStatusPrefix, so the pipeline gate
 // treats it as one of TFBuddy's own statuses and never waits on it.
 const ClassStatusName = CommitStatusPrefix + "class"
 
@@ -35,7 +35,7 @@ type MRVersion struct {
 	CreatedAt time.Time
 }
 
-// ClassStatus is the TFC/class commit status of a Mode 2 merge request.
+// ClassStatus is the TFC/class commit status of an automode merge request.
 type ClassStatus struct {
 	Project         string // path with namespace
 	CommitSHA       string

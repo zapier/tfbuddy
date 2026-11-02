@@ -39,7 +39,7 @@ const (
 	KeyRequirePipelineSuccess     = "require-pipeline-success"
 	KeyBlockApplyOnDraft          = "block-apply-on-draft"
 	KeyStatusTriggerWait          = "status-trigger-wait"
-	KeyMode2Enabled               = "mode2-enabled"
+	KeyAutomodeEnabled            = "automode-enabled"
 )
 
 type Config struct {
@@ -70,7 +70,7 @@ type Config struct {
 	RequirePipelineSuccess     bool          `mapstructure:"require-pipeline-success"`
 	BlockApplyOnDraft          bool          `mapstructure:"block-apply-on-draft"`
 	StatusTriggerWait          time.Duration `mapstructure:"status-trigger-wait"`
-	Mode2Enabled               bool          `mapstructure:"mode2-enabled"`
+	AutomodeEnabled            bool          `mapstructure:"automode-enabled"`
 }
 
 var C Config
@@ -116,7 +116,7 @@ var bindings = []binding{
 	{key: KeyRequirePipelineSuccess, defaultValue: false, description: "Refuse `tfc apply` while the merge request pipeline for the commit has a job that has not succeeded. Only takes effect for GitLab projects that also set `only_allow_merge_if_pipeline_succeeds`. TFBuddy's own TFC/* commit statuses are ignored, so a pending apply status does not block itself."},
 	{key: KeyBlockApplyOnDraft, defaultValue: false, description: "Refuse `tfc apply` while the merge request is a Draft. A Draft cannot be merged, so an apply on one leaves live infrastructure ahead of the target branch. `tfc plan` is still allowed."},
 	{key: KeyStatusTriggerWait, defaultValue: 5 * time.Minute, description: "How long `tfc status` waits for TFBuddy to publish a commit status for the pipeline's commit before failing the job. Accepts a Go duration string (e.g. 5m)."},
-	{key: KeyMode2Enabled, defaultValue: false, description: "Enable Mode 2 for GitLab: merge requests whose author is listed under `mode2` in the target branch's .tfbuddy.yaml are planned with a change class in the run message and applied through the `tfc apply` path once they are approved after their last push. When disabled, those merge requests take the normal `tfc apply` flow."},
+	{key: KeyAutomodeEnabled, defaultValue: false, description: "Enable automode for GitLab: merge requests whose author is listed under `automode` in the target branch's .tfbuddy.yaml are planned with a change class in the run message and applied through the `tfc apply` path once they are approved after their last push. When disabled, those merge requests take the normal `tfc apply` flow."},
 }
 
 func init() {

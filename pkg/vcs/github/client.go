@@ -522,20 +522,20 @@ func (c *Client) GetProjectSettings(ctx context.Context, projectWithNS string) (
 	return nil, nil
 }
 
-// errMode2Unsupported is returned by the calls only Mode 2 makes. Mode 2 is
-// GitLab-only: TFBuddy never puts a GitHub pull request in Mode 2.
-var errMode2Unsupported = utils.CreatePermanentError(fmt.Errorf("mode 2 is not supported on GitHub"))
+// errAutomodeUnsupported is returned by the calls only automode makes. Automode is
+// GitLab-only: TFBuddy never puts a GitHub pull request in automode.
+var errAutomodeUnsupported = utils.CreatePermanentError(fmt.Errorf("automode is not supported on GitHub"))
 
 func (c *Client) GetMergeRequestCommits(ctx context.Context, mrIID int, project string) ([]vcs.MRCommit, error) {
-	return nil, errMode2Unsupported
+	return nil, errAutomodeUnsupported
 }
 
 func (c *Client) GetMergeRequestApprovalState(ctx context.Context, mrIID int, project string) (*vcs.MRApprovalState, error) {
-	return nil, errMode2Unsupported
+	return nil, errAutomodeUnsupported
 }
 
 func (c *Client) GetMergeRequestVersions(ctx context.Context, mrIID int, project string) ([]vcs.MRVersion, error) {
-	return nil, errMode2Unsupported
+	return nil, errAutomodeUnsupported
 }
 
 // SetClassStatus is a no-op, like SetWorkspaceStatus.

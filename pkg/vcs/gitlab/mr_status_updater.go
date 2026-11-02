@@ -93,7 +93,7 @@ func (p *RunStatusUpdater) updateCommitStatusForRun(ctx context.Context, run *tf
 		// A sentinel policy has soft failed for a plan-only run. This is a final state.
 		// During the apply, the policy failure will need to be overriden.
 		log.Debug().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Msg("policy soft failed")
-		// A Mode 2 plan that soft-fails a policy fails, and so fails its
+		// An automode plan that soft-fails a policy fails, and so fails its
 		// class: TFBuddy never overrides a policy for automation.
 		if (p.cfg.FailCIOnSentinelSoftFail || rmd.GetChangeClass() != "") && rmd.GetAction() == runstream.PlanAction {
 			p.updateStatus(ctx, gogitlab.Failed, "plan", rmd)

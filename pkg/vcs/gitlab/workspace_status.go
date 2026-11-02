@@ -94,7 +94,7 @@ func (c *GitlabClient) SetWorkspaceStatus(ctx context.Context, ws vcs.WorkspaceS
 	return nil
 }
 
-// SetClassStatus publishes the TFC/class commit status of a Mode 2 merge
+// SetClassStatus publishes the TFC/class commit status of an automode merge
 // request. It is placed on the merge request pipeline the same way as a
 // workspace status.
 func (c *GitlabClient) SetClassStatus(ctx context.Context, cs vcs.ClassStatus) error {

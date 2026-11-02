@@ -17,7 +17,7 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-// client-go v0.129.0 drops approved_at, which is the whole point of Mode 2's
+// client-go v0.129.0 drops approved_at, which is the whole point of automode's
 // approval check, so the client decodes the response itself.
 func TestGetMergeRequestApprovalStateReadsApprovedAt(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -175,9 +175,9 @@ func TestUpdateClassStatusAfterLastPlan(t *testing.T) {
 	r.updateClassStatus(context.Background(), &tfe.Run{Status: tfe.RunPlannedAndFinished}, rmd)
 }
 
-// A Mode 2 plan that soft-fails a policy fails, whatever
+// An automode plan that soft-fails a policy fails, whatever
 // fail-ci-on-sentinel-soft-fail says, so that its class fails too.
-func TestMode2SoftFailFailsThePlan(t *testing.T) {
+func TestAutomodeSoftFailFailsThePlan(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	client := mocks.NewMockGitClient(ctrl)
 	r := &RunStatusUpdater{cfg: config.C, client: client}
