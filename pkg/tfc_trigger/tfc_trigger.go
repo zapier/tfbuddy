@@ -720,7 +720,7 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 			"blocked: could not check the target branch for changes to workspace paths")
 		if t.GetAction() == PlanAction {
 			t.postClassStatus(ctx, vcs.CommitStateFailed, fmt.Sprintf(
-				"class %s failed: could not check the target branch; the MR falls back to reviewed", t.cfg.ChangeClass))
+				"class %s failed: could not check the target branch; the MR falls back to Manual Mode", t.cfg.ChangeClass))
 		}
 		return nil, utils.CreatePermanentError(fmt.Errorf("could not check the target branch for an Auto Mode MR: %w", err))
 	}
@@ -759,7 +759,7 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 			names = append(names, ws.Name)
 		}
 		t.postClassStatus(ctx, vcs.CommitStateFailed, fmt.Sprintf(
-			"class %s failed: %s did not plan; the MR falls back to reviewed", t.cfg.ChangeClass, strings.Join(names, ", ")))
+			"class %s failed: %s did not plan; the MR falls back to Manual Mode", t.cfg.ChangeClass, strings.Join(names, ", ")))
 	}
 	return status, nil
 }

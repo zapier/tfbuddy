@@ -16,9 +16,10 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-// ClassReviewed is the change class of an Auto Mode merge request that fits no
-// configured class. Only Sentinel's global policies hold its runs.
-const ClassReviewed = "reviewed"
+// ClassNone is what ClassFor returns for a merge request that fits no class.
+// Such a merge request falls back to Manual Mode: a code owner approves it and
+// a person applies it with `tfc apply`.
+const ClassNone = ""
 
 // classNameRegex limits class names to what a Sentinel policy can read back
 // out of a run message without ambiguity.
@@ -38,7 +39,8 @@ type AutoModeAuthor struct {
 	// GitLab API, never a note or commit author, which anyone can set.
 	Username string `yaml:"username"`
 	// CommitEmails are the git author and committer emails this user's commits
-	// carry. A commit with any other email makes the merge request Reviewed.
+	// carry. A commit with any other email makes the merge request fall back to
+	// Manual Mode.
 	CommitEmails []string `yaml:"commitEmails"`
 }
 
@@ -104,9 +106,6 @@ func (c *AutoModeConfig) validate() error {
 		if !classNameRegex.MatchString(class.Name) {
 			return fmt.Errorf("classes[%d] name %q must match %s", i, class.Name, classNameRegex)
 		}
-		if class.Name == ClassReviewed {
-			return fmt.Errorf("classes[%d] cannot be named %q, TFBuddy gives that class to every other change", i, ClassReviewed)
-		}
 		if names[class.Name] {
 			return fmt.Errorf("classes[%d] repeats the name %q", i, class.Name)
 		}
@@ -140,10 +139,10 @@ func (c *AutoModeConfig) Author(username string) *AutoModeAuthor {
 // ClassFor returns the change class of a merge request by author that changes
 // changedFiles in commits. The first class whose authors include author and
 // whose paths match every changed file wins. Anything else, including a
-// commit that does not carry author's commit emails, is ClassReviewed.
+// commit that does not carry author's commit emails, is ClassNone.
 func (c *AutoModeConfig) ClassFor(author *AutoModeAuthor, changedFiles []string, commits []vcs.MRCommit) string {
 	if len(changedFiles) == 0 || !author.madeAll(commits) {
-		return ClassReviewed
+		return ClassNone
 	}
 	for _, class := range c.Classes {
 		if slices.ContainsFunc(class.Authors, func(a string) bool { return strings.EqualFold(a, author.Username) }) &&
@@ -151,7 +150,7 @@ func (c *AutoModeConfig) ClassFor(author *AutoModeAuthor, changedFiles []string,
 			return class.Name
 		}
 	}
-	return ClassReviewed
+	return ClassNone
 }
 
 // madeAll reports whether every commit carries one of a's commit emails as both
@@ -239,9 +238,15 @@ func (t *TFCTrigger) resolveAutoMode(ctx context.Context, mr vcs.DetailedMR, aff
 		return fmt.Errorf("could not list the MR's commits. %w", err)
 	}
 
+	class := autoMode.ClassFor(author, files, commits)
+	if class == ClassNone {
+		log.Info().Str("project", t.GetProjectNameWithNamespace()).Int("mergeRequestID", t.GetMergeRequestIID()).
+			Str("author", author.Username).Msg("merge request fits no Auto Mode class, falls back to Manual Mode")
+		return nil
+	}
 	t.cfg.AutoMode = true
 	t.cfg.AutoModeAuthor = author.Username
-	t.cfg.ChangeClass = autoMode.ClassFor(author, files, commits)
+	t.cfg.ChangeClass = class
 	t.cfg.ClassWorkspaces = make([]string, 0, len(affected))
 	for _, ws := range affected {
 		t.cfg.ClassWorkspaces = append(t.cfg.ClassWorkspaces, ws.Name)

@@ -182,6 +182,25 @@ func TestTFCEvents_AutoModePlanCarriesClass(t *testing.T) {
 	}
 }
 
+func TestTFCEvents_AutoModeAuthorWithNoClassFallsBackToManualMode(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	ts := mocks.CreateTestSuite(ctrl, mocks.TestOverrides{ProjectConfig: autoModeWorkspaces()}, t)
+	// tags-bot is listed, but main.tf is outside every class it is on.
+	expectMR(ctrl, ts, "tags-bot", autoModeTargetConfig, []string{"services/api/prod/main-us-east-1/main.tf"}, tagsBotCommits)
+	opts, rmd := capturePlanRun(ctrl, ts)
+	ts.InitTestSuite()
+
+	if _, err := newAutoModeTrigger(autoModeAppConfig(), ts, tfc_trigger.PlanAction).TriggerTFCEvents(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if opts.Message != "MR [!101]: MR Title" {
+		t.Errorf("run message = %q, want the Manual Mode message with the title and no class", opts.Message)
+	}
+	if rmd.ChangeClass != "" {
+		t.Errorf("a Manual Mode run has no class, got %q", rmd.ChangeClass)
+	}
+}
+
 func TestTFCEvents_PersonTitleIsKept(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	ts := mocks.CreateTestSuite(ctrl, mocks.TestOverrides{ProjectConfig: autoModeWorkspaces()}, t)

@@ -356,9 +356,10 @@ autoMode:
 * A merge request runs in Auto Mode when its author, read from the GitLab API, is
   under `authors`. The note author and the commit author are never used.
 * Its change class is the first class whose `authors` include the MR author and
-  whose `paths` (doublestar globs) match every file the MR changes. Anything
-  else is `reviewed`. So is a merge request with any commit whose git author or
-  committer email is not one of the author's `commitEmails`. Those emails are
+  whose `paths` (doublestar globs) match every file the MR changes. A merge
+  request that fits no class falls back to Manual Mode, and so does one with any
+  commit whose git author or committer email is not one of the author's
+  `commitEmails`. Those emails are
   declared by whoever makes the commit, so this check is evidence, not proof:
   anyone who can push to the branch can claim them.
 * Every plan and apply run of an Auto Mode merge request has a run message that
@@ -371,7 +372,8 @@ autoMode:
   the plans run, success once every workspace's plan has passed, and failed
   when any plan errored, was canceled, failed a policy (soft failures
   included) or did not run. A failure means the merge request falls back to
-  `reviewed`. TFBuddy does not yet read a Sentinel class-policy result.
+  Manual Mode. TFBuddy does not yet read a Sentinel class-policy result, or
+  plan the merge request again without its class.
 
 When GitLab sends the `approved` merge request event (the one sent once every
 approval rule is satisfied), TFBuddy applies an Auto Mode merge request only when

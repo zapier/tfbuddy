@@ -71,7 +71,7 @@ func (p *RunStatusUpdater) updateClassStatus(ctx context.Context, run *tfe.Run, 
 // plan outcomes in a compare-and-swap aggregate, as auto-merge does.
 func classResult(class string, workspaces []string, statuses []vcs.CommitJobStatus) (vcs.CommitState, string) {
 	if len(workspaces) == 0 {
-		return vcs.CommitStateFailed, fmt.Sprintf("class %s failed: no workspaces to plan; the MR falls back to reviewed", class)
+		return vcs.CommitStateFailed, fmt.Sprintf("class %s failed: no workspaces to plan; the MR falls back to Manual Mode", class)
 	}
 	const (
 		unknown = iota
@@ -105,7 +105,7 @@ func classResult(class string, workspaces []string, statuses []vcs.CommitJobStat
 		}
 	}
 	if len(failedWS) > 0 {
-		return vcs.CommitStateFailed, fmt.Sprintf("class %s failed: the plan for %s did not pass; the MR falls back to reviewed", class, strings.Join(failedWS, ", "))
+		return vcs.CommitStateFailed, fmt.Sprintf("class %s failed: the plan for %s did not pass; the MR falls back to Manual Mode", class, strings.Join(failedWS, ", "))
 	}
 	if !finished {
 		return "", ""

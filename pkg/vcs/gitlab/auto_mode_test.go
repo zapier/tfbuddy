@@ -124,7 +124,7 @@ func TestClassResult(t *testing.T) {
 			name:      "a failed plan fails the class even while others run",
 			statuses:  []vcs.CommitJobStatus{plan("a", "failed"), plan("b", "running")},
 			wantState: vcs.CommitStateFailed,
-			wantDesc:  "the plan for a did not pass; the MR falls back to reviewed",
+			wantDesc:  "the plan for a did not pass; the MR falls back to Manual Mode",
 		},
 		{
 			name:      "a skipped workspace is not a clean one",

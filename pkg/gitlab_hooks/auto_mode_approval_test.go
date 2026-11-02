@@ -143,6 +143,9 @@ type autoModeFixture struct {
 	client  *mocks.MockGitClient
 	mr      *mocks.MockDetailedMR
 	trigger *mocks.MockTrigger
+	// changedFiles are the files the MR changes. They fit the tags class
+	// unless a test sets others.
+	changedFiles []string
 	// created holds the options of every trigger the worker built.
 	created []*tfc_trigger.TFCTriggerOptions
 }
@@ -151,10 +154,11 @@ func newAutoModeFixture(t *testing.T, autoModeEnabled bool) *autoModeFixture {
 	t.Helper()
 	ctrl := gomock.NewController(t)
 	f := &autoModeFixture{
-		ctrl:    ctrl,
-		client:  mocks.NewMockGitClient(ctrl),
-		mr:      mocks.NewMockDetailedMR(ctrl),
-		trigger: mocks.NewMockTrigger(ctrl),
+		ctrl:         ctrl,
+		client:       mocks.NewMockGitClient(ctrl),
+		mr:           mocks.NewMockDetailedMR(ctrl),
+		trigger:      mocks.NewMockTrigger(ctrl),
+		changedFiles: []string{"services/api/prod/main-us-east-1/tags.auto.tfvars.json"},
 	}
 	cfg := config.C
 	cfg.AutoModeEnabled = autoModeEnabled
@@ -184,6 +188,10 @@ func (f *autoModeFixture) expectMR(author string) {
 	f.mr.EXPECT().HasConflicts().Return(false).AnyTimes()
 	f.client.EXPECT().GetMergeRequest(gomock.Any(), gateMRIID, gateProject).Return(f.mr, nil)
 	f.client.EXPECT().GetRepoFile(gomock.Any(), gateProject, ".tfbuddy.yaml", "main").Return([]byte(autoModeTargetConfig), nil)
+	f.client.EXPECT().GetMergeRequestModifiedFiles(gomock.Any(), gateMRIID, gateProject).Return(f.changedFiles, nil).AnyTimes()
+	f.client.EXPECT().GetMergeRequestCommits(gomock.Any(), gateMRIID, gateProject).Return([]vcs.MRCommit{
+		{SHA: gateCommitSHA, AuthorEmail: "tags-bot@example.com", CommitterEmail: "tags-bot@example.com"},
+	}, nil).AnyTimes()
 }
 
 // expectGates answers every gate the approval checks.
@@ -250,6 +258,15 @@ func TestAutoModeApproval_DoesNotApply(t *testing.T) {
 			autoModeEnabled: true,
 			action:          "approved",
 			setup:           func(f *autoModeFixture) { f.expectMR("a-person") },
+		},
+		{
+			name:            "an MR that fits no class falls back to Manual Mode",
+			autoModeEnabled: true,
+			action:          "approved",
+			setup: func(f *autoModeFixture) {
+				f.changedFiles = []string{"services/api/prod/main-us-east-1/main.tf"}
+				f.expectMR("tags-bot")
+			},
 		},
 		{
 			name:            "a single approval, not the MR's full approval",

@@ -82,14 +82,14 @@ func TestAutoModeClassFor(t *testing.T) {
 			author:  "tags-bot",
 			files:   []string{tagsFile, "services/api/prod/main-us-east-1/main.tf"},
 			commits: commitsBy("tags-bot@example.com"),
-			want:    ClassReviewed,
+			want:    ClassNone,
 		},
 		{
 			name:    "a commit by another author",
 			author:  "tags-bot",
 			files:   []string{tagsFile},
 			commits: commitsBy("tags-bot@example.com", "someone@example.com"),
-			want:    ClassReviewed,
+			want:    ClassNone,
 		},
 		{
 			name:   "a commit committed by another identity",
@@ -98,14 +98,14 @@ func TestAutoModeClassFor(t *testing.T) {
 			commits: []vcs.MRCommit{
 				{SHA: "a", AuthorEmail: "tags-bot@example.com", CommitterEmail: "someone@example.com"},
 			},
-			want: ClassReviewed,
+			want: ClassNone,
 		},
 		{
 			name:    "the files fit a class the author is not on",
 			author:  "renovate-bot",
 			files:   []string{tagsFile},
 			commits: commitsBy("renovate@example.com"),
-			want:    ClassReviewed,
+			want:    ClassNone,
 		},
 		{
 			name:    "first matching class wins",
@@ -119,14 +119,14 @@ func TestAutoModeClassFor(t *testing.T) {
 			author:  "tags-bot",
 			files:   []string{tagsFile},
 			commits: nil,
-			want:    ClassReviewed,
+			want:    ClassNone,
 		},
 		{
 			name:    "no changed files never matches a class",
 			author:  "tags-bot",
 			files:   nil,
 			commits: commitsBy("tags-bot@example.com"),
-			want:    ClassReviewed,
+			want:    ClassNone,
 		},
 	}
 	for _, tt := range tests {
@@ -160,9 +160,6 @@ func TestParseAutoModeConfig(t *testing.T) {
 	}
 
 	invalid := map[string]string{
-		"reserved name": `autoMode:
-  authors: [{username: bot}]
-  classes: [{name: reviewed, authors: [bot], paths: ["**"]}]`,
 		"name a policy cannot read": `autoMode:
   authors: [{username: bot}]
   classes: [{name: "tags]", authors: [bot], paths: ["**"]}]`,
@@ -204,7 +201,7 @@ func TestRunMessage(t *testing.T) {
 	}
 
 	autoMode := &TFCTrigger{cfg: &TFCTriggerOptions{MergeRequestIID: 7, CommitSHA: "1a2b3c4", AutoMode: true, AutoModeAuthor: "tags-bot", ChangeClass: "tags"}}
-	got, err = autoMode.runMessage("Sync tags [tfbuddy-class=reviewed]")
+	got, err = autoMode.runMessage("Sync tags [tfbuddy-class=new-service]")
 	if err != nil {
 		t.Fatal(err)
 	}

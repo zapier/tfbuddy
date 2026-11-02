@@ -48,7 +48,20 @@ func (w *GitlabEventWorker) processAutoModeApproval(ctx context.Context, msg *Me
 	if err != nil {
 		return err
 	}
-	if autoMode.Author(mr.GetAuthor().GetUsername()) == nil {
+	author := autoMode.Author(mr.GetAuthor().GetUsername())
+	if author == nil {
+		return nil
+	}
+	files, err := w.gl.GetMergeRequestModifiedFiles(ctx, mrIID, proj)
+	if err != nil {
+		return fmt.Errorf("could not list the MR's changed files: %w", err)
+	}
+	commits, err := w.gl.GetMergeRequestCommits(ctx, mrIID, proj)
+	if err != nil {
+		return fmt.Errorf("could not list the MR's commits: %w", err)
+	}
+	if autoMode.ClassFor(author, files, commits) == tfc_trigger.ClassNone {
+		// It fits no class, so it is a Manual Mode MR: a person applies it.
 		return nil
 	}
 
