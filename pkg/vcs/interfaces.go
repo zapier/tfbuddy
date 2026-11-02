@@ -34,12 +34,6 @@ type GitClient interface {
 	MergeMRAtSHA(ctx context.Context, mrIID int, project, expectedSHA string) error
 	// GetMergeRequestCommits returns every commit on a merge request.
 	GetMergeRequestCommits(ctx context.Context, mrIID int, project string) ([]MRCommit, error)
-	// GetMergeRequestApprovalState returns a merge request's approvals and
-	// when each one was given.
-	GetMergeRequestApprovalState(ctx context.Context, mrIID int, project string) (*MRApprovalState, error)
-	// GetMergeRequestVersions returns a merge request's diff versions, one per
-	// push, in the order GitLab lists them.
-	GetMergeRequestVersions(ctx context.Context, mrIID int, project string) ([]MRVersion, error)
 	// SetClassStatus publishes the TFC/class commit status of an Auto Mode merge
 	// request.
 	SetClassStatus(ctx context.Context, status ClassStatus) error

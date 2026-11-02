@@ -375,9 +375,9 @@ approval rule is satisfied), TFBuddy applies an Auto Mode merge request only whe
 all of these hold, and otherwise says why on the MR:
 
 1. The MR is open, not a Draft and has no conflicts.
-2. It is approved, and every approval was given after the head commit was
-   pushed (`approved_at` from the approvals API against the newest diff
-   version's `created_at`).
+2. It is approved. Turn on GitLab's "reset approvals on push" in the repo, so
+   that every push removes the approvals and an approval always covers the
+   head commit.
 3. Every `TFC/plan/<workspace>` status on the head commit is green, and
    `TFC/class` has passed.
 4. The head commit's CI pipeline exists and every job in it has succeeded,

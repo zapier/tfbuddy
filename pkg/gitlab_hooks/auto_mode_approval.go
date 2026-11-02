@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/rs/zerolog/log"
 	"github.com/zapier/tfbuddy/pkg/tfc_trigger"
@@ -121,16 +120,14 @@ func (w *GitlabEventWorker) autoModeApplyBlocker(ctx context.Context, mr vcs.Det
 	}
 
 	mrIID := mr.GetInternalID()
-	approvals, err := w.gl.GetMergeRequestApprovalState(ctx, mrIID, proj)
+	// The repo resets approvals on push, so an approval always covers the head
+	// commit.
+	approvals, err := w.gl.GetMergeRequestApprovals(ctx, mrIID, proj)
 	if err != nil {
 		return fmt.Sprintf("could not read the MR's approvals: %v", err)
 	}
-	versions, err := w.gl.GetMergeRequestVersions(ctx, mrIID, proj)
-	if err != nil {
-		return fmt.Sprintf("could not read the MR's pushes: %v", err)
-	}
-	if reason := approvalAfterPushBlocker(approvals, versions, headSHA); reason != "" {
-		return reason
+	if !approvals.IsApproved() {
+		return "the MR is not approved"
 	}
 
 	statuses, err := w.gl.GetCommitJobStatuses(ctx, proj, headSHA)
@@ -152,36 +149,6 @@ func (w *GitlabEventWorker) autoModeApplyBlocker(ctx context.Context, mr vcs.Det
 	}
 	if blocking := blockingJobs(statuses, pipeline.GetID()); len(blocking) > 0 {
 		return fmt.Sprintf("%s has not succeeded, still waiting on: %s", vcs.DescribePipeline(pipeline), strings.Join(blocking, ", "))
-	}
-	return ""
-}
-
-// approvalAfterPushBlocker returns why approvals do not cover headSHA, or "".
-// The newest diff version must be headSHA, and every approval must be newer
-// than the push that created it, because approvals survive pushes. An
-// approval GitLab gives no time for counts as older.
-func approvalAfterPushBlocker(approvals *vcs.MRApprovalState, versions []vcs.MRVersion, headSHA string) string {
-	if approvals == nil || !approvals.Approved || len(approvals.ApprovedBy) == 0 {
-		return "the MR is not approved"
-	}
-	var pushed time.Time
-	var newestHead string
-	for _, v := range versions {
-		if v.CreatedAt.After(pushed) {
-			pushed, newestHead = v.CreatedAt, v.HeadSHA
-		}
-	}
-	if newestHead != headSHA {
-		return "the MR has a newer push than the approved commit"
-	}
-	var stale []string
-	for _, a := range approvals.ApprovedBy {
-		if a.ApprovedAt == nil || !a.ApprovedAt.After(pushed) {
-			stale = append(stale, a.Username)
-		}
-	}
-	if len(stale) > 0 {
-		return fmt.Sprintf("the approval by %s was given before the head commit was pushed", strings.Join(stale, ", "))
 	}
 	return ""
 }

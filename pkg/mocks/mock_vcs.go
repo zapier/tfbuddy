@@ -160,21 +160,6 @@ func (mr *MockGitClientMockRecorder) GetMergeRequest(arg0, arg1, arg2 any) *gomo
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMergeRequest", reflect.TypeOf((*MockGitClient)(nil).GetMergeRequest), arg0, arg1, arg2)
 }
 
-// GetMergeRequestApprovalState mocks base method.
-func (m *MockGitClient) GetMergeRequestApprovalState(ctx context.Context, mrIID int, project string) (*vcs.MRApprovalState, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetMergeRequestApprovalState", ctx, mrIID, project)
-	ret0, _ := ret[0].(*vcs.MRApprovalState)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetMergeRequestApprovalState indicates an expected call of GetMergeRequestApprovalState.
-func (mr *MockGitClientMockRecorder) GetMergeRequestApprovalState(ctx, mrIID, project any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMergeRequestApprovalState", reflect.TypeOf((*MockGitClient)(nil).GetMergeRequestApprovalState), ctx, mrIID, project)
-}
-
 // GetMergeRequestApprovals mocks base method.
 func (m *MockGitClient) GetMergeRequestApprovals(ctx context.Context, id int, project string) (vcs.MRApproved, error) {
 	m.ctrl.T.Helper()
@@ -218,21 +203,6 @@ func (m *MockGitClient) GetMergeRequestModifiedFiles(ctx context.Context, mrIID 
 func (mr *MockGitClientMockRecorder) GetMergeRequestModifiedFiles(ctx, mrIID, projectID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMergeRequestModifiedFiles", reflect.TypeOf((*MockGitClient)(nil).GetMergeRequestModifiedFiles), ctx, mrIID, projectID)
-}
-
-// GetMergeRequestVersions mocks base method.
-func (m *MockGitClient) GetMergeRequestVersions(ctx context.Context, mrIID int, project string) ([]vcs.MRVersion, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetMergeRequestVersions", ctx, mrIID, project)
-	ret0, _ := ret[0].([]vcs.MRVersion)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetMergeRequestVersions indicates an expected call of GetMergeRequestVersions.
-func (mr *MockGitClientMockRecorder) GetMergeRequestVersions(ctx, mrIID, project any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMergeRequestVersions", reflect.TypeOf((*MockGitClient)(nil).GetMergeRequestVersions), ctx, mrIID, project)
 }
 
 // GetOldRunUrls mocks base method.

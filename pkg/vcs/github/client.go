@@ -530,14 +530,6 @@ func (c *Client) GetMergeRequestCommits(ctx context.Context, mrIID int, project 
 	return nil, errAutoModeUnsupported
 }
 
-func (c *Client) GetMergeRequestApprovalState(ctx context.Context, mrIID int, project string) (*vcs.MRApprovalState, error) {
-	return nil, errAutoModeUnsupported
-}
-
-func (c *Client) GetMergeRequestVersions(ctx context.Context, mrIID int, project string) ([]vcs.MRVersion, error) {
-	return nil, errAutoModeUnsupported
-}
-
 // SetClassStatus is a no-op, like SetWorkspaceStatus.
 func (c *Client) SetClassStatus(ctx context.Context, status vcs.ClassStatus) error {
 	return nil

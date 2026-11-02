@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/hashicorp/go-tfe"
 	"github.com/zapier/tfbuddy/internal/config"
@@ -16,46 +15,6 @@ import (
 	"github.com/zapier/tfbuddy/pkg/vcs"
 	"go.uber.org/mock/gomock"
 )
-
-// client-go v0.129.0 drops approved_at, which is the whole point of Auto Mode's
-// approval check, so the client decodes the response itself.
-func TestGetMergeRequestApprovalStateReadsApprovedAt(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		path := r.URL.RawPath
-		if path == "" {
-			path = r.URL.Path
-		}
-		if !strings.HasSuffix(path, "/merge_requests/101/approvals") {
-			t.Errorf("unexpected request %s %s", r.Method, path)
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{
-			"approved": true,
-			"approved_by": [
-				{"user": {"username": "approver-bot"}, "approved_at": "2026-11-02T10:01:00.000Z"},
-				{"user": {"username": "old-gitlab"}}
-			]
-		}`))
-	}))
-	defer srv.Close()
-
-	state, err := newTestClient(t, srv.URL).GetMergeRequestApprovalState(context.Background(), 101, testProject)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !state.Approved || len(state.ApprovedBy) != 2 {
-		t.Fatalf("unexpected approval state: %+v", state)
-	}
-	want := time.Date(2026, 11, 2, 10, 1, 0, 0, time.UTC)
-	if a := state.ApprovedBy[0]; a.Username != "approver-bot" || a.ApprovedAt == nil || !a.ApprovedAt.Equal(want) {
-		t.Errorf("first approval = %+v, want approver-bot at %s", a, want)
-	}
-	if a := state.ApprovedBy[1]; a.ApprovedAt != nil {
-		t.Errorf("an approval without approved_at must have no time, got %s", a.ApprovedAt)
-	}
-}
 
 func TestSetClassStatusPostsTFCClass(t *testing.T) {
 	var got map[string]any

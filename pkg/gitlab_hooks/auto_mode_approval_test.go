@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/zapier/tfbuddy/internal/config"
 	"github.com/zapier/tfbuddy/pkg/mocks"
@@ -26,68 +25,6 @@ autoMode:
       authors: [tags-bot]
       paths: ["**/tags.auto.tfvars.json"]
 `
-
-var (
-	headPushedAt = time.Date(2026, 11, 2, 10, 0, 0, 0, time.UTC)
-	afterPush    = headPushedAt.Add(time.Minute)
-	beforePush   = headPushedAt.Add(-time.Minute)
-)
-
-func approvedBy(at *time.Time) *vcs.MRApprovalState {
-	return &vcs.MRApprovalState{Approved: true, ApprovedBy: []vcs.MRApproval{{Username: "approver-bot", ApprovedAt: at}}}
-}
-
-func headVersions() []vcs.MRVersion {
-	return []vcs.MRVersion{
-		{HeadSHA: gateCommitSHA, CreatedAt: headPushedAt},
-		{HeadSHA: "older", CreatedAt: headPushedAt.Add(-time.Hour)},
-	}
-}
-
-func TestApprovalAfterPushBlocker(t *testing.T) {
-	tests := []struct {
-		name      string
-		approvals *vcs.MRApprovalState
-		versions  []vcs.MRVersion
-		want      string
-	}{
-		{name: "approved after the head was pushed", approvals: approvedBy(&afterPush), versions: headVersions()},
-		{
-			name:      "versions in any order",
-			approvals: approvedBy(&afterPush),
-			versions:  []vcs.MRVersion{headVersions()[1], headVersions()[0]},
-		},
-		{name: "approved before the head was pushed", approvals: approvedBy(&beforePush), versions: headVersions(), want: "before the head commit was pushed"},
-		{name: "approved in the same instant as the push", approvals: approvedBy(&headPushedAt), versions: headVersions(), want: "before the head commit was pushed"},
-		{name: "no approval time", approvals: approvedBy(nil), versions: headVersions(), want: "before the head commit was pushed"},
-		{
-			name: "one stale approval among fresh ones",
-			approvals: &vcs.MRApprovalState{Approved: true, ApprovedBy: []vcs.MRApproval{
-				{Username: "fresh", ApprovedAt: &afterPush}, {Username: "stale", ApprovedAt: &beforePush},
-			}},
-			versions: headVersions(),
-			want:     "approval by stale",
-		},
-		{
-			name:      "a newer push than the approved commit",
-			approvals: approvedBy(&afterPush),
-			versions:  append(headVersions(), vcs.MRVersion{HeadSHA: "newer", CreatedAt: headPushedAt.Add(30 * time.Second)}),
-			want:      "newer push",
-		},
-		{name: "not approved", approvals: &vcs.MRApprovalState{}, versions: headVersions(), want: "not approved"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := approvalAfterPushBlocker(tt.approvals, tt.versions, gateCommitSHA)
-			if tt.want == "" && got != "" {
-				t.Fatalf("expected no blocker, got %q", got)
-			}
-			if !strings.Contains(got, tt.want) {
-				t.Fatalf("blocker = %q, want it to mention %q", got, tt.want)
-			}
-		})
-	}
-}
 
 func TestPlanStatusBlocker(t *testing.T) {
 	green := []vcs.CommitJobStatus{
@@ -195,9 +132,10 @@ func (f *autoModeFixture) expectMR(author string) {
 }
 
 // expectGates answers every gate the approval checks.
-func (f *autoModeFixture) expectGates(approvedAt time.Time, buildStatus string) {
-	f.client.EXPECT().GetMergeRequestApprovalState(gomock.Any(), gateMRIID, gateProject).Return(approvedBy(&approvedAt), nil)
-	f.client.EXPECT().GetMergeRequestVersions(gomock.Any(), gateMRIID, gateProject).Return(headVersions(), nil)
+func (f *autoModeFixture) expectGates(approved bool, buildStatus string) {
+	approvals := mocks.NewMockMRApproved(f.ctrl)
+	approvals.EXPECT().IsApproved().Return(approved).AnyTimes()
+	f.client.EXPECT().GetMergeRequestApprovals(gomock.Any(), gateMRIID, gateProject).Return(approvals, nil)
 	f.client.EXPECT().GetCommitJobStatuses(gomock.Any(), gateProject, gateCommitSHA).Return([]vcs.CommitJobStatus{
 		fakeJobStatus{name: "TFC/plan/svc-a", status: "success", pipelineID: 900},
 		fakeJobStatus{name: vcs.ClassStatusName, status: "success", pipelineID: 900},
@@ -222,7 +160,7 @@ func mergeEventMsg(action string) *MergeRequestEventMsg {
 func TestAutoModeApproval_StartsApplyForAutoModeMR(t *testing.T) {
 	f := newAutoModeFixture(t, true)
 	f.expectMR("tags-bot")
-	f.expectGates(afterPush, "success")
+	f.expectGates(true, "success")
 	f.trigger.EXPECT().TriggerTFCEvents(gomock.Any()).Return(&tfc_trigger.TriggeredTFCWorkspaces{Executed: []string{"svc-a"}}, nil)
 
 	if _, err := f.worker.processMergeRequestEvent(mergeEventMsg("approved")); err != nil {
@@ -275,14 +213,14 @@ func TestAutoModeApproval_DoesNotApply(t *testing.T) {
 			setup:           func(f *autoModeFixture) {},
 		},
 		{
-			name:            "approved before the head was pushed",
+			name:            "no longer approved when the event is handled",
 			autoModeEnabled: true,
 			action:          "approved",
 			setup: func(f *autoModeFixture) {
 				f.expectMR("tags-bot")
-				f.expectGates(beforePush, "success")
+				f.expectGates(false, "success")
 			},
-			wantComment: "before the head commit was pushed",
+			wantComment: "the MR is not approved",
 		},
 		{
 			name:            "the pipeline has not succeeded",
@@ -290,7 +228,7 @@ func TestAutoModeApproval_DoesNotApply(t *testing.T) {
 			action:          "approved",
 			setup: func(f *autoModeFixture) {
 				f.expectMR("tags-bot")
-				f.expectGates(afterPush, "running")
+				f.expectGates(true, "running")
 			},
 			wantComment: "still waiting on: aa:code-review (running)",
 		},
