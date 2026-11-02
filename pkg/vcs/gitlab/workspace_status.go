@@ -88,6 +88,34 @@ func (c *GitlabClient) SetWorkspaceStatus(ctx context.Context, ws vcs.WorkspaceS
 	ctx, span := otel.Tracer("TFC").Start(ctx, "SetWorkspaceStatus")
 	defer span.End()
 
+	if err := c.setTFBuddyStatus(ctx, *statusName(ws.Workspace, ws.Action), ws); err != nil {
+		return fmt.Errorf("could not set commit status for workspace %s: %w", ws.Workspace, err)
+	}
+	return nil
+}
+
+// SetClassStatus publishes the TFC/class commit status of a Mode 2 merge
+// request. It is placed on the merge request pipeline the same way as a
+// workspace status.
+func (c *GitlabClient) SetClassStatus(ctx context.Context, cs vcs.ClassStatus) error {
+	ctx, span := otel.Tracer("TFC").Start(ctx, "SetClassStatus")
+	defer span.End()
+
+	if err := c.setTFBuddyStatus(ctx, vcs.ClassStatusName, vcs.WorkspaceStatus{
+		Project:         cs.Project,
+		CommitSHA:       cs.CommitSHA,
+		MergeRequestIID: cs.MergeRequestIID,
+		State:           cs.State,
+		Description:     cs.Description,
+	}); err != nil {
+		return fmt.Errorf("could not set %s commit status: %w", vcs.ClassStatusName, err)
+	}
+	return nil
+}
+
+// setTFBuddyStatus publishes the commit status name for ws's commit, on the
+// merge request pipeline when it can find one.
+func (c *GitlabClient) setTFBuddyStatus(ctx context.Context, name string, ws vcs.WorkspaceStatus) error {
 	state := buildStateFor(ws.State)
 	description := ws.Description
 	if description == "" {
@@ -96,8 +124,8 @@ func (c *GitlabClient) SetWorkspaceStatus(ctx context.Context, ws vcs.WorkspaceS
 	description = truncateDescription(description)
 
 	status := &gogitlab.SetCommitStatusOptions{
-		Name:        statusName(ws.Workspace, ws.Action),
-		Context:     statusName(ws.Workspace, ws.Action),
+		Name:        &name,
+		Context:     &name,
 		Description: &description,
 		State:       state,
 	}
@@ -135,7 +163,7 @@ func (c *GitlabClient) SetWorkspaceStatus(ctx context.Context, ws vcs.WorkspaceS
 
 	cs, err := c.SetCommitStatus(ctx, ws.Project, ws.CommitSHA, &GitlabCommitStatusOptions{status})
 	if err != nil {
-		return fmt.Errorf("could not set commit status for workspace %s: %w", ws.Workspace, err)
+		return err
 	}
 	log.Debug().Str("project", ws.Project).Int("mergeRequestID", ws.MergeRequestIID).
 		Interface("commit_status", cs.Info()).Msg("updated Commit Status")

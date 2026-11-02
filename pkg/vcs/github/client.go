@@ -522,6 +522,27 @@ func (c *Client) GetProjectSettings(ctx context.Context, projectWithNS string) (
 	return nil, nil
 }
 
+// errMode2Unsupported is returned by the calls only Mode 2 makes. Mode 2 is
+// GitLab-only: TFBuddy never puts a GitHub pull request in Mode 2.
+var errMode2Unsupported = utils.CreatePermanentError(fmt.Errorf("mode 2 is not supported on GitHub"))
+
+func (c *Client) GetMergeRequestCommits(ctx context.Context, mrIID int, project string) ([]vcs.MRCommit, error) {
+	return nil, errMode2Unsupported
+}
+
+func (c *Client) GetMergeRequestApprovalState(ctx context.Context, mrIID int, project string) (*vcs.MRApprovalState, error) {
+	return nil, errMode2Unsupported
+}
+
+func (c *Client) GetMergeRequestVersions(ctx context.Context, mrIID int, project string) ([]vcs.MRVersion, error) {
+	return nil, errMode2Unsupported
+}
+
+// SetClassStatus is a no-op, like SetWorkspaceStatus.
+func (c *Client) SetClassStatus(ctx context.Context, status vcs.ClassStatus) error {
+	return nil
+}
+
 func (c *Client) GetIssue(ctx context.Context, owner *gogithub.User, repo string, issueId int) (*gogithub.Issue, error) {
 	ctx, span := otel.Tracer("TFC").Start(ctx, "GetIssue")
 	defer span.End()

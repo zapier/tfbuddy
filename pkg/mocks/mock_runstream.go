@@ -440,6 +440,34 @@ func (mr *MockRunMetadataMockRecorder) GetAutoMergeSequence() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAutoMergeSequence", reflect.TypeOf((*MockRunMetadata)(nil).GetAutoMergeSequence))
 }
 
+// GetChangeClass mocks base method.
+func (m *MockRunMetadata) GetChangeClass() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetChangeClass")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetChangeClass indicates an expected call of GetChangeClass.
+func (mr *MockRunMetadataMockRecorder) GetChangeClass() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetChangeClass", reflect.TypeOf((*MockRunMetadata)(nil).GetChangeClass))
+}
+
+// GetClassWorkspaces mocks base method.
+func (m *MockRunMetadata) GetClassWorkspaces() []string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetClassWorkspaces")
+	ret0, _ := ret[0].([]string)
+	return ret0
+}
+
+// GetClassWorkspaces indicates an expected call of GetClassWorkspaces.
+func (mr *MockRunMetadataMockRecorder) GetClassWorkspaces() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetClassWorkspaces", reflect.TypeOf((*MockRunMetadata)(nil).GetClassWorkspaces))
+}
+
 // GetCommitSHA mocks base method.
 func (m *MockRunMetadata) GetCommitSHA() string {
 	m.ctrl.T.Helper()

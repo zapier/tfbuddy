@@ -262,21 +262,11 @@ func (w *GitlabEventWorker) checkPipelineStatus(ctx context.Context, event vcs.M
 		return true
 	}
 
-	pipelines, err := w.gl.GetPipelinesForCommit(ctx, proj, commitSHA)
+	pipeline, err := w.ciPipelineForCommit(ctx, proj, commitSHA)
 	if err != nil {
 		w.postErrorToMergeRequest(ctx, event, fmt.Errorf("could not get pipelines for commit from GitlabAPI: %v", err))
 		return false
 	}
-
-	// Pipelines with source "external" are the ones GitLab creates implicitly for
-	// TFBuddy's own commit statuses, so they carry no CI of their own.
-	candidates := make([]vcs.ProjectPipeline, 0, len(pipelines))
-	for _, p := range pipelines {
-		if p.GetSource() != vcs.PipelineSourceExternal {
-			candidates = append(candidates, p)
-		}
-	}
-	pipeline := vcs.SelectPipelineForCommit(candidates)
 	if pipeline == nil {
 		log.Debug().Str("project", proj).Str("commitSHA", commitSHA).Msg("no CI pipeline for commit, not gating apply")
 		return true
@@ -288,29 +278,10 @@ func (w *GitlabEventWorker) checkPipelineStatus(ctx context.Context, event vcs.M
 		return false
 	}
 
-	// Collect every outstanding job rather than returning on the first. Naming
-	// one blocker reads as though it is the only one, which invites a
-	// fix-one-rerun-repeat loop when several jobs are red.
-	var blocking []string
-	for _, status := range statuses {
-		if status.GetPipelineID() != pipeline.GetID() {
-			continue
-		}
-		if vcs.IsTFBuddyCommitStatus(status) || status.GetAllowFailure() {
-			continue
-		}
-		if nonBlockingJobStatuses[status.GetStatus()] {
-			continue
-		}
-		blocking = append(blocking, fmt.Sprintf("%s (%s)", status.GetName(), status.GetStatus()))
-	}
+	blocking := blockingJobs(statuses, pipeline.GetID())
 	if len(blocking) == 0 {
 		return true
 	}
-
-	// Sort so the message is stable regardless of the order GitLab returns
-	// statuses in, which keeps repeated comments comparable.
-	sort.Strings(blocking)
 
 	span.SetAttributes(
 		attribute.Int("pipeline_id", pipeline.GetID()),
@@ -323,4 +294,45 @@ func (w *GitlabEventWorker) checkPipelineStatus(ctx context.Context, event vcs.M
 		vcs.DescribePipeline(pipeline), pipeline.GetStatus(), strings.Join(blocking, ", "),
 	))
 	return false
+}
+
+// ciPipelineForCommit returns the pipeline that runs CI for commitSHA, or nil
+// when the commit has none. Pipelines with source "external" are the ones
+// GitLab creates implicitly for TFBuddy's own commit statuses, so they carry no
+// CI of their own.
+func (w *GitlabEventWorker) ciPipelineForCommit(ctx context.Context, proj, commitSHA string) (vcs.ProjectPipeline, error) {
+	pipelines, err := w.gl.GetPipelinesForCommit(ctx, proj, commitSHA)
+	if err != nil {
+		return nil, err
+	}
+	candidates := make([]vcs.ProjectPipeline, 0, len(pipelines))
+	for _, p := range pipelines {
+		if p.GetSource() != vcs.PipelineSourceExternal {
+			candidates = append(candidates, p)
+		}
+	}
+	return vcs.SelectPipelineForCommit(candidates), nil
+}
+
+// blockingJobs lists, sorted, every job in pipeline pipelineID that still
+// blocks an apply. It collects them all rather than stopping at the first:
+// naming one blocker reads as though it is the only one, which invites a
+// fix-one-rerun-repeat loop when several jobs are red. Sorting keeps the
+// message stable regardless of the order GitLab returns statuses in.
+func blockingJobs(statuses []vcs.CommitJobStatus, pipelineID int) []string {
+	var blocking []string
+	for _, status := range statuses {
+		if status.GetPipelineID() != pipelineID {
+			continue
+		}
+		if vcs.IsTFBuddyCommitStatus(status) || status.GetAllowFailure() {
+			continue
+		}
+		if nonBlockingJobStatuses[status.GetStatus()] {
+			continue
+		}
+		blocking = append(blocking, fmt.Sprintf("%s (%s)", status.GetName(), status.GetStatus()))
+	}
+	sort.Strings(blocking)
+	return blocking
 }

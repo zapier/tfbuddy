@@ -160,3 +160,20 @@ func TestRegisterFlagsBindsParsedValuesIntoConfigStruct(t *testing.T) {
 		t.Fatalf("C.WorkspaceAllowList = %v, want %v", C.WorkspaceAllowList, wantAllowList)
 	}
 }
+
+func TestMode2DefaultsToFalse(t *testing.T) {
+	resetViperForTest(t)
+
+	if C.Mode2Enabled {
+		t.Fatal("C.Mode2Enabled = true, want false")
+	}
+}
+
+func TestMode2CanBeEnabledFromEnv(t *testing.T) {
+	t.Setenv("TFBUDDY_MODE2_ENABLED", "true")
+	resetViperForTest(t)
+
+	if !C.Mode2Enabled {
+		t.Fatal("C.Mode2Enabled = false, want true")
+	}
+}

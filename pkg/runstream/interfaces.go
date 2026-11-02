@@ -48,6 +48,8 @@ type RunMetadata interface {
 	GetAutoMerge() bool
 	GetAutoMergeGeneration() string
 	GetAutoMergeSequence() int64
+	GetChangeClass() string
+	GetClassWorkspaces() []string
 }
 
 type RunPollingTask interface {

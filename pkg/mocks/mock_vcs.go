@@ -160,6 +160,21 @@ func (mr *MockGitClientMockRecorder) GetMergeRequest(arg0, arg1, arg2 any) *gomo
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMergeRequest", reflect.TypeOf((*MockGitClient)(nil).GetMergeRequest), arg0, arg1, arg2)
 }
 
+// GetMergeRequestApprovalState mocks base method.
+func (m *MockGitClient) GetMergeRequestApprovalState(ctx context.Context, mrIID int, project string) (*vcs.MRApprovalState, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetMergeRequestApprovalState", ctx, mrIID, project)
+	ret0, _ := ret[0].(*vcs.MRApprovalState)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetMergeRequestApprovalState indicates an expected call of GetMergeRequestApprovalState.
+func (mr *MockGitClientMockRecorder) GetMergeRequestApprovalState(ctx, mrIID, project any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMergeRequestApprovalState", reflect.TypeOf((*MockGitClient)(nil).GetMergeRequestApprovalState), ctx, mrIID, project)
+}
+
 // GetMergeRequestApprovals mocks base method.
 func (m *MockGitClient) GetMergeRequestApprovals(ctx context.Context, id int, project string) (vcs.MRApproved, error) {
 	m.ctrl.T.Helper()
@@ -175,6 +190,21 @@ func (mr *MockGitClientMockRecorder) GetMergeRequestApprovals(ctx, id, project a
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMergeRequestApprovals", reflect.TypeOf((*MockGitClient)(nil).GetMergeRequestApprovals), ctx, id, project)
 }
 
+// GetMergeRequestCommits mocks base method.
+func (m *MockGitClient) GetMergeRequestCommits(ctx context.Context, mrIID int, project string) ([]vcs.MRCommit, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetMergeRequestCommits", ctx, mrIID, project)
+	ret0, _ := ret[0].([]vcs.MRCommit)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetMergeRequestCommits indicates an expected call of GetMergeRequestCommits.
+func (mr *MockGitClientMockRecorder) GetMergeRequestCommits(ctx, mrIID, project any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMergeRequestCommits", reflect.TypeOf((*MockGitClient)(nil).GetMergeRequestCommits), ctx, mrIID, project)
+}
+
 // GetMergeRequestModifiedFiles mocks base method.
 func (m *MockGitClient) GetMergeRequestModifiedFiles(ctx context.Context, mrIID int, projectID string) ([]string, error) {
 	m.ctrl.T.Helper()
@@ -188,6 +218,21 @@ func (m *MockGitClient) GetMergeRequestModifiedFiles(ctx context.Context, mrIID 
 func (mr *MockGitClientMockRecorder) GetMergeRequestModifiedFiles(ctx, mrIID, projectID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMergeRequestModifiedFiles", reflect.TypeOf((*MockGitClient)(nil).GetMergeRequestModifiedFiles), ctx, mrIID, projectID)
+}
+
+// GetMergeRequestVersions mocks base method.
+func (m *MockGitClient) GetMergeRequestVersions(ctx context.Context, mrIID int, project string) ([]vcs.MRVersion, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetMergeRequestVersions", ctx, mrIID, project)
+	ret0, _ := ret[0].([]vcs.MRVersion)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetMergeRequestVersions indicates an expected call of GetMergeRequestVersions.
+func (mr *MockGitClientMockRecorder) GetMergeRequestVersions(ctx, mrIID, project any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMergeRequestVersions", reflect.TypeOf((*MockGitClient)(nil).GetMergeRequestVersions), ctx, mrIID, project)
 }
 
 // GetOldRunUrls mocks base method.
@@ -319,6 +364,20 @@ func (m *MockGitClient) ResolveMergeRequestDiscussions(ctx context.Context, proj
 func (mr *MockGitClientMockRecorder) ResolveMergeRequestDiscussions(ctx, project, mrIID, workspace, action any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResolveMergeRequestDiscussions", reflect.TypeOf((*MockGitClient)(nil).ResolveMergeRequestDiscussions), ctx, project, mrIID, workspace, action)
+}
+
+// SetClassStatus mocks base method.
+func (m *MockGitClient) SetClassStatus(ctx context.Context, status vcs.ClassStatus) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetClassStatus", ctx, status)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetClassStatus indicates an expected call of SetClassStatus.
+func (mr *MockGitClientMockRecorder) SetClassStatus(ctx, status any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetClassStatus", reflect.TypeOf((*MockGitClient)(nil).SetClassStatus), ctx, status)
 }
 
 // SetCommitStatus mocks base method.

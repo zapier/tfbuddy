@@ -47,6 +47,13 @@ type TFRunMetadata struct {
 	AutoMerge           bool
 	AutoMergeGeneration string
 	AutoMergeSequence   int64
+
+	// ChangeClass is the Mode 2 change class named in the run message, and is
+	// empty for every run that is not a Mode 2 run.
+	ChangeClass string
+	// ClassWorkspaces are the workspaces whose plans decide the merge request's
+	// TFC/class status.
+	ClassWorkspaces []string
 }
 
 func (r *TFRunMetadata) GetAction() string {
@@ -87,6 +94,12 @@ func (r *TFRunMetadata) GetAutoMergeGeneration() string {
 }
 func (r *TFRunMetadata) GetAutoMergeSequence() int64 {
 	return r.AutoMergeSequence
+}
+func (r *TFRunMetadata) GetChangeClass() string {
+	return r.ChangeClass
+}
+func (r *TFRunMetadata) GetClassWorkspaces() []string {
+	return r.ClassWorkspaces
 }
 func (s *Stream) AddRunMeta(rmd RunMetadata) error {
 	b, err := encodeTFRunMetadata(rmd)
