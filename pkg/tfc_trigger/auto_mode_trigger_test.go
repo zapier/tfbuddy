@@ -19,12 +19,12 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-// automodeTargetConfig is the target branch's .tfbuddy.yaml in these tests.
-const automodeTargetConfig = `
+// autoModeTargetConfig is the target branch's .tfbuddy.yaml in these tests.
+const autoModeTargetConfig = `
 workspaces:
   - name: service-tfbuddy
     organization: zapier-test
-automode:
+autoMode:
   authors:
     - username: tags-bot
       commitEmails: [tags-bot@example.com]
@@ -34,17 +34,17 @@ automode:
       paths: ["**/tags.auto.tfvars.json"]
 `
 
-const automodeTagsFile = "services/api/prod/main-us-east-1/tags.auto.tfvars.json"
+const autoModeTagsFile = "services/api/prod/main-us-east-1/tags.auto.tfvars.json"
 
-func automodeAppConfig() config.Config {
+func autoModeAppConfig() config.Config {
 	cfg := config.C
-	cfg.AutomodeEnabled = true
+	cfg.AutoModeEnabled = true
 	return cfg
 }
 
-// automodeWorkspaces is the source branch's config: one workspace that every
+// autoModeWorkspaces is the source branch's config: one workspace that every
 // change triggers, opted into auto-merge.
-func automodeWorkspaces() *tfc_trigger.ProjectConfig {
+func autoModeWorkspaces() *tfc_trigger.ProjectConfig {
 	return &tfc_trigger.ProjectConfig{Workspaces: []*tfc_trigger.TFCWorkspace{{
 		Name:         "service-tfbuddy",
 		Organization: "zapier-test",
@@ -100,7 +100,7 @@ func capturePlanRun(ctrl *gomock.Controller, ts *mocks.TestSuite) (*tfc_api.ApiR
 	return opts, rmd
 }
 
-func newAutomodeTrigger(appCfg config.Config, ts *mocks.TestSuite, action tfc_trigger.TriggerAction) tfc_trigger.Trigger {
+func newAutoModeTrigger(appCfg config.Config, ts *mocks.TestSuite, action tfc_trigger.TriggerAction) tfc_trigger.Trigger {
 	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
 		Action:                   action,
 		Branch:                   ts.MetaData.SourceBranch,
@@ -114,47 +114,47 @@ func newAutomodeTrigger(appCfg config.Config, ts *mocks.TestSuite, action tfc_tr
 	return tfc_trigger.NewTFCTrigger(appCfg, ts.MockGitClient, ts.MockApiClient, ts.MockStreamClient, tCfg)
 }
 
-func TestLoadAutomodeConfig_ReadsTargetBranchOnly(t *testing.T) {
+func TestLoadAutoModeConfig_ReadsTargetBranchOnly(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	gl := mocks.NewMockGitClient(ctrl)
 	// Only the target branch is expected; a read of any other branch fails.
-	gl.EXPECT().GetRepoFile(gomock.Any(), "zapier/tfbuddy", ".tfbuddy.yaml", "main").Return([]byte(automodeTargetConfig), nil)
+	gl.EXPECT().GetRepoFile(gomock.Any(), "zapier/tfbuddy", ".tfbuddy.yaml", "main").Return([]byte(autoModeTargetConfig), nil)
 
-	cfg, err := tfc_trigger.LoadAutomodeConfig(context.Background(), gl, "zapier/tfbuddy", "main")
+	cfg, err := tfc_trigger.LoadAutoModeConfig(context.Background(), gl, "zapier/tfbuddy", "main")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cfg.Author("tags-bot") == nil {
-		t.Fatal("expected tags-bot to be an automode author")
+		t.Fatal("expected tags-bot to be an Auto Mode author")
 	}
 }
 
-func TestLoadAutomodeConfig_MissingFileIsNotAutomode(t *testing.T) {
+func TestLoadAutoModeConfig_MissingFileIsNotAutoMode(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	gl := mocks.NewMockGitClient(ctrl)
 	gl.EXPECT().GetRepoFile(gomock.Any(), "zapier/tfbuddy", ".tfbuddy.yaml", "main").
 		Return(nil, utils.CreatePermanentError(errors.New("404 File Not Found")))
 
-	cfg, err := tfc_trigger.LoadAutomodeConfig(context.Background(), gl, "zapier/tfbuddy", "main")
+	cfg, err := tfc_trigger.LoadAutoModeConfig(context.Background(), gl, "zapier/tfbuddy", "main")
 	if err != nil || cfg != nil {
-		t.Fatalf("a branch without the file has no automode config, got %+v, %v", cfg, err)
+		t.Fatalf("a branch without the file has no Auto Mode config, got %+v, %v", cfg, err)
 	}
 }
 
-func TestLoadAutomodeConfig_TransientErrorFails(t *testing.T) {
+func TestLoadAutoModeConfig_TransientErrorFails(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	gl := mocks.NewMockGitClient(ctrl)
 	gl.EXPECT().GetRepoFile(gomock.Any(), "zapier/tfbuddy", ".tfbuddy.yaml", "main").Return(nil, errors.New("502 Bad Gateway"))
 
-	if _, err := tfc_trigger.LoadAutomodeConfig(context.Background(), gl, "zapier/tfbuddy", "main"); err == nil {
-		t.Fatal("a read GitLab did not answer must not decide that the MR is not in automode")
+	if _, err := tfc_trigger.LoadAutoModeConfig(context.Background(), gl, "zapier/tfbuddy", "main"); err == nil {
+		t.Fatal("a read GitLab did not answer must not decide that the MR is not in Auto Mode")
 	}
 }
 
-func TestTFCEvents_AutomodePlanCarriesClass(t *testing.T) {
+func TestTFCEvents_AutoModePlanCarriesClass(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	ts := mocks.CreateTestSuite(ctrl, mocks.TestOverrides{ProjectConfig: automodeWorkspaces()}, t)
-	expectMR(ctrl, ts, "tags-bot", automodeTargetConfig, []string{automodeTagsFile}, tagsBotCommits)
+	ts := mocks.CreateTestSuite(ctrl, mocks.TestOverrides{ProjectConfig: autoModeWorkspaces()}, t)
+	expectMR(ctrl, ts, "tags-bot", autoModeTargetConfig, []string{autoModeTagsFile}, tagsBotCommits)
 	opts, rmd := capturePlanRun(ctrl, ts)
 	var classStatuses []vcs.ClassStatus
 	ts.MockGitClient.EXPECT().SetClassStatus(gomock.Any(), gomock.Any()).
@@ -164,7 +164,7 @@ func TestTFCEvents_AutomodePlanCarriesClass(t *testing.T) {
 		}).AnyTimes()
 	ts.InitTestSuite()
 
-	triggered, err := newAutomodeTrigger(automodeAppConfig(), ts, tfc_trigger.PlanAction).TriggerTFCEvents(context.Background())
+	triggered, err := newAutoModeTrigger(autoModeAppConfig(), ts, tfc_trigger.PlanAction).TriggerTFCEvents(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,14 +184,14 @@ func TestTFCEvents_AutomodePlanCarriesClass(t *testing.T) {
 
 func TestTFCEvents_PersonTitleIsKept(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	ts := mocks.CreateTestSuite(ctrl, mocks.TestOverrides{ProjectConfig: automodeWorkspaces()}, t)
+	ts := mocks.CreateTestSuite(ctrl, mocks.TestOverrides{ProjectConfig: autoModeWorkspaces()}, t)
 	ts.MockGitMR.EXPECT().GetTitle().Return("Add bucket [tfbuddy-class=tags]").AnyTimes()
 	// A person is not on the list, so their commits are never read.
-	expectMR(ctrl, ts, "a-person", automodeTargetConfig, []string{automodeTagsFile}, nil)
+	expectMR(ctrl, ts, "a-person", autoModeTargetConfig, []string{autoModeTagsFile}, nil)
 	opts, rmd := capturePlanRun(ctrl, ts)
 	ts.InitTestSuite()
 
-	if _, err := newAutomodeTrigger(automodeAppConfig(), ts, tfc_trigger.PlanAction).TriggerTFCEvents(context.Background()); err != nil {
+	if _, err := newAutoModeTrigger(autoModeAppConfig(), ts, tfc_trigger.PlanAction).TriggerTFCEvents(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	// A marker in a person's own title can only restrict their own run.
@@ -203,27 +203,27 @@ func TestTFCEvents_PersonTitleIsKept(t *testing.T) {
 	}
 }
 
-// The source branch is the MR's own: a automode section there must not put its
-// author in automode.
-func TestTFCEvents_AutomodeConfigOnSourceBranchIsIgnored(t *testing.T) {
+// The source branch is the MR's own: an Auto Mode section there must not put its
+// author in Auto Mode.
+func TestTFCEvents_AutoModeConfigOnSourceBranchIsIgnored(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	ts := mocks.CreateTestSuite(ctrl, mocks.TestOverrides{ProjectConfig: automodeWorkspaces()}, t)
+	ts := mocks.CreateTestSuite(ctrl, mocks.TestOverrides{ProjectConfig: autoModeWorkspaces()}, t)
 	sourceConfig := `
 workspaces:
   - name: service-tfbuddy
     organization: zapier-test
     triggerDirs: ["**"]
-automode:
+autoMode:
   authors: [{username: a-person, commitEmails: [person@example.com]}]
   classes: [{name: tags, authors: [a-person], paths: ["**"]}]
 `
 	ts.MockGitClient.EXPECT().GetRepoFile(gomock.Any(), ts.MetaData.ProjectNameNS, ".tfbuddy.yaml", ts.MetaData.SourceBranch).
 		Return([]byte(sourceConfig), nil).AnyTimes()
-	expectMR(ctrl, ts, "a-person", "workspaces:\n  - name: service-tfbuddy\n", []string{automodeTagsFile}, nil)
+	expectMR(ctrl, ts, "a-person", "workspaces:\n  - name: service-tfbuddy\n", []string{autoModeTagsFile}, nil)
 	opts, _ := capturePlanRun(ctrl, ts)
 	ts.InitTestSuite()
 
-	if _, err := newAutomodeTrigger(automodeAppConfig(), ts, tfc_trigger.PlanAction).TriggerTFCEvents(context.Background()); err != nil {
+	if _, err := newAutoModeTrigger(autoModeAppConfig(), ts, tfc_trigger.PlanAction).TriggerTFCEvents(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(opts.Message, "tfbuddy-class") {
@@ -231,17 +231,17 @@ automode:
 	}
 }
 
-func TestTFCEvents_AutomodeDisabledIsMode1(t *testing.T) {
+func TestTFCEvents_AutoModeDisabledIsMode1(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	ts := mocks.CreateTestSuite(ctrl, mocks.TestOverrides{ProjectConfig: automodeWorkspaces()}, t)
+	ts := mocks.CreateTestSuite(ctrl, mocks.TestOverrides{ProjectConfig: autoModeWorkspaces()}, t)
 	// No GetAuthor or target-branch expectations: with the flag off, TFBuddy
 	// must not even look.
 	ts.MockGitClient.EXPECT().GetMergeRequestModifiedFiles(gomock.Any(), ts.MetaData.MRIID, ts.MetaData.ProjectNameNS).
-		Return([]string{automodeTagsFile}, nil).AnyTimes()
+		Return([]string{autoModeTagsFile}, nil).AnyTimes()
 	opts, _ := capturePlanRun(ctrl, ts)
 	ts.InitTestSuite()
 
-	if _, err := newAutomodeTrigger(config.C, ts, tfc_trigger.PlanAction).TriggerTFCEvents(context.Background()); err != nil {
+	if _, err := newAutoModeTrigger(config.C, ts, tfc_trigger.PlanAction).TriggerTFCEvents(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if opts.Message != "MR [!101]: MR Title" {
@@ -249,10 +249,10 @@ func TestTFCEvents_AutomodeDisabledIsMode1(t *testing.T) {
 	}
 }
 
-func TestTFCEvents_AutomodeDivergenceCheckFailsClosed(t *testing.T) {
+func TestTFCEvents_AutoModeDivergenceCheckFailsClosed(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	ts := mocks.CreateTestSuite(ctrl, mocks.TestOverrides{ProjectConfig: automodeWorkspaces()}, t)
-	expectMR(ctrl, ts, "tags-bot", automodeTargetConfig, []string{automodeTagsFile}, tagsBotCommits)
+	ts := mocks.CreateTestSuite(ctrl, mocks.TestOverrides{ProjectConfig: autoModeWorkspaces()}, t)
+	expectMR(ctrl, ts, "tags-bot", autoModeTargetConfig, []string{autoModeTagsFile}, tagsBotCommits)
 	ts.MockGitRepo.EXPECT().GetModifiedFileNamesBetweenCommits(ts.MetaData.CommonSHA, ts.MetaData.TargetBranch).
 		Return(nil, errors.New("could not diff"))
 	var statuses []vcs.WorkspaceStatus
@@ -264,7 +264,7 @@ func TestTFCEvents_AutomodeDivergenceCheckFailsClosed(t *testing.T) {
 	// No CreateRunFromSource or AddTags expectation: nothing may run or lock.
 	ts.InitTestSuite()
 
-	_, err := newAutomodeTrigger(automodeAppConfig(), ts, tfc_trigger.ApplyAction).TriggerTFCEvents(context.Background())
+	_, err := newAutoModeTrigger(autoModeAppConfig(), ts, tfc_trigger.ApplyAction).TriggerTFCEvents(context.Background())
 	if !errors.Is(err, utils.ErrPermanent) {
 		t.Fatalf("expected a permanent error, got %v", err)
 	}
@@ -273,16 +273,16 @@ func TestTFCEvents_AutomodeDivergenceCheckFailsClosed(t *testing.T) {
 	}
 }
 
-func TestTFCEvents_AutomodeApplyRequiresAutoMerge(t *testing.T) {
+func TestTFCEvents_AutoModeApplyRequiresAutoMerge(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	workspaces := automodeWorkspaces()
+	workspaces := autoModeWorkspaces()
 	workspaces.Workspaces[0].AutoMerge = false
 	ts := mocks.CreateTestSuite(ctrl, mocks.TestOverrides{ProjectConfig: workspaces}, t)
-	expectMR(ctrl, ts, "tags-bot", automodeTargetConfig, []string{automodeTagsFile}, tagsBotCommits)
+	expectMR(ctrl, ts, "tags-bot", autoModeTargetConfig, []string{autoModeTagsFile}, tagsBotCommits)
 	ts.InitTestSuite()
 
-	_, err := newAutomodeTrigger(automodeAppConfig(), ts, tfc_trigger.ApplyAction).TriggerTFCEvents(context.Background())
+	_, err := newAutoModeTrigger(autoModeAppConfig(), ts, tfc_trigger.ApplyAction).TriggerTFCEvents(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "auto-merge") {
-		t.Fatalf("an automode apply that cannot auto-merge must be refused, got %v", err)
+		t.Fatalf("an Auto Mode apply that cannot auto-merge must be refused, got %v", err)
 	}
 }

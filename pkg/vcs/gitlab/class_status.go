@@ -22,7 +22,7 @@ var terminalPlanStatuses = map[tfe.RunStatus]bool{
 	tfe.RunDiscarded:          true,
 }
 
-// updateClassStatus keeps the TFC/class status of an automode merge request in
+// updateClassStatus keeps the TFC/class status of an Auto Mode merge request in
 // step with its plans. It runs after every run event, and only a plan run
 // reaching a final state can change the result.
 //

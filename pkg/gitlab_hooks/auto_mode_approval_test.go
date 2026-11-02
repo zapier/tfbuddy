@@ -16,8 +16,8 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-const automodeTargetConfig = `
-automode:
+const autoModeTargetConfig = `
+autoMode:
   authors:
     - username: tags-bot
       commitEmails: [tags-bot@example.com]
@@ -136,8 +136,8 @@ func TestPlanStatusBlocker(t *testing.T) {
 	}
 }
 
-// automodeFixture drives processMergeRequestEvent with an "approved" event.
-type automodeFixture struct {
+// autoModeFixture drives processMergeRequestEvent with an "approved" event.
+type autoModeFixture struct {
 	ctrl    *gomock.Controller
 	worker  *GitlabEventWorker
 	client  *mocks.MockGitClient
@@ -147,17 +147,17 @@ type automodeFixture struct {
 	created []*tfc_trigger.TFCTriggerOptions
 }
 
-func newAutomodeFixture(t *testing.T, automodeEnabled bool) *automodeFixture {
+func newAutoModeFixture(t *testing.T, autoModeEnabled bool) *autoModeFixture {
 	t.Helper()
 	ctrl := gomock.NewController(t)
-	f := &automodeFixture{
+	f := &autoModeFixture{
 		ctrl:    ctrl,
 		client:  mocks.NewMockGitClient(ctrl),
 		mr:      mocks.NewMockDetailedMR(ctrl),
 		trigger: mocks.NewMockTrigger(ctrl),
 	}
 	cfg := config.C
-	cfg.AutomodeEnabled = automodeEnabled
+	cfg.AutoModeEnabled = autoModeEnabled
 	cfg.GitlabProjectAllowList = []string{"zapier/"}
 	f.worker = &GitlabEventWorker{
 		cfg: cfg,
@@ -171,8 +171,8 @@ func newAutomodeFixture(t *testing.T, automodeEnabled bool) *automodeFixture {
 }
 
 // expectMR makes the API's MR an open, mergeable one by author, with the
-// Automode config on its target branch.
-func (f *automodeFixture) expectMR(author string) {
+// Auto Mode config on its target branch.
+func (f *autoModeFixture) expectMR(author string) {
 	a := mocks.NewMockMRAuthor(f.ctrl)
 	a.EXPECT().GetUsername().Return(author).AnyTimes()
 	f.mr.EXPECT().GetAuthor().Return(a).AnyTimes()
@@ -183,11 +183,11 @@ func (f *automodeFixture) expectMR(author string) {
 	f.mr.EXPECT().IsDraft().Return(false).AnyTimes()
 	f.mr.EXPECT().HasConflicts().Return(false).AnyTimes()
 	f.client.EXPECT().GetMergeRequest(gomock.Any(), gateMRIID, gateProject).Return(f.mr, nil)
-	f.client.EXPECT().GetRepoFile(gomock.Any(), gateProject, ".tfbuddy.yaml", "main").Return([]byte(automodeTargetConfig), nil)
+	f.client.EXPECT().GetRepoFile(gomock.Any(), gateProject, ".tfbuddy.yaml", "main").Return([]byte(autoModeTargetConfig), nil)
 }
 
 // expectGates answers every gate the approval checks.
-func (f *automodeFixture) expectGates(approvedAt time.Time, buildStatus string) {
+func (f *autoModeFixture) expectGates(approvedAt time.Time, buildStatus string) {
 	f.client.EXPECT().GetMergeRequestApprovalState(gomock.Any(), gateMRIID, gateProject).Return(approvedBy(&approvedAt), nil)
 	f.client.EXPECT().GetMergeRequestVersions(gomock.Any(), gateMRIID, gateProject).Return(headVersions(), nil)
 	f.client.EXPECT().GetCommitJobStatuses(gomock.Any(), gateProject, gateCommitSHA).Return([]vcs.CommitJobStatus{
@@ -211,8 +211,8 @@ func mergeEventMsg(action string) *MergeRequestEventMsg {
 	return &MergeRequestEventMsg{Payload: event, DeliveryID: "delivery-1", Context: context.Background()}
 }
 
-func TestAutomodeApproval_StartsApplyForAutomodeMR(t *testing.T) {
-	f := newAutomodeFixture(t, true)
+func TestAutoModeApproval_StartsApplyForAutoModeMR(t *testing.T) {
+	f := newAutoModeFixture(t, true)
 	f.expectMR("tags-bot")
 	f.expectGates(afterPush, "success")
 	f.trigger.EXPECT().TriggerTFCEvents(gomock.Any()).Return(&tfc_trigger.TriggeredTFCWorkspaces{Executed: []string{"svc-a"}}, nil)
@@ -230,38 +230,38 @@ func TestAutomodeApproval_StartsApplyForAutomodeMR(t *testing.T) {
 	}
 }
 
-func TestAutomodeApproval_DoesNotApply(t *testing.T) {
+func TestAutoModeApproval_DoesNotApply(t *testing.T) {
 	tests := []struct {
 		name            string
-		automodeEnabled bool
+		autoModeEnabled bool
 		action          string
 		// setup registers the only GitLab calls the case may make.
-		setup       func(f *automodeFixture)
+		setup       func(f *autoModeFixture)
 		wantComment string
 	}{
 		{
-			name:            "automode is off",
-			automodeEnabled: false,
+			name:            "Auto Mode is off",
+			autoModeEnabled: false,
 			action:          "approved",
-			setup:           func(f *automodeFixture) {},
+			setup:           func(f *autoModeFixture) {},
 		},
 		{
 			name:            "a person's MR",
-			automodeEnabled: true,
+			autoModeEnabled: true,
 			action:          "approved",
-			setup:           func(f *automodeFixture) { f.expectMR("a-person") },
+			setup:           func(f *autoModeFixture) { f.expectMR("a-person") },
 		},
 		{
 			name:            "a single approval, not the MR's full approval",
-			automodeEnabled: true,
+			autoModeEnabled: true,
 			action:          "approval",
-			setup:           func(f *automodeFixture) {},
+			setup:           func(f *autoModeFixture) {},
 		},
 		{
 			name:            "approved before the head was pushed",
-			automodeEnabled: true,
+			autoModeEnabled: true,
 			action:          "approved",
-			setup: func(f *automodeFixture) {
+			setup: func(f *autoModeFixture) {
 				f.expectMR("tags-bot")
 				f.expectGates(beforePush, "success")
 			},
@@ -269,9 +269,9 @@ func TestAutomodeApproval_DoesNotApply(t *testing.T) {
 		},
 		{
 			name:            "the pipeline has not succeeded",
-			automodeEnabled: true,
+			autoModeEnabled: true,
 			action:          "approved",
-			setup: func(f *automodeFixture) {
+			setup: func(f *autoModeFixture) {
 				f.expectMR("tags-bot")
 				f.expectGates(afterPush, "running")
 			},
@@ -280,7 +280,7 @@ func TestAutomodeApproval_DoesNotApply(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			f := newAutomodeFixture(t, tt.automodeEnabled)
+			f := newAutoModeFixture(t, tt.autoModeEnabled)
 			tt.setup(f)
 			if tt.wantComment != "" {
 				f.client.EXPECT().CreateMergeRequestComment(gomock.Any(), gateMRIID, gateProject, gomock.Any()).

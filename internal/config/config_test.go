@@ -161,19 +161,19 @@ func TestRegisterFlagsBindsParsedValuesIntoConfigStruct(t *testing.T) {
 	}
 }
 
-func TestAutomodeDefaultsToFalse(t *testing.T) {
+func TestAutoModeDefaultsToFalse(t *testing.T) {
 	resetViperForTest(t)
 
-	if C.AutomodeEnabled {
-		t.Fatal("C.AutomodeEnabled = true, want false")
+	if C.AutoModeEnabled {
+		t.Fatal("C.AutoModeEnabled = true, want false")
 	}
 }
 
-func TestAutomodeCanBeEnabledFromEnv(t *testing.T) {
-	t.Setenv("TFBUDDY_AUTOMODE_ENABLED", "true")
+func TestAutoModeCanBeEnabledFromEnv(t *testing.T) {
+	t.Setenv("TFBUDDY_AUTO_MODE_ENABLED", "true")
 	resetViperForTest(t)
 
-	if !C.AutomodeEnabled {
-		t.Fatal("C.AutomodeEnabled = false, want true")
+	if !C.AutoModeEnabled {
+		t.Fatal("C.AutoModeEnabled = false, want true")
 	}
 }

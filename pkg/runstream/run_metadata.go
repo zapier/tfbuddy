@@ -48,8 +48,8 @@ type TFRunMetadata struct {
 	AutoMergeGeneration string
 	AutoMergeSequence   int64
 
-	// ChangeClass is the automode change class named in the run message, and is
-	// empty for every run that is not an automode run.
+	// ChangeClass is the Auto Mode change class named in the run message, and is
+	// empty for every run that is not an Auto Mode run.
 	ChangeClass string
 	// ClassWorkspaces are the workspaces whose plans decide the merge request's
 	// TFC/class status.

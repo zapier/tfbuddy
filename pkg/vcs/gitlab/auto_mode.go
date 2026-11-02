@@ -12,8 +12,8 @@ import (
 	"go.opentelemetry.io/otel"
 )
 
-// automodePageSize is GitLab's maximum page size.
-const automodePageSize = 100
+// autoModePageSize is GitLab's maximum page size.
+const autoModePageSize = 100
 
 // GetMergeRequestCommits returns every commit on the merge request, across
 // pages.
@@ -25,7 +25,7 @@ func (g *GitlabClient) GetMergeRequestCommits(ctx context.Context, mrIID int, pr
 		var output []vcs.MRCommit
 		for page := 1; page != 0; {
 			commits, resp, err := g.client.MergeRequests.GetMergeRequestCommits(project, mrIID, &gogitlab.GetMergeRequestCommitsOptions{
-				Page: page, PerPage: automodePageSize,
+				Page: page, PerPage: autoModePageSize,
 			}, gogitlab.WithContext(ctx))
 			if err != nil {
 				return nil, permanentError(resp, err)
@@ -40,7 +40,7 @@ func (g *GitlabClient) GetMergeRequestCommits(ctx context.Context, mrIID int, pr
 }
 
 // mergeRequestApprovals is the part of GitLab's merge request approvals
-// response that automode reads. client-go v0.129.0 decodes approved_by into
+// response that Auto Mode reads. client-go v0.129.0 decodes approved_by into
 // MergeRequestApproverUser, which has no approved_at, so this decodes the
 // response itself.
 type mergeRequestApprovals struct {
@@ -88,7 +88,7 @@ func (g *GitlabClient) GetMergeRequestVersions(ctx context.Context, mrIID int, p
 		var output []vcs.MRVersion
 		for page := 1; page != 0; {
 			versions, resp, err := g.client.MergeRequests.GetMergeRequestDiffVersions(project, mrIID, &gogitlab.GetMergeRequestDiffVersionsOptions{
-				Page: page, PerPage: automodePageSize,
+				Page: page, PerPage: autoModePageSize,
 			}, gogitlab.WithContext(ctx))
 			if err != nil {
 				return nil, permanentError(resp, err)

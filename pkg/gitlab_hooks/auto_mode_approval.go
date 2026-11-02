@@ -13,29 +13,29 @@ import (
 	"go.opentelemetry.io/otel"
 )
 
-// automodeApprovalAction is the merge request webhook action GitLab sends once
+// autoModeApprovalAction is the merge request webhook action GitLab sends once
 // every approval rule is satisfied. GitLab also sends "approval" for each
 // single approval; TFBuddy ignores that one, because the last approval sends
 // both and the apply must start only once.
-const automodeApprovalAction = "approved"
+const autoModeApprovalAction = "approved"
 
-// automodeApplyBlockedMessage is posted on an automode MR whose approval did not
+// autoModeApplyBlockedMessage is posted on an Auto Mode MR whose approval did not
 // start an apply. Its argument is the reason.
-const automodeApplyBlockedMessage = ":no_entry: Automode did not apply this MR on approval: %s. Nothing was applied. Once that is resolved, approve the MR again or comment `tfc apply`."
+const autoModeApplyBlockedMessage = ":no_entry: Auto Mode did not apply this MR on approval: %s. Nothing was applied. Once that is resolved, approve the MR again or comment `tfc apply`."
 
-// processAutomodeApproval starts the `tfc apply` path for an automode merge request
-// once it is approved. Every other merge request, and every automode merge
-// request while automode is off, is left to the normal flow without a comment.
-func (w *GitlabEventWorker) processAutomodeApproval(ctx context.Context, msg *MergeRequestEventMsg) error {
-	ctx, span := otel.Tracer("GitlabHandler").Start(ctx, "processAutomodeApproval")
+// processAutoModeApproval starts the `tfc apply` path for an Auto Mode merge request
+// once it is approved. Every other merge request, and every Auto Mode merge
+// request while Auto Mode is off, is left to the normal flow without a comment.
+func (w *GitlabEventWorker) processAutoModeApproval(ctx context.Context, msg *MergeRequestEventMsg) error {
+	ctx, span := otel.Tracer("GitlabHandler").Start(ctx, "processAutoModeApproval")
 	defer span.End()
 
 	event := msg.Payload
 	proj := event.Project.PathWithNamespace
 	mrIID := event.ObjectAttributes.IID
 	headSHA := event.ObjectAttributes.LastCommit.ID
-	if !w.cfg.AutomodeEnabled {
-		log.Debug().Str("project", proj).Int("mergeRequestID", mrIID).Msg("automode is disabled, ignoring approval")
+	if !w.cfg.AutoModeEnabled {
+		log.Debug().Str("project", proj).Int("mergeRequestID", mrIID).Msg("Auto Mode is disabled, ignoring approval")
 		return nil
 	}
 
@@ -44,18 +44,18 @@ func (w *GitlabEventWorker) processAutomodeApproval(ctx context.Context, msg *Me
 	if err != nil {
 		return fmt.Errorf("could not read MergeRequest data from VCS API: %w", err)
 	}
-	automode, err := tfc_trigger.LoadAutomodeConfig(ctx, w.gl, proj, mr.GetTargetBranch())
+	autoMode, err := tfc_trigger.LoadAutoModeConfig(ctx, w.gl, proj, mr.GetTargetBranch())
 	if err != nil {
 		return err
 	}
-	if automode.Author(mr.GetAuthor().GetUsername()) == nil {
+	if autoMode.Author(mr.GetAuthor().GetUsername()) == nil {
 		return nil
 	}
 
-	if reason := w.automodeApplyBlocker(ctx, mr, proj, headSHA); reason != "" {
+	if reason := w.autoModeApplyBlocker(ctx, mr, proj, headSHA); reason != "" {
 		log.Info().Str("project", proj).Int("mergeRequestID", mrIID).Str("reason", reason).
-			Msg("automode approval did not start an apply")
-		w.postAutomodeMessage(ctx, proj, mrIID, fmt.Sprintf(automodeApplyBlockedMessage, reason))
+			Msg("Auto Mode approval did not start an apply")
+		w.postAutoModeMessage(ctx, proj, mrIID, fmt.Sprintf(autoModeApplyBlockedMessage, reason))
 		return nil
 	}
 
@@ -78,26 +78,26 @@ func (w *GitlabEventWorker) processAutomodeApproval(ctx context.Context, msg *Me
 		trigger.SetWorkspaceStream(w.workspaceStream)
 	}
 	log.Info().Str("project", proj).Int("mergeRequestID", mrIID).Str("commitSHA", headSHA).
-		Msg("automode approval: starting apply")
+		Msg("Auto Mode approval: starting apply")
 	executed, err := trigger.TriggerTFCEvents(ctx)
 	if err != nil {
 		// Permanent, so a redelivery cannot post the same comment again; a
 		// retry is a `tfc apply` comment, as for a failed apply.
-		w.postAutomodeMessage(ctx, proj, mrIID, fmt.Sprintf(":no_entry: Automode apply could not be run because: %s", err.Error()))
+		w.postAutoModeMessage(ctx, proj, mrIID, fmt.Sprintf(":no_entry: Auto Mode apply could not be run because: %s", err.Error()))
 		return utils.CreatePermanentError(err)
 	}
 	if executed != nil {
 		for _, ws := range executed.Errored {
-			w.postAutomodeMessage(ctx, proj, mrIID, fmt.Sprintf(":no_entry: %s could not be run because: %s", ws.Name, ws.Error))
+			w.postAutoModeMessage(ctx, proj, mrIID, fmt.Sprintf(":no_entry: %s could not be run because: %s", ws.Name, ws.Error))
 		}
 	}
 	return nil
 }
 
-// automodeApplyBlocker returns why an approved automode merge request must not
+// autoModeApplyBlocker returns why an approved Auto Mode merge request must not
 // apply yet, or "" when it may. Lock and divergence checks are not here: the
-// apply path itself runs them, failing closed for automode.
-func (w *GitlabEventWorker) automodeApplyBlocker(ctx context.Context, mr vcs.DetailedMR, proj, headSHA string) string {
+// apply path itself runs them, failing closed for Auto Mode.
+func (w *GitlabEventWorker) autoModeApplyBlocker(ctx context.Context, mr vcs.DetailedMR, proj, headSHA string) string {
 	switch {
 	case mr.GetState() != "opened":
 		return "the MR is not open"
@@ -128,7 +128,7 @@ func (w *GitlabEventWorker) automodeApplyBlocker(ctx context.Context, mr vcs.Det
 		return reason
 	}
 
-	// Unlike `tfc apply`, automode always needs a green pipeline: the Async Agent
+	// Unlike `tfc apply`, Auto Mode always needs a green pipeline: the Async Agent
 	// review runs in it, and no person is checking it instead.
 	pipeline, err := w.ciPipelineForCommit(ctx, proj, headSHA)
 	if err != nil {
@@ -174,7 +174,7 @@ func approvalAfterPushBlocker(approvals *vcs.MRApprovalState, versions []vcs.MRV
 }
 
 // planStatusBlocker returns why TFBuddy's statuses on the head commit do not
-// allow an automode apply, or "". Every TFC/plan/<workspace> status must be
+// allow an Auto Mode apply, or "". Every TFC/plan/<workspace> status must be
 // green, and TFC/class must have passed.
 func planStatusBlocker(statuses []vcs.CommitJobStatus) string {
 	planPrefix := vcs.CommitStatusPrefix + "plan/"
@@ -205,8 +205,8 @@ func planStatusBlocker(statuses []vcs.CommitJobStatus) string {
 	return ""
 }
 
-func (w *GitlabEventWorker) postAutomodeMessage(ctx context.Context, proj string, mrIID int, msg string) {
+func (w *GitlabEventWorker) postAutoModeMessage(ctx context.Context, proj string, mrIID int, msg string) {
 	if err := w.gl.CreateMergeRequestComment(ctx, mrIID, proj, msg); err != nil {
-		log.Error().Err(err).Str("project", proj).Int("mergeRequestID", mrIID).Msg("could not post automode message to MR")
+		log.Error().Err(err).Str("project", proj).Int("mergeRequestID", mrIID).Msg("could not post Auto Mode message to MR")
 	}
 }

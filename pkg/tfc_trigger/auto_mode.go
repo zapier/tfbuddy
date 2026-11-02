@@ -16,7 +16,7 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-// ClassReviewed is the change class of an automode merge request that fits no
+// ClassReviewed is the change class of an Auto Mode merge request that fits no
 // configured class. Only Sentinel's global policies hold its runs.
 const ClassReviewed = "reviewed"
 
@@ -24,16 +24,16 @@ const ClassReviewed = "reviewed"
 // out of a run message without ambiguity.
 var classNameRegex = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
-// AutomodeConfig is the `automode` section of .tfbuddy.yaml. TFBuddy only ever reads
+// AutoModeConfig is the `autoMode` section of .tfbuddy.yaml. TFBuddy only ever reads
 // it from the merge request's target branch, so an MR can neither add its
 // author to the list nor widen a class.
-type AutomodeConfig struct {
-	Authors []*AutomodeAuthor `yaml:"authors"`
-	Classes []*AutomodeClass  `yaml:"classes"`
+type AutoModeConfig struct {
+	Authors []*AutoModeAuthor `yaml:"authors"`
+	Classes []*AutoModeClass  `yaml:"classes"`
 }
 
-// AutomodeAuthor is a GitLab user whose merge requests run in automode.
-type AutomodeAuthor struct {
+// AutoModeAuthor is a GitLab user whose merge requests run in Auto Mode.
+type AutoModeAuthor struct {
 	// Username is matched against the merge request author read from the
 	// GitLab API, never a note or commit author, which anyone can set.
 	Username string `yaml:"username"`
@@ -42,55 +42,55 @@ type AutomodeAuthor struct {
 	CommitEmails []string `yaml:"commitEmails"`
 }
 
-// AutomodeClass is a change class: a merge request has it when its author is one
+// AutoModeClass is a change class: a merge request has it when its author is one
 // of Authors and every file it changes matches one of Paths.
-type AutomodeClass struct {
+type AutoModeClass struct {
 	Name    string   `yaml:"name"`
 	Authors []string `yaml:"authors"`
 	Paths   []string `yaml:"paths"`
 }
 
-// LoadAutomodeConfig reads the automode section of .tfbuddy.yaml from targetBranch.
-// It returns nil, and so puts no merge request in automode, when the branch has
-// no .tfbuddy.yaml or the file has no automode section.
-func LoadAutomodeConfig(ctx context.Context, gl vcs.GitClient, project, targetBranch string) (*AutomodeConfig, error) {
-	ctx, span := otel.Tracer("TFC").Start(ctx, "LoadAutomodeConfig")
+// LoadAutoModeConfig reads the Auto Mode section of .tfbuddy.yaml from targetBranch.
+// It returns nil, and so puts no merge request in Auto Mode, when the branch has
+// no .tfbuddy.yaml or the file has no Auto Mode section.
+func LoadAutoModeConfig(ctx context.Context, gl vcs.GitClient, project, targetBranch string) (*AutoModeConfig, error) {
+	ctx, span := otel.Tracer("TFC").Start(ctx, "LoadAutoModeConfig")
 	defer span.End()
 
 	if targetBranch == "" {
-		return nil, utils.CreatePermanentError(errors.New("cannot read the automode config without a target branch"))
+		return nil, utils.CreatePermanentError(errors.New("cannot read the Auto Mode config without a target branch"))
 	}
 	b, err := gl.GetRepoFile(ctx, project, ProjectConfigFilename, targetBranch)
 	if err != nil {
 		// GitLab refused the read, most likely because the branch has no
-		// file. Treating that as "no automode" fails safe: the MR takes the
+		// file. Treating that as "no Auto Mode" fails safe: the MR takes the
 		// normal flow and nothing applies without a `tfc apply`.
 		if errors.Is(err, utils.ErrPermanent) {
-			log.Debug().Err(err).Str("branch", targetBranch).Msg("no automode config on target branch")
+			log.Debug().Err(err).Str("branch", targetBranch).Msg("no Auto Mode config on target branch")
 			return nil, nil
 		}
 		return nil, fmt.Errorf("could not read %s from %s: %w", ProjectConfigFilename, targetBranch, err)
 	}
-	return parseAutomodeConfig(b)
+	return parseAutoModeConfig(b)
 }
 
-func parseAutomodeConfig(b []byte) (*AutomodeConfig, error) {
+func parseAutoModeConfig(b []byte) (*AutoModeConfig, error) {
 	var file struct {
-		Automode *AutomodeConfig `yaml:"automode"`
+		AutoMode *AutoModeConfig `yaml:"autoMode"`
 	}
 	if err := yaml.Unmarshal(b, &file); err != nil {
-		return nil, fmt.Errorf("could not parse the automode section of %s: %v. %w", ProjectConfigFilename, err, utils.ErrPermanent)
+		return nil, fmt.Errorf("could not parse the Auto Mode section of %s: %v. %w", ProjectConfigFilename, err, utils.ErrPermanent)
 	}
-	if file.Automode == nil {
+	if file.AutoMode == nil {
 		return nil, nil
 	}
-	if err := file.Automode.validate(); err != nil {
-		return nil, utils.CreatePermanentError(fmt.Errorf("invalid automode section in %s: %w", ProjectConfigFilename, err))
+	if err := file.AutoMode.validate(); err != nil {
+		return nil, utils.CreatePermanentError(fmt.Errorf("invalid Auto Mode section in %s: %w", ProjectConfigFilename, err))
 	}
-	return file.Automode, nil
+	return file.AutoMode, nil
 }
 
-func (c *AutomodeConfig) validate() error {
+func (c *AutoModeConfig) validate() error {
 	for i, a := range c.Authors {
 		if a == nil || a.Username == "" {
 			return fmt.Errorf("authors[%d] has no username", i)
@@ -123,9 +123,9 @@ func (c *AutomodeConfig) validate() error {
 	return nil
 }
 
-// Author returns the automode author with username, or nil when the user is not
+// Author returns the Auto Mode author with username, or nil when the user is not
 // on the list.
-func (c *AutomodeConfig) Author(username string) *AutomodeAuthor {
+func (c *AutoModeConfig) Author(username string) *AutoModeAuthor {
 	if c == nil {
 		return nil
 	}
@@ -141,7 +141,7 @@ func (c *AutomodeConfig) Author(username string) *AutomodeAuthor {
 // changedFiles in commits. The first class whose authors include author and
 // whose paths match every changed file wins. Anything else, including a
 // commit that does not carry author's commit emails, is ClassReviewed.
-func (c *AutomodeConfig) ClassFor(author *AutomodeAuthor, changedFiles []string, commits []vcs.MRCommit) string {
+func (c *AutoModeConfig) ClassFor(author *AutoModeAuthor, changedFiles []string, commits []vcs.MRCommit) string {
 	if len(changedFiles) == 0 || !author.madeAll(commits) {
 		return ClassReviewed
 	}
@@ -158,7 +158,7 @@ func (c *AutomodeConfig) ClassFor(author *AutomodeAuthor, changedFiles []string,
 // its author and its committer. Git takes these from whoever makes the commit,
 // so this is evidence rather than proof: anyone who can push to the MR's branch
 // can write a commit that claims them.
-func (a *AutomodeAuthor) madeAll(commits []vcs.MRCommit) bool {
+func (a *AutoModeAuthor) madeAll(commits []vcs.MRCommit) bool {
 	if len(commits) == 0 {
 		return false
 	}
@@ -173,7 +173,7 @@ func (a *AutomodeAuthor) madeAll(commits []vcs.MRCommit) bool {
 	return true
 }
 
-func (class *AutomodeClass) matchesAll(files []string) bool {
+func (class *AutoModeClass) matchesAll(files []string) bool {
 	for _, f := range files {
 		if !slices.ContainsFunc(class.Paths, func(p string) bool {
 			match, err := doublestar.Match(p, f)
@@ -191,42 +191,42 @@ func ClassMarker(class string) string {
 	return fmt.Sprintf("[tfbuddy-class=%s]", class)
 }
 
-// runMessage is the message of every run TFBuddy creates for the MR. An automode
+// runMessage is the message of every run TFBuddy creates for the MR. An Auto Mode
 // run's message is built from fixed fields only and leaves the MR title out,
 // so nothing a person or a bot writes can add a second marker or push the
 // marker out of the message. It keeps the `MR [!<iid>]` prefix that other
 // tools find TFBuddy's runs by.
 func (t *TFCTrigger) runMessage(title string) (string, error) {
-	if !t.cfg.Automode {
+	if !t.cfg.AutoMode {
 		return fmt.Sprintf("MR [!%d]: %s", t.GetMergeRequestIID(), title), nil
 	}
-	// One TFC token serves both modes, so Sentinel tells an automode run apart
+	// One TFC token serves both modes, so Sentinel tells an Auto Mode run apart
 	// only by its marker. Without one, the run would get only the global
 	// policies.
 	if !classNameRegex.MatchString(t.cfg.ChangeClass) {
-		return "", fmt.Errorf("refusing to create an automode run without a valid change class (got %q). %w", t.cfg.ChangeClass, utils.ErrPermanent)
+		return "", fmt.Errorf("refusing to create an Auto Mode run without a valid change class (got %q). %w", t.cfg.ChangeClass, utils.ErrPermanent)
 	}
-	return fmt.Sprintf("MR [!%d] %s sha=%s actor=%s", t.GetMergeRequestIID(), ClassMarker(t.cfg.ChangeClass), t.GetCommitSHA(), t.cfg.AutomodeActor), nil
+	return fmt.Sprintf("MR [!%d] %s sha=%s actor=%s", t.GetMergeRequestIID(), ClassMarker(t.cfg.ChangeClass), t.GetCommitSHA(), t.cfg.AutoModeActor), nil
 }
 
-// resolveAutomode decides whether mr runs in automode and, when it does, records its
+// resolveAutoMode decides whether mr runs in Auto Mode and, when it does, records its
 // change class on the trigger, so that every run created for it, inline or
 // fanned out, carries the class. affected are the workspaces whose plans
 // decide TFC/class. Lock and unlock create no run, so they skip it: `tfc
-// unlock` must keep working when the automode config cannot be read.
-func (t *TFCTrigger) resolveAutomode(ctx context.Context, mr vcs.DetailedMR, affected []*TFCWorkspace) error {
-	if !t.appCfg.AutomodeEnabled || t.GetVcsProvider() != "gitlab" ||
+// unlock` must keep working when the Auto Mode config cannot be read.
+func (t *TFCTrigger) resolveAutoMode(ctx context.Context, mr vcs.DetailedMR, affected []*TFCWorkspace) error {
+	if !t.appCfg.AutoModeEnabled || t.GetVcsProvider() != "gitlab" ||
 		(t.GetAction() != PlanAction && t.GetAction() != ApplyAction) {
 		return nil
 	}
-	ctx, span := otel.Tracer(t.tracerName()).Start(ctx, "resolveAutomode")
+	ctx, span := otel.Tracer(t.tracerName()).Start(ctx, "resolveAutoMode")
 	defer span.End()
 
-	automode, err := LoadAutomodeConfig(ctx, t.gl, t.GetProjectNameWithNamespace(), mr.GetTargetBranch())
+	autoMode, err := LoadAutoModeConfig(ctx, t.gl, t.GetProjectNameWithNamespace(), mr.GetTargetBranch())
 	if err != nil {
 		return err
 	}
-	author := automode.Author(mr.GetAuthor().GetUsername())
+	author := autoMode.Author(mr.GetAuthor().GetUsername())
 	if author == nil {
 		return nil
 	}
@@ -239,16 +239,16 @@ func (t *TFCTrigger) resolveAutomode(ctx context.Context, mr vcs.DetailedMR, aff
 		return fmt.Errorf("could not list the MR's commits. %w", err)
 	}
 
-	t.cfg.Automode = true
-	t.cfg.AutomodeActor = author.Username
-	t.cfg.ChangeClass = automode.ClassFor(author, files, commits)
+	t.cfg.AutoMode = true
+	t.cfg.AutoModeActor = author.Username
+	t.cfg.ChangeClass = autoMode.ClassFor(author, files, commits)
 	t.cfg.ClassWorkspaces = make([]string, 0, len(affected))
 	for _, ws := range affected {
 		t.cfg.ClassWorkspaces = append(t.cfg.ClassWorkspaces, ws.Name)
 	}
 	slices.Sort(t.cfg.ClassWorkspaces)
 	log.Info().Str("project", t.GetProjectNameWithNamespace()).Int("mergeRequestID", t.GetMergeRequestIID()).
-		Str("author", author.Username).Str("class", t.cfg.ChangeClass).Msg("merge request runs in automode")
+		Str("author", author.Username).Str("class", t.cfg.ChangeClass).Msg("merge request runs in Auto Mode")
 	return nil
 }
 

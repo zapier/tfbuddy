@@ -65,8 +65,8 @@ func (w *GitlabEventWorker) processMergeRequestEvent(msg *MergeRequestEventMsg) 
 
 	case "merge", "close":
 		return projectName, trigger.TriggerCleanupEvent(ctx)
-	case automodeApprovalAction:
-		return projectName, w.processAutomodeApproval(ctx, msg)
+	case autoModeApprovalAction:
+		return projectName, w.processAutoModeApproval(ctx, msg)
 	default:
 		labels["reason"] = "unhandled-action"
 		gitlabWebHookIgnored.With(labels).Inc()

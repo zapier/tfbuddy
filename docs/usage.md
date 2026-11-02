@@ -76,7 +76,7 @@ The full list of supported environment variables and flags is described below:
 |`TFBUDDY_REQUIRE_PIPELINE_SUCCESS`|`--require-pipeline-success`|Refuse `tfc apply` while the merge request pipeline for the commit has a job that has not succeeded. Only takes effect for GitLab projects that also set `only_allow_merge_if_pipeline_succeeds`. TFBuddy's own TFC/* commit statuses are ignored, so a pending apply status does not block itself.|`false`|
 |`TFBUDDY_BLOCK_APPLY_ON_DRAFT`|`--block-apply-on-draft`|Refuse `tfc apply` while the merge request is a Draft. A Draft cannot be merged, so an apply on one leaves live infrastructure ahead of the target branch. `tfc plan` is still allowed.|`false`|
 |`TFBUDDY_STATUS_TRIGGER_WAIT`|`--status-trigger-wait`|How long `tfc status` waits for TFBuddy to publish a commit status for the pipeline's commit before failing the job. Accepts a Go duration string (e.g. 5m).|`5m0s`|
-|`TFBUDDY_AUTOMODE_ENABLED`|`--automode-enabled`|Enable automode for GitLab: merge requests whose author is listed under `automode` in the target branch's .tfbuddy.yaml are planned with a change class in the run message and applied through the `tfc apply` path once they are approved after their last push. When disabled, those merge requests take the normal `tfc apply` flow.|`false`|
+|`TFBUDDY_AUTO_MODE_ENABLED`|`--auto-mode-enabled`|Enable Auto Mode for GitLab: merge requests whose author is listed under `autoMode` in the target branch's .tfbuddy.yaml are planned with a change class in the run message and applied through the `tfc apply` path once they are approved after their last push. When disabled, those merge requests take Manual Mode, the normal `tfc apply` flow.|`false`|
 <!-- END GENERATED CONFIGURATION -->
 
 For sensitive environment variables use `secrets.envs` which can contain a list of key/value pairs
@@ -313,19 +313,19 @@ be running under it. The MR therefore holds the workspace until it merges or
 closes, as after any apply. If two MRs collide this way, both stay locked until
 one of them runs `tfc unlock -w <workspace>`.
 
-### Automode: apply on approval
+### Auto Mode: apply on approval
 
-Automode is for automation, on GitLab only. An automode merge request is applied
+Auto Mode is for automation, on GitLab only. An Auto Mode merge request is applied
 automatically once it is approved, through the same path as a `tfc apply`
 comment: the same lock, statuses and divergence check, then auto-merge. Merge
-requests from people, and every merge request while automode is off, take the
-normal flow.
+requests from people, and every merge request while Auto Mode is off, take
+Manual Mode: the normal flow, where someone comments `tfc apply`.
 
-Turn it on with `TFBUDDY_AUTOMODE_ENABLED=true`, and list the automation users in
+Turn it on with `TFBUDDY_AUTO_MODE_ENABLED=true`, and list the automation users in
 `.tfbuddy.yaml`:
 
 ```yaml
-automode:
+autoMode:
   authors:
     # Matched against the merge request author from the GitLab API.
   - username: tags-bot
@@ -342,10 +342,10 @@ automode:
     paths: ["**/versions.tf", "**/.terraform.lock.hcl"]
 ```
 
-* TFBuddy reads `automode` only from the merge request's **target** branch, so a
+* TFBuddy reads `autoMode` only from the merge request's **target** branch, so a
   merge request can neither add its own author nor widen a class. The
   workspaces it plans still come from the source branch, as for any MR.
-* A merge request runs in automode when its author, read from the GitLab API, is
+* A merge request runs in Auto Mode when its author, read from the GitLab API, is
   under `authors`. The note author and the commit author are never used.
 * Its change class is the first class whose `authors` include the MR author and
   whose `paths` (doublestar globs) match every file the MR changes. Anything
@@ -353,10 +353,10 @@ automode:
   committer email is not one of the author's `commitEmails`. Those emails are
   declared by whoever makes the commit, so this check is evidence, not proof:
   anyone who can push to the branch can claim them.
-* Every plan and apply run of an automode merge request has a run message that
+* Every plan and apply run of an Auto Mode merge request has a run message that
   TFBuddy builds from fixed fields only, without the MR title:
   `MR [!123] [tfbuddy-class=tags] sha=<head SHA> actor=tags-bot`.
-  A Sentinel policy reads the class there. TFBuddy refuses to create an automode
+  A Sentinel policy reads the class there. TFBuddy refuses to create an Auto Mode
   run without a class. Runs of other merge requests keep the title, so a
   marker in a person's title can only restrict their own run.
 * TFBuddy posts a `TFC/class` commit status on the head commit: pending while
@@ -366,7 +366,7 @@ automode:
   `reviewed`. TFBuddy does not yet read a Sentinel class-policy result.
 
 When GitLab sends the `approved` merge request event (the one sent once every
-approval rule is satisfied), TFBuddy applies an automode merge request only when
+approval rule is satisfied), TFBuddy applies an Auto Mode merge request only when
 all of these hold, and otherwise says why on the MR:
 
 1. The MR is open, not a Draft and has no conflicts.
@@ -378,10 +378,10 @@ all of these hold, and otherwise says why on the MR:
 4. The head commit's CI pipeline exists and every job in it has succeeded,
    whatever `TFBUDDY_REQUIRE_PIPELINE_SUCCESS` says.
 5. Auto-merge is on and every affected workspace has `autoMerge: true`, because
-   Automode must merge what it applies.
+   Auto Mode must merge what it applies.
 
 The lock check then refuses workspaces another MR or automation holds, and the
 divergence check refuses workspaces whose paths changed on the target branch.
-For automode, a divergence check that cannot run blocks every workspace instead
+For Auto Mode, a divergence check that cannot run blocks every workspace instead
 of posting a warning. A retry after a failed apply is a `tfc apply` comment,
 which keeps the class in the run message.
