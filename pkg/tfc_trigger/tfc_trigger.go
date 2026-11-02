@@ -29,11 +29,6 @@ import (
 // determine whether the target branch modified workspace-relevant paths.
 const MRCommentTargetBranchEvalFailed = ":warning: Could not identify modified workspaces on target branch. Please review the plan carefully for unrelated changes."
 
-// MRCommentClosedKeepsLocks is posted when an MR that holds workspace locks is
-// closed without merging. Its arguments are the workspaces and the target
-// branch.
-const MRCommentClosedKeepsLocks = ":warning: This MR was closed without merging after an apply, so what it applied may be live but not on `%[2]s`. TFBuddy kept its lock on: %[1]s. Merge or revert the change in a new MR, then clear each lock with `tfc unlock -w <workspace>`."
-
 const (
 	ApplyAction TriggerAction = iota
 	DestroyAction
@@ -364,9 +359,9 @@ func (t *TFCTrigger) getLockTags(ctx context.Context, workspace string) ([]strin
 	return tags, nil
 }
 
-// releaseStaleMRLock removes lockingMR's lock tag if that MR has merged, and
-// otherwise returns an error naming the MR that holds the workspace.
-func (t *TFCTrigger) releaseStaleMRLock(ctx context.Context, workspaceID, wsName, lockingMR string) error {
+// releaseStaleMRLock removes lockingMR's lock tag if that MR has merged or
+// closed, and otherwise returns an error naming the MR that holds the workspace.
+func (t *TFCTrigger) releaseStaleMRLock(ctx context.Context, workspaceID, lockingMR string) error {
 	lockingMRIID, convErr := strconv.Atoi(lockingMR)
 	if convErr != nil {
 		return fmt.Errorf("workspace is locked by another MR! %s", lockingMR)
@@ -376,19 +371,11 @@ func (t *TFCTrigger) releaseStaleMRLock(ctx context.Context, workspaceID, wsName
 		return fmt.Errorf("workspace is locked by another MR! %s", lockingMR)
 	}
 	state := lockingMRDetails.GetState()
-	switch state {
-	case "merged":
-	case "closed":
-		// An MR keeps its lock from its first apply until it merges. One
-		// closed without merging may have left live state ahead of the
-		// target branch, so its lock is not stale.
-		return fmt.Errorf("workspace is locked by MR %s, which was closed without merging after an apply. Merge or revert its change, then clear the lock with `tfc unlock -w %s`",
-			lockingMRDetails.GetWebURL(), wsName)
-	default:
+	if state != "merged" && state != "closed" {
 		return fmt.Errorf("workspace is locked by another MR! %s", lockingMRDetails.GetWebURL())
 	}
 	log.Warn().Str("workspace", workspaceID).Str("lockingMR", lockingMR).Str("state", state).
-		Msg("auto-cleaning stale lock from merged MR")
+		Msg("auto-cleaning stale lock from merged/closed MR")
 	// Remove the exact tag. A tag query matches substrings, so it would also
 	// delete tfbuddylock-<n>0 or an external lock whose name contains this tag.
 	tag := fmt.Sprintf("%s-%s", tfPrefix, lockingMR)
@@ -904,8 +891,7 @@ func (t *TFCTrigger) TriggerCleanupEvent(ctx context.Context) error {
 	if len(triggeredWorkspaces) == 0 {
 		return nil
 	}
-	state := mr.GetState()
-	var wsNames, keptNames []string
+	var wsNames []string
 	tag := fmt.Sprintf("%s-%d", tfPrefix, mr.GetInternalID())
 	for _, cfgWS := range triggeredWorkspaces {
 		ws, err := t.tfc.GetWorkspaceByName(ctx,
@@ -936,27 +922,11 @@ func (t *TFCTrigger) TriggerCleanupEvent(ctx context.Context) error {
 		if !hasOurTag {
 			continue
 		}
-		// The MR took this lock to apply. Unless it merged, what it applied
-		// may be live but not on the target branch, so the lock stays and
-		// keeps every other MR from applying over it.
-		if state != "merged" {
-			keptNames = append(keptNames, cfgWS.Name)
-			continue
-		}
 		if err := t.tfc.RemoveTagsByName(ctx, ws.ID, []string{tag}); err != nil {
 			t.handleError(ctx, err, "Error removing locking tag from workspace")
 			continue
 		}
 		wsNames = append(wsNames, cfgWS.Name)
-	}
-	if len(keptNames) > 0 && state == "closed" {
-		log.Warn().Str("project", t.GetProjectNameWithNamespace()).Int("mergeRequestID", mr.GetInternalID()).
-			Strs("workspaces", keptNames).Msg("MR closed without merging after an apply; keeping its workspace locks")
-		if _, err := t.gl.CreateMergeRequestDiscussion(ctx, mr.GetInternalID(), t.GetProjectNameWithNamespace(),
-			fmt.Sprintf(MRCommentClosedKeepsLocks, strings.Join(keptNames, ", "), mr.GetTargetBranch()),
-		); err != nil {
-			log.Error().Err(err).Msg("could not post the kept-locks warning to the MR")
-		}
 	}
 	if len(wsNames) == 0 {
 		return nil
@@ -1123,7 +1093,7 @@ func (t *TFCTrigger) triggerRunForWorkspace(ctx context.Context, cfgWS *TFCWorks
 		// Every other MR's lock must be stale for this MR to proceed; checking
 		// only the first would let an open MR's lock behind a stale one through.
 		for _, foreignMR := range findLockingMRs(lockTags, thisMR) {
-			if err := t.releaseStaleMRLock(ctx, ws.ID, wsName, foreignMR); err != nil {
+			if err := t.releaseStaleMRLock(ctx, ws.ID, foreignMR); err != nil {
 				return err
 			}
 		}

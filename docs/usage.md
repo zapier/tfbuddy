@@ -266,16 +266,11 @@ not auto-merge that commit. Targeted applies never satisfy the aggregate.
 ### Workspace locks
 
 `tfc apply` locks the workspace for its merge request by tagging it
-`tfbuddylock-<MR number>`. Until that MR merges, TFBuddy refuses applies to the
-workspace from any other MR. TFBuddy removes the tag when the MR merges; if that
-was missed, the next apply from another MR removes it (by exact name) after
-checking that the MR has merged. Every other MR's tag on the workspace is
-checked this way, not just the first one.
-
-An MR closed without merging keeps its locks, because what it applied may be
-live but not on the target branch. TFBuddy says so on the MR, and every other
-MR's apply on those workspaces is refused until someone merges or reverts the
-change in a new MR and runs `tfc unlock -w <workspace>`.
+`tfbuddylock-<MR number>`. Until that MR merges or closes, TFBuddy refuses
+applies to the workspace from any other MR. TFBuddy removes the tag when the MR
+merges or closes; if that was missed, the next apply from another MR removes it
+(by exact name) after checking that the MR has merged or closed. Every other
+MR's tag on the workspace is checked this way, not just the first one.
 
 #### Locks held by automation
 

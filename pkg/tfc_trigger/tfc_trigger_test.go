@@ -1648,8 +1648,6 @@ func TestTriggerCleanupEvent_ScopesCleanupToTriggeredWorkspaces(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: ws}, t)
-	// Merged, so cleanup releases the MR's locks.
-	testSuite.MockGitMR.EXPECT().GetState().Return("merged").AnyTimes()
 
 	testSuite.MockGitMR.EXPECT().GetInternalID().Return(testSuite.MetaData.MRIID).AnyTimes()
 	testSuite.MockGitClient.EXPECT().GetMergeRequest(
@@ -1705,8 +1703,6 @@ func TestTriggerCleanupEvent_DoesNotReleaseOtherMRsLocks(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: ws}, t)
-	// Merged, so cleanup releases the MR's locks.
-	testSuite.MockGitMR.EXPECT().GetState().Return("merged").AnyTimes()
 
 	// MR #101 is merging. The workspace is locked by MR #1010 (different MR
 	// whose IID contains "101" as a substring). TFC's partial-match query
@@ -1937,8 +1933,6 @@ func TestTriggerCleanupEvent_DiscoveredWorkspaceOnTargetBranch(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	testSuite := mocks.CreateTestSuite(mockCtrl, mocks.TestOverrides{ProjectConfig: discoverProjectConfig()}, t)
-	// Merged, so cleanup releases the MR's locks.
-	testSuite.MockGitMR.EXPECT().GetState().Return("merged").AnyTimes()
 	const ws = "services-api-staging-main-us-west-2"
 
 	testSuite.MockGitMR.EXPECT().GetInternalID().Return(testSuite.MetaData.MRIID).AnyTimes()
@@ -2001,8 +1995,6 @@ func TestTriggerCleanupEvent_NamePreservingMoveAcrossBranches(t *testing.T) {
 			AutoMerge:    true,
 		}},
 	}}, t)
-	// Merged, so cleanup releases the MR's locks.
-	testSuite.MockGitMR.EXPECT().GetState().Return("merged").AnyTimes()
 	const ws = "services-a-b-c"
 	project, source, target := testSuite.MetaData.ProjectNameNS, testSuite.MetaData.SourceBranch, testSuite.MetaData.TargetBranch
 
