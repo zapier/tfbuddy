@@ -332,14 +332,22 @@ autoMode:
     # The git author and committer emails its commits carry.
     commitEmails: [tags-bot@example.com]
   - username: renovate-bot
-    commitEmails: [bot@renovateapp.com]
+    # Renovate's own commits, plus the commits Async Agent's renovate-fix job
+    # pushes to fix module inputs after a bump.
+    commitEmails: [bot@renovateapp.com, renovate-fix-bot@example.com]
+  - username: new-service-bot
+    commitEmails: [new-service-bot@example.com]
   classes:
   - name: tags
     authors: [tags-bot]
     paths: ["services/*/*/*/tags.auto.tfvars.json"]
-  - name: safe-plan
+  - name: new-service
+    authors: [new-service-bot]
+    paths: ["workspaces/*/*/*.tf", "services/**"]
+  - name: renovate-safe-plan
     authors: [renovate-bot]
-    paths: ["**/versions.tf", "**/.terraform.lock.hcl"]
+    # Only Terraform files: the Sentinel class policy cannot see anything else.
+    paths: ["services/**/*.tf", "services/**/.terraform.lock.hcl", "workspaces/**/*.tf", "workspaces/**/.terraform.lock.hcl"]
 ```
 
 * TFBuddy reads `autoMode` only from the merge request's **target** branch, so a
@@ -355,7 +363,7 @@ autoMode:
   anyone who can push to the branch can claim them.
 * Every plan and apply run of an Auto Mode merge request has a run message that
   TFBuddy builds from fixed fields only, without the MR title:
-  `MR [!123] [tfbuddy-class=tags] sha=<head SHA> actor=tags-bot`.
+  `MR [!123] [tfbuddy-class=tags] sha=<head SHA> author=tags-bot`.
   A Sentinel policy reads the class there. TFBuddy refuses to create an Auto Mode
   run without a class. Runs of other merge requests keep the title, so a
   marker in a person's title can only restrict their own run.

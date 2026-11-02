@@ -206,7 +206,7 @@ func (t *TFCTrigger) runMessage(title string) (string, error) {
 	if !classNameRegex.MatchString(t.cfg.ChangeClass) {
 		return "", fmt.Errorf("refusing to create an Auto Mode run without a valid change class (got %q). %w", t.cfg.ChangeClass, utils.ErrPermanent)
 	}
-	return fmt.Sprintf("MR [!%d] %s sha=%s actor=%s", t.GetMergeRequestIID(), ClassMarker(t.cfg.ChangeClass), t.GetCommitSHA(), t.cfg.AutoModeActor), nil
+	return fmt.Sprintf("MR [!%d] %s sha=%s author=%s", t.GetMergeRequestIID(), ClassMarker(t.cfg.ChangeClass), t.GetCommitSHA(), t.cfg.AutoModeAuthor), nil
 }
 
 // resolveAutoMode decides whether mr runs in Auto Mode and, when it does, records its
@@ -240,7 +240,7 @@ func (t *TFCTrigger) resolveAutoMode(ctx context.Context, mr vcs.DetailedMR, aff
 	}
 
 	t.cfg.AutoMode = true
-	t.cfg.AutoModeActor = author.Username
+	t.cfg.AutoModeAuthor = author.Username
 	t.cfg.ChangeClass = autoMode.ClassFor(author, files, commits)
 	t.cfg.ClassWorkspaces = make([]string, 0, len(affected))
 	for _, ws := range affected {

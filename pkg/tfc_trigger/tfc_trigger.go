@@ -141,13 +141,13 @@ type TFCTriggerOptions struct {
 	Target            string `short:"t" long:"target" description:"A specific terraform target to use" required:"false"`
 	AllowEmptyRun     bool   `short:"e" long:"allow_empty_run" description:"A specific terraform AllowEmptyRun" required:"false"`
 
-	// Auto Mode marks a merge request whose author runs in Auto Mode, AutoModeActor is
+	// Auto Mode marks a merge request whose author runs in Auto Mode, AutoModeAuthor is
 	// that author, ChangeClass is its change class and ClassWorkspaces the
 	// workspaces whose plans decide TFC/class. TFBuddy sets all four from the
 	// target branch's .tfbuddy.yaml; they have no flags, so no comment can set
 	// them.
 	AutoMode        bool
-	AutoModeActor   string
+	AutoModeAuthor  string
 	ChangeClass     string
 	ClassWorkspaces []string
 }

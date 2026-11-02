@@ -171,7 +171,7 @@ func TestTFCEvents_AutoModePlanCarriesClass(t *testing.T) {
 	if len(triggered.Errored) != 0 {
 		t.Fatalf("unexpected failed workspaces: %v", triggered.Errored)
 	}
-	if opts.Message != "MR [!101] [tfbuddy-class=tags] sha=abcd12233 actor=tags-bot" {
+	if opts.Message != "MR [!101] [tfbuddy-class=tags] sha=abcd12233 author=tags-bot" {
 		t.Errorf("run message = %q, want the tags class marker and no title", opts.Message)
 	}
 	if rmd.ChangeClass != "tags" || !slices.Equal(rmd.ClassWorkspaces, []string{"service-tfbuddy"}) {

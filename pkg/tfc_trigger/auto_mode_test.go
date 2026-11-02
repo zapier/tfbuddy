@@ -27,7 +27,7 @@ autoMode:
     - name: new-service
       authors: [new-service-bot]
       paths: ["services/**"]
-    - name: safe-plan
+    - name: renovate-safe-plan
       authors: [renovate-bot]
       paths: ["**/versions.tf", "**/.terraform.lock.hcl"]
 `
@@ -112,7 +112,7 @@ func TestAutoModeClassFor(t *testing.T) {
 			author:  "renovate-bot",
 			files:   []string{"services/api/prod/main-us-east-1/versions.tf", "services/api/prod/main-us-east-1/.terraform.lock.hcl"},
 			commits: commitsBy("renovate@example.com"),
-			want:    "safe-plan",
+			want:    "renovate-safe-plan",
 		},
 		{
 			name:    "no commits never counts as the author's",
@@ -203,12 +203,12 @@ func TestRunMessage(t *testing.T) {
 		t.Errorf("Mode 1 message = %q, want the title unchanged", got)
 	}
 
-	autoMode := &TFCTrigger{cfg: &TFCTriggerOptions{MergeRequestIID: 7, CommitSHA: "1a2b3c4", AutoMode: true, AutoModeActor: "tags-bot", ChangeClass: "tags"}}
+	autoMode := &TFCTrigger{cfg: &TFCTriggerOptions{MergeRequestIID: 7, CommitSHA: "1a2b3c4", AutoMode: true, AutoModeAuthor: "tags-bot", ChangeClass: "tags"}}
 	got, err = autoMode.runMessage("Sync tags [tfbuddy-class=reviewed]")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "MR [!7] [tfbuddy-class=tags] sha=1a2b3c4 actor=tags-bot" {
+	if got != "MR [!7] [tfbuddy-class=tags] sha=1a2b3c4 author=tags-bot" {
 		t.Errorf("Auto Mode message = %q, want fixed fields only and no title", got)
 	}
 
