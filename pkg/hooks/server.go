@@ -6,6 +6,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/rs/zerolog/log"
 	"github.com/zapier/tfbuddy/internal/config"
 	"github.com/zapier/tfbuddy/pkg/hooks_stream"
@@ -44,6 +45,11 @@ func StartServer(cfg config.Config) {
 	if err != nil {
 		log.Fatal().Err(err).Msg("could not create Jetstream context")
 	}
+	// The queue consumers use nats.go's newer jetstream API.
+	jsc, err := jetstream.New(nc)
+	if err != nil {
+		log.Fatal().Err(err).Msg("could not create JetStream client")
+	}
 
 	hs := hooks_stream.NewHooksStream(nc)
 	rs := runstream.NewStream(js, cfg.JetStreamDedupWindow)
@@ -61,7 +67,7 @@ func StartServer(cfg config.Config) {
 	// legacy inline path during rollout.
 	var workspaceStream tfc_trigger.WorkspacePublisher
 	if cfg.WorkspaceFanoutEnabled {
-		ws, err := tfc_trigger.NewWorkspaceStream(js, cfg.WorkspaceJetStreamReplicas, cfg.JetStreamDedupWindow)
+		ws, err := tfc_trigger.NewWorkspaceStream(js, jsc, cfg.WorkspaceJetStreamReplicas, cfg.JetStreamDedupWindow)
 		if err != nil {
 			log.Fatal().Err(err).Msg("could not configure workspace trigger stream")
 		}
@@ -92,13 +98,13 @@ func StartServer(cfg config.Config) {
 	//
 	// Github
 	//
-	githubHooksHandler := ghHooks.NewGithubHooksHandler(cfg, gh, tfc, rs, js, workspaceStream)
+	githubHooksHandler := ghHooks.NewGithubHooksHandler(cfg, gh, tfc, rs, js, jsc, workspaceStream)
 	hooksGroup.POST("/github/events", githubHooksHandler.Handler)
 
 	//
 	// Gitlab
 	//
-	gitlabGroupHandler := gitlab_hooks.NewGitlabHooksHandler(cfg, gl, tfc, rs, js, workspaceStream)
+	gitlabGroupHandler := gitlab_hooks.NewGitlabHooksHandler(cfg, gl, tfc, rs, js, jsc, workspaceStream)
 	hooksGroup.POST("/gitlab/group", gitlabGroupHandler.GroupHandler())
 	hooksGroup.POST("/gitlab/project", gitlabGroupHandler.ProjectHandler())
 

@@ -1,7 +1,7 @@
 package gitlab_hooks
 
 import (
-	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/rs/zerolog/log"
 	"github.com/zapier/tfbuddy/internal/config"
 	"github.com/zapier/tfbuddy/pkg/hooks_stream"
@@ -23,7 +23,7 @@ type GitlabEventWorker struct {
 	workspaceStream tfc_trigger.WorkspacePublisher
 }
 
-func NewGitlabEventWorker(h *GitlabHooksHandler, js nats.JetStreamContext) *GitlabEventWorker {
+func NewGitlabEventWorker(h *GitlabHooksHandler, js jetstream.JetStream) *GitlabEventWorker {
 	w := &GitlabEventWorker{
 		cfg:             h.cfg,
 		tfc:             h.tfc,

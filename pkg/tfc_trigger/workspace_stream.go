@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/rs/zerolog/log"
 	"github.com/sl1pm4t/gongs"
 	"github.com/zapier/tfbuddy/pkg/jsqueue"
@@ -87,6 +88,7 @@ func (m *WorkspaceTriggerMsg) Context() context.Context {
 
 type WorkspaceStream struct {
 	js     nats.JetStreamContext
+	jsc    jetstream.JetStream
 	stream *gongs.GenericStream[WorkspaceTriggerMsg, *WorkspaceTriggerMsg]
 }
 
@@ -95,7 +97,7 @@ type WorkspaceStream struct {
 // stamped by gongs from WorkspaceTriggerMsg.GetId — without Duplicates set,
 // the per-delivery dedup is silently inert at the server. Operators tune the
 // window via TFBUDDY_JETSTREAM_DEDUP_WINDOW.
-func NewWorkspaceStream(js nats.JetStreamContext, workspaceStreamReplicas int, dedupWindow time.Duration) (*WorkspaceStream, error) {
+func NewWorkspaceStream(js nats.JetStreamContext, jsc jetstream.JetStream, workspaceStreamReplicas int, dedupWindow time.Duration) (*WorkspaceStream, error) {
 	cfg := &nats.StreamConfig{
 		Name:        WorkspaceTriggerStreamName,
 		Description: "Fan-out queue: one message per workspace dispatched by an MR/PR trigger",
@@ -123,6 +125,7 @@ func NewWorkspaceStream(js nats.JetStreamContext, workspaceStreamReplicas int, d
 
 	return &WorkspaceStream{
 		js:     js,
+		jsc:    jsc,
 		stream: gongs.NewGenericStream[WorkspaceTriggerMsg](js, workspaceTriggerSubject, WorkspaceTriggerStreamName),
 	}, nil
 }
@@ -137,8 +140,8 @@ func (s *WorkspaceStream) Publish(ctx context.Context, msg *WorkspaceTriggerMsg)
 
 // QueueSubscribe binds workers to a shared queue. Each replica pulls one
 // message at a time and keeps it in progress while it runs the workspace.
-func (s *WorkspaceStream) QueueSubscribe(handler func(*WorkspaceTriggerMsg) error) (*jsqueue.Consumer, error) {
-	return jsqueue.Consume[WorkspaceTriggerMsg](s.js, jsqueue.Queue{
+func (s *WorkspaceStream) QueueSubscribe(handler func(*WorkspaceTriggerMsg) error) (jetstream.ConsumeContext, error) {
+	return jsqueue.Consume[WorkspaceTriggerMsg](s.jsc, jsqueue.Queue{
 		Stream:            WorkspaceTriggerStreamName,
 		Subject:           workspaceTriggerSubject,
 		Durable:           workspaceTriggerQueueName,

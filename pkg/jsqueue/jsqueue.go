@@ -12,19 +12,20 @@
 //     it sat in a busy replica's buffer, so a burst of merge requests timed out
 //     and was redelivered before anyone had started on it.
 //
-// Consume fixes both. Each replica pulls one message, handles it, and only
-// then pulls the next, so waiting messages stay in the stream with no clock
-// running. While a handler runs, its message is kept in progress, so a live
-// handler never loses it.
+// Consume pulls one message at a time through nats.go's jetstream package and
+// pulls the next only once the handler has returned, so waiting messages stay
+// in the stream with no clock running. What the library does not do is keep a
+// long-running message in progress, or turn the handler's result into an ack,
+// a delayed retry or a drop; that is the code here.
 package jsqueue
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"sync"
 	"time"
 
-	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -45,10 +46,8 @@ const (
 	// DefaultMaxInProgress is how long a handler may keep a message before the
 	// heartbeat stops, so a hung handler cannot hold a message forever.
 	DefaultMaxInProgress = 30 * time.Minute
-	// DefaultFetchWait is how long one pull request waits for a message.
-	DefaultFetchWait = 10 * time.Second
 
-	maxFetchErrorDelay = 30 * time.Second
+	setupTimeout = 30 * time.Second
 )
 
 // Queue names a durable pull consumer on a stream.
@@ -70,7 +69,6 @@ type Options struct {
 	MaxDeliver    int
 	NakDelay      time.Duration
 	MaxInProgress time.Duration
-	FetchWait     time.Duration
 	// Heartbeat is how often a running handler extends the ack deadline.
 	// It defaults to a third of AckWait.
 	Heartbeat time.Duration
@@ -88,9 +86,6 @@ func (o Options) withDefaults() Options {
 	}
 	if o.MaxInProgress <= 0 {
 		o.MaxInProgress = DefaultMaxInProgress
-	}
-	if o.FetchWait <= 0 {
-		o.FetchWait = DefaultFetchWait
 	}
 	if o.Heartbeat <= 0 || o.Heartbeat >= o.AckWait {
 		o.Heartbeat = o.AckWait / 3
@@ -132,139 +127,59 @@ func init() {
 	prometheus.MustRegister(messagesSettled, messagesRedelivered)
 }
 
-// Consumer is a running Consume loop.
-type Consumer struct {
-	sub      *nats.Subscription
-	done     chan struct{}
-	stopped  chan struct{}
-	stopOnce sync.Once
-}
-
-// Stop ends the loop and waits for the message being handled, if any.
-func (c *Consumer) Stop() {
-	c.stopOnce.Do(func() {
-		close(c.done)
-		_ = c.sub.Unsubscribe()
-	})
-	<-c.stopped
-}
-
-// Consume handles q's messages with fn, one at a time: it pulls the next
-// message only once fn has returned, so several replicas calling Consume
-// share the queue and each takes the next message when it is free.
-func Consume[T any, I Event[T]](js nats.JetStreamContext, q Queue, opts Options, fn Handler[T]) (*Consumer, error) {
+// Consume handles q's messages with fn, one at a time: the next message is
+// pulled only once fn has returned, so several replicas calling Consume share
+// the queue and each takes the next message when it is free. Stop the
+// returned ConsumeContext to end it.
+func Consume[T any, I Event[T]](js jetstream.JetStream, q Queue, opts Options, fn Handler[T]) (jetstream.ConsumeContext, error) {
 	o := opts.withDefaults()
-	if err := ensurePullConsumer(js, q, o); err != nil {
-		return nil, err
-	}
-	sub, err := js.PullSubscribe(q.Subject, q.Durable, nats.Bind(q.Stream, q.Durable))
-	if err != nil {
-		return nil, fmt.Errorf("could not bind to consumer %s on stream %s: %w", q.Durable, q.Stream, err)
-	}
-	c := &Consumer{sub: sub, done: make(chan struct{}), stopped: make(chan struct{})}
-	go c.run(func(msg *nats.Msg) { handle[T, I](msg, q.Durable, o, fn) }, q, o)
-	return c, nil
-}
+	ctx, cancel := context.WithTimeout(context.Background(), setupTimeout)
+	defer cancel()
 
-func (c *Consumer) run(handleMsg func(*nats.Msg), q Queue, o Options) {
-	defer close(c.stopped)
-	logger := log.With().Str("stream", q.Stream).Str("queue", q.Durable).Logger()
-	errDelay := time.Second
-	for {
-		select {
-		case <-c.done:
-			return
-		default:
-		}
-		msgs, err := c.sub.Fetch(1, nats.MaxWait(o.FetchWait))
-		switch {
-		case err == nil:
-			errDelay = time.Second
-			for _, msg := range msgs {
-				handleMsg(msg)
-			}
-		case errors.Is(err, nats.ErrTimeout):
-			// No message within FetchWait: ask again.
-		case errors.Is(err, nats.ErrBadSubscription), errors.Is(err, nats.ErrConnectionClosed):
-			select {
-			case <-c.done:
-			default:
-				logger.Error().Err(err).Msg("JetStream pull subscription closed; no longer consuming")
-			}
-			return
-		default:
-			logger.Warn().Err(err).Dur("retryIn", errDelay).Msg("could not fetch JetStream message")
-			select {
-			case <-c.done:
-				return
-			case <-time.After(errDelay):
-			}
-			errDelay = min(2*errDelay, maxFetchErrorDelay)
-		}
-	}
-}
-
-// ensurePullConsumer replaces q's legacy push consumer, if any, with a pull
-// consumer configured from o. Replicas starting together may race here; every
-// step tolerates another replica having done it first.
-func ensurePullConsumer(js nats.JetStreamContext, q Queue, o Options) error {
 	if q.LegacyPushDurable != "" {
-		if err := deleteLegacyPushConsumer(js, q.Stream, q.LegacyPushDurable); err != nil {
-			return err
+		if err := deleteLegacyPushConsumer(ctx, js, q.Stream, q.LegacyPushDurable); err != nil {
+			return nil, err
 		}
 	}
-
-	want := nats.ConsumerConfig{
+	cons, err := js.CreateOrUpdateConsumer(ctx, q.Stream, jetstream.ConsumerConfig{
 		Durable:       q.Durable,
 		FilterSubject: q.Subject,
-		DeliverPolicy: nats.DeliverAllPolicy,
-		AckPolicy:     nats.AckExplicitPolicy,
+		AckPolicy:     jetstream.AckExplicitPolicy,
 		AckWait:       o.AckWait,
 		MaxDeliver:    o.MaxDeliver,
-	}
-	info, err := js.ConsumerInfo(q.Stream, q.Durable)
-	if errors.Is(err, nats.ErrConsumerNotFound) {
-		if _, err := js.AddConsumer(q.Stream, &want); err == nil {
-			log.Info().Str("stream", q.Stream).Str("consumer", q.Durable).Msg("created JetStream pull consumer")
-			return nil
-		}
-		// Another replica may have created it first.
-		info, err = js.ConsumerInfo(q.Stream, q.Durable)
-	}
+	})
 	if err != nil {
-		return fmt.Errorf("could not set up consumer %s on stream %s: %w", q.Durable, q.Stream, err)
+		return nil, fmt.Errorf("could not set up consumer %s on stream %s: %w", q.Durable, q.Stream, err)
 	}
-	if info.Config.DeliverSubject != "" {
-		return fmt.Errorf("consumer %s on stream %s is a push consumer; delete it so TFBuddy can recreate it as a pull consumer", q.Durable, q.Stream)
+
+	logger := log.With().Str("stream", q.Stream).Str("queue", q.Durable).Logger()
+	// With PullMaxMessages(1), Consume asks for the next message only after
+	// the handler returns. It also pauses its own idle-heartbeat check while
+	// the handler runs, so a handler that takes minutes does not make it pull
+	// a second message early.
+	cc, err := cons.Consume(
+		func(msg jetstream.Msg) { handle[T, I](msg, q.Durable, o, fn) },
+		jetstream.PullMaxMessages(1),
+		jetstream.ConsumeErrHandler(func(_ jetstream.ConsumeContext, err error) {
+			logger.Warn().Err(err).Msg("JetStream consumer error")
+		}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("could not consume %s on stream %s: %w", q.Durable, q.Stream, err)
 	}
-	cfg := info.Config
-	if cfg.AckWait == o.AckWait && cfg.MaxDeliver == o.MaxDeliver && cfg.FilterSubject == q.Subject {
-		return nil
-	}
-	cfg.AckWait = o.AckWait
-	cfg.MaxDeliver = o.MaxDeliver
-	cfg.FilterSubject = q.Subject
-	if _, err := js.UpdateConsumer(q.Stream, &cfg); err != nil {
-		return fmt.Errorf("could not update consumer %s on stream %s: %w", q.Durable, q.Stream, err)
-	}
-	log.Info().Str("stream", q.Stream).Str("consumer", q.Durable).
-		Dur("ackWait", o.AckWait).Int("maxDeliver", o.MaxDeliver).
-		Msg("updated JetStream pull consumer")
-	return nil
+	return cc, nil
 }
 
-func deleteLegacyPushConsumer(js nats.JetStreamContext, stream, durable string) error {
-	info, err := js.ConsumerInfo(stream, durable)
-	if errors.Is(err, nats.ErrConsumerNotFound) {
+func deleteLegacyPushConsumer(ctx context.Context, js jetstream.JetStream, stream, durable string) error {
+	_, err := js.Consumer(ctx, stream, durable)
+	switch {
+	case err == nil, errors.Is(err, jetstream.ErrConsumerNotFound):
+		// Gone already, or a pull consumer by that name: nothing to replace.
 		return nil
-	}
-	if err != nil {
+	case !errors.Is(err, jetstream.ErrNotPullConsumer):
 		return fmt.Errorf("could not read legacy consumer %s on stream %s: %w", durable, stream, err)
 	}
-	if info.Config.DeliverSubject == "" {
-		return nil
-	}
-	if err := js.DeleteConsumer(stream, durable); err != nil && !errors.Is(err, nats.ErrConsumerNotFound) {
+	if err := js.DeleteConsumer(ctx, stream, durable); err != nil && !errors.Is(err, jetstream.ErrConsumerNotFound) {
 		return fmt.Errorf("could not delete legacy push consumer %s on stream %s: %w", durable, stream, err)
 	}
 	log.Info().Str("stream", stream).Str("consumer", durable).
@@ -272,8 +187,8 @@ func deleteLegacyPushConsumer(js nats.JetStreamContext, stream, durable string) 
 	return nil
 }
 
-func handle[T any, I Event[T]](msg *nats.Msg, queue string, o Options, fn Handler[T]) {
-	logger := log.With().Str("queue", queue).Str("subject", msg.Subject).Logger()
+func handle[T any, I Event[T]](msg jetstream.Msg, queue string, o Options, fn Handler[T]) {
+	logger := log.With().Str("queue", queue).Str("subject", msg.Subject()).Logger()
 	delivered := uint64(1)
 	if md, err := msg.Metadata(); err == nil {
 		delivered = md.NumDelivered
@@ -285,7 +200,7 @@ func handle[T any, I Event[T]](msg *nats.Msg, queue string, o Options, fn Handle
 	}
 
 	evt := I(new(T))
-	if err := evt.DecodeEventData(msg.Data); err != nil {
+	if err := evt.DecodeEventData(msg.Data()); err != nil {
 		logger.Error().Err(err).Msg("dropping JetStream message that could not be decoded")
 		settle(logger, queue, outcomeTerm, msg.Term())
 		return
@@ -324,7 +239,7 @@ func run[T any](fn Handler[T], evt *T) (err error) {
 // keepInProgress extends msg's ack deadline every heartbeat until the returned
 // stop function is called, or until MaxInProgress passes. stop returns once
 // the heartbeat has stopped, so no progress signal can follow the ack.
-func keepInProgress(msg *nats.Msg, o Options, logger zerolog.Logger) (stop func()) {
+func keepInProgress(msg jetstream.Msg, o Options, logger zerolog.Logger) (stop func()) {
 	done := make(chan struct{})
 	stopped := make(chan struct{})
 	go func() {

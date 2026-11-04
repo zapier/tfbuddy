@@ -7,6 +7,7 @@ import (
 	"github.com/google/go-github/v69/github"
 	"github.com/labstack/echo/v4"
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog/log"
 	"github.com/sl1pm4t/gongs"
@@ -45,7 +46,7 @@ type GithubHooksHandler struct {
 	commentStream *gongs.GenericStream[GithubIssueCommentEventMsg, *GithubIssueCommentEventMsg]
 }
 
-func NewGithubHooksHandler(cfg config.Config, vcs vcs.GitClient, tfc tfc_api.ApiClient, rs runstream.StreamClient, js nats.JetStreamContext, workspaceStream tfc_trigger.WorkspacePublisher) *GithubHooksHandler {
+func NewGithubHooksHandler(cfg config.Config, vcs vcs.GitClient, tfc tfc_api.ApiClient, rs runstream.StreamClient, js nats.JetStreamContext, jsc jetstream.JetStream, workspaceStream tfc_trigger.WorkspacePublisher) *GithubHooksHandler {
 	prStream := gongs.NewGenericStream[PullRequestEventMsg](js, getGithubJetstreamName(), getGithubJetstreamSubject(PullRequestEventType))
 	commentStream := gongs.NewGenericStream[GithubIssueCommentEventMsg](js, getGithubJetstreamName(), getGithubJetstreamSubject(IssueCommentEvent))
 
@@ -71,7 +72,7 @@ func NewGithubHooksHandler(cfg config.Config, vcs vcs.GitClient, tfc tfc_api.Api
 	// wire up worker callbacks
 	// gongs.NewGenericStream takes the subject before the stream, so comment
 	// events are published on getGithubJetstreamName().
-	_, err := jsqueue.Consume[GithubIssueCommentEventMsg](js, jsqueue.Queue{
+	_, err := jsqueue.Consume[GithubIssueCommentEventMsg](jsc, jsqueue.Queue{
 		Stream:            hooks_stream.HooksStreamName,
 		Subject:           getGithubJetstreamName(),
 		Durable:           "github_comment_event_pull_worker",

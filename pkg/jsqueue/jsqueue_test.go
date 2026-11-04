@@ -13,6 +13,7 @@ import (
 	"github.com/nats-io/nats-server/v2/server"
 	natstest "github.com/nats-io/nats-server/v2/test"
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/stretchr/testify/require"
 
 	"github.com/zapier/tfbuddy/pkg/utils"
@@ -36,7 +37,8 @@ func (m *testMsg) DecodeEventData(b []byte) error {
 }
 
 // startJetStream runs an in-process JetStream server with one work-queue
-// stream, shaped like TFBuddy's HOOKS stream.
+// stream, shaped like TFBuddy's HOOKS stream. The legacy client it returns is
+// used to set the stream up and publish, as TFBuddy does.
 func startJetStream(t *testing.T) (*server.Server, nats.JetStreamContext) {
 	t.Helper()
 	opts := natstest.DefaultTestOptions
@@ -46,8 +48,9 @@ func startJetStream(t *testing.T) (*server.Server, nats.JetStreamContext) {
 	srv := natstest.RunServer(&opts)
 	t.Cleanup(srv.Shutdown)
 
-	js := connect(t, srv)
-	_, err := js.AddStream(&nats.StreamConfig{
+	js, err := connect(t, srv).JetStream()
+	require.NoError(t, err)
+	_, err = js.AddStream(&nats.StreamConfig{
 		Name:      testStream,
 		Subjects:  []string{testStream + ".>"},
 		Retention: nats.WorkQueuePolicy,
@@ -57,15 +60,21 @@ func startJetStream(t *testing.T) (*server.Server, nats.JetStreamContext) {
 	return srv, js
 }
 
-// connect opens another client connection, standing in for another replica.
-func connect(t *testing.T, srv *server.Server) nats.JetStreamContext {
+func connect(t *testing.T, srv *server.Server) *nats.Conn {
 	t.Helper()
 	addr, ok := srv.Addr().(*net.TCPAddr)
 	require.True(t, ok, "unexpected server address type %T", srv.Addr())
 	nc, err := nats.Connect(fmt.Sprintf("nats://127.0.0.1:%d", addr.Port))
 	require.NoError(t, err)
 	t.Cleanup(nc.Close)
-	js, err := nc.JetStream()
+	return nc
+}
+
+// replica opens a client connection of its own, standing in for one TFBuddy
+// replica.
+func replica(t *testing.T, srv *server.Server) jetstream.JetStream {
+	t.Helper()
+	js, err := jetstream.New(connect(t, srv))
 	require.NoError(t, err)
 	return js
 }
@@ -78,14 +87,11 @@ func publish(t *testing.T, js nats.JetStreamContext, id int) {
 	require.NoError(t, err)
 }
 
-func consume(t *testing.T, js nats.JetStreamContext, opts Options, fn Handler[testMsg]) {
+func consume(t *testing.T, js jetstream.JetStream, opts Options, fn Handler[testMsg]) {
 	t.Helper()
-	if opts.FetchWait == 0 {
-		opts.FetchWait = 200 * time.Millisecond
-	}
-	c, err := Consume[testMsg](js, testQueue, opts, fn)
+	cc, err := Consume[testMsg](js, testQueue, opts, fn)
 	require.NoError(t, err)
-	t.Cleanup(c.Stop)
+	t.Cleanup(cc.Stop)
 }
 
 func requireStreamEmpty(t *testing.T, js nats.JetStreamContext) {
@@ -116,10 +122,10 @@ func TestWithoutHeartbeatASlowHandlerIsRedelivered(t *testing.T) {
 }
 
 func TestSlowHandlerIsDeliveredOnce(t *testing.T) {
-	_, js := startJetStream(t)
+	srv, js := startJetStream(t)
 	var calls atomic.Int32
 	done := make(chan struct{})
-	consume(t, js, Options{AckWait: 500 * time.Millisecond}, func(*testMsg) error {
+	consume(t, replica(t, srv), Options{AckWait: 500 * time.Millisecond}, func(*testMsg) error {
 		calls.Add(1)
 		time.Sleep(1500 * time.Millisecond) // three AckWaits
 		close(done)
@@ -144,7 +150,7 @@ func TestBurstAcrossReplicasHandlesEachEventOnce(t *testing.T) {
 	seen := map[int]int{}
 	byReplica := make([]int, replicas)
 	for r := 0; r < replicas; r++ {
-		consume(t, connect(t, srv), Options{AckWait: 500 * time.Millisecond}, func(m *testMsg) error {
+		consume(t, replica(t, srv), Options{AckWait: 500 * time.Millisecond}, func(m *testMsg) error {
 			time.Sleep(200 * time.Millisecond)
 			mu.Lock()
 			seen[m.ID]++
@@ -173,9 +179,9 @@ func TestBurstAcrossReplicasHandlesEachEventOnce(t *testing.T) {
 }
 
 func TestFailedMessageIsRedeliveredAfterNakDelay(t *testing.T) {
-	_, js := startJetStream(t)
+	srv, js := startJetStream(t)
 	var calls atomic.Int32
-	consume(t, js, Options{AckWait: time.Second, NakDelay: 100 * time.Millisecond}, func(*testMsg) error {
+	consume(t, replica(t, srv), Options{AckWait: time.Second, NakDelay: 100 * time.Millisecond}, func(*testMsg) error {
 		if calls.Add(1) == 1 {
 			return errors.New("transient")
 		}
@@ -190,9 +196,9 @@ func TestFailedMessageIsRedeliveredAfterNakDelay(t *testing.T) {
 }
 
 func TestFailingMessageStopsAfterMaxDeliver(t *testing.T) {
-	_, js := startJetStream(t)
+	srv, js := startJetStream(t)
 	var calls atomic.Int32
-	consume(t, js, Options{AckWait: time.Second, MaxDeliver: 3, NakDelay: 50 * time.Millisecond}, func(*testMsg) error {
+	consume(t, replica(t, srv), Options{AckWait: time.Second, MaxDeliver: 3, NakDelay: 50 * time.Millisecond}, func(*testMsg) error {
 		calls.Add(1)
 		return errors.New("always fails")
 	})
@@ -206,9 +212,9 @@ func TestFailingMessageStopsAfterMaxDeliver(t *testing.T) {
 }
 
 func TestPermanentErrorIsNotRetried(t *testing.T) {
-	_, js := startJetStream(t)
+	srv, js := startJetStream(t)
 	var calls atomic.Int32
-	consume(t, js, Options{AckWait: time.Second, NakDelay: 50 * time.Millisecond}, func(*testMsg) error {
+	consume(t, replica(t, srv), Options{AckWait: time.Second, NakDelay: 50 * time.Millisecond}, func(*testMsg) error {
 		calls.Add(1)
 		return fmt.Errorf("bad request %w", utils.ErrPermanent)
 	})
@@ -221,11 +227,11 @@ func TestPermanentErrorIsNotRetried(t *testing.T) {
 }
 
 func TestPanickingHandlerDropsTheMessageAndKeepsConsuming(t *testing.T) {
-	_, js := startJetStream(t)
+	srv, js := startJetStream(t)
 	var mu sync.Mutex
 	var seen []int
 	handled := make(chan struct{}, 2)
-	consume(t, js, Options{AckWait: time.Second, NakDelay: 50 * time.Millisecond}, func(m *testMsg) error {
+	consume(t, replica(t, srv), Options{AckWait: time.Second, NakDelay: 50 * time.Millisecond}, func(m *testMsg) error {
 		mu.Lock()
 		seen = append(seen, m.ID)
 		mu.Unlock()
@@ -249,9 +255,9 @@ func TestPanickingHandlerDropsTheMessageAndKeepsConsuming(t *testing.T) {
 }
 
 func TestUndecodableMessageIsDropped(t *testing.T) {
-	_, js := startJetStream(t)
+	srv, js := startJetStream(t)
 	var calls atomic.Int32
-	consume(t, js, Options{}, func(*testMsg) error {
+	consume(t, replica(t, srv), Options{}, func(*testMsg) error {
 		calls.Add(1)
 		return nil
 	})
@@ -273,8 +279,8 @@ func TestHeartbeatStopsAfterMaxInProgress(t *testing.T) {
 		}
 		return nil
 	}
-	consume(t, js, opts, handler)
-	consume(t, connect(t, srv), opts, handler)
+	consume(t, replica(t, srv), opts, handler)
+	consume(t, replica(t, srv), opts, handler)
 
 	publish(t, js, 1)
 
@@ -286,7 +292,7 @@ func TestHeartbeatStopsAfterMaxInProgress(t *testing.T) {
 // release with Consume deletes them, keeps their unacked messages, and stops
 // a v0.8.3 replica from creating them again.
 func TestLegacyPushConsumerIsReplaced(t *testing.T) {
-	_, js := startJetStream(t)
+	srv, js := startJetStream(t)
 	_, err := js.AddConsumer(testStream, &nats.ConsumerConfig{
 		Durable:        testLegacy,
 		DeliverSubject: nats.NewInbox(),
@@ -298,7 +304,7 @@ func TestLegacyPushConsumerIsReplaced(t *testing.T) {
 	publish(t, js, 7) // waiting for the legacy consumer, never acked
 
 	handled := make(chan int, 1)
-	consume(t, js, Options{AckWait: 2 * time.Minute, MaxDeliver: 4}, func(m *testMsg) error {
+	consume(t, replica(t, srv), Options{AckWait: 2 * time.Minute, MaxDeliver: 4}, func(m *testMsg) error {
 		handled <- m.ID
 		return nil
 	})
@@ -324,7 +330,7 @@ func TestLegacyPushConsumerIsReplaced(t *testing.T) {
 }
 
 func TestExistingPullConsumerIsUpdated(t *testing.T) {
-	_, js := startJetStream(t)
+	srv, js := startJetStream(t)
 	_, err := js.AddConsumer(testStream, &nats.ConsumerConfig{
 		Durable:       testDurable,
 		AckPolicy:     nats.AckExplicitPolicy,
@@ -332,7 +338,7 @@ func TestExistingPullConsumerIsUpdated(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	consume(t, js, Options{AckWait: 2 * time.Minute, MaxDeliver: 4}, func(*testMsg) error { return nil })
+	consume(t, replica(t, srv), Options{AckWait: 2 * time.Minute, MaxDeliver: 4}, func(*testMsg) error { return nil })
 
 	info, err := js.ConsumerInfo(testStream, testDurable)
 	require.NoError(t, err)
@@ -353,23 +359,23 @@ func TestReplicasStartingTogetherShareOneConsumer(t *testing.T) {
 	require.NoError(t, err)
 
 	const replicas = 3
-	jss := make([]nats.JetStreamContext, replicas)
+	jss := make([]jetstream.JetStream, replicas)
 	for r := range jss {
-		jss[r] = connect(t, srv)
+		jss[r] = replica(t, srv)
 	}
 	var calls atomic.Int32
 	errs := make(chan error, replicas)
 	var wg sync.WaitGroup
 	for r := 0; r < replicas; r++ {
 		wg.Add(1)
-		go func(js nats.JetStreamContext) {
+		go func(js jetstream.JetStream) {
 			defer wg.Done()
-			c, err := Consume[testMsg](js, testQueue, Options{FetchWait: 200 * time.Millisecond}, func(*testMsg) error {
+			cc, err := Consume[testMsg](js, testQueue, Options{}, func(*testMsg) error {
 				calls.Add(1)
 				return nil
 			})
 			if err == nil {
-				t.Cleanup(c.Stop)
+				t.Cleanup(cc.Stop)
 			}
 			errs <- err
 		}(jss[r])
@@ -391,7 +397,6 @@ func TestOptionsDefaults(t *testing.T) {
 	require.Equal(t, DefaultMaxDeliver, o.MaxDeliver)
 	require.Equal(t, DefaultNakDelay, o.NakDelay)
 	require.Equal(t, DefaultMaxInProgress, o.MaxInProgress)
-	require.Equal(t, DefaultFetchWait, o.FetchWait)
 	require.Equal(t, DefaultAckWait/3, o.Heartbeat)
 
 	// A heartbeat no shorter than AckWait would let the message lapse.
