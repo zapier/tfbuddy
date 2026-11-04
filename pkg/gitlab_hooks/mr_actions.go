@@ -52,7 +52,7 @@ func (w *GitlabEventWorker) processMergeRequestEvent(msg *MergeRequestEventMsg) 
 	}
 	switch event.ObjectAttributes.Action {
 	case "open", "reopen":
-		if w.skipAutoPlan(projectName, event.ObjectAttributes.IID, event.ObjectAttributes.Labels, labels) {
+		if w.skipAutoPlan(projectName, event, labels) {
 			return projectName, nil
 		}
 		log.Debug().Str("project", projectName).Int("mergeRequestID", event.ObjectAttributes.IID).Msg("triggering TFC events for merge request")
@@ -62,7 +62,7 @@ func (w *GitlabEventWorker) processMergeRequestEvent(msg *MergeRequestEventMsg) 
 
 	case "update":
 		if event.ObjectAttributes.OldRev != "" && event.ObjectAttributes.OldRev != event.ObjectAttributes.LastCommit.ID {
-			if w.skipAutoPlan(projectName, event.ObjectAttributes.IID, event.ObjectAttributes.Labels, labels) {
+			if w.skipAutoPlan(projectName, event, labels) {
 				return projectName, nil
 			}
 			log.Debug().Str("project", projectName).Int("mergeRequestID", event.ObjectAttributes.IID).Msg("triggering TFC events for merge request")
@@ -86,25 +86,32 @@ func (w *GitlabEventWorker) processMergeRequestEvent(msg *MergeRequestEventMsg) 
 // merge request's labels. When it does, it records the metric/log an operator
 // needs to explain the missing TFC/* commit status and returns true so the
 // caller can skip triggering a plan without calling the TFC/GitLab APIs.
-func (w *GitlabEventWorker) skipAutoPlan(projectName string, mrIID int, mrLabels []*gogitlab.EventLabel, metricLabels prometheus.Labels) bool {
-	if !hasSkipPlanLabel(mrLabels, w.cfg.SkipPlanLabels) {
+func (w *GitlabEventWorker) skipAutoPlan(projectName string, event *gogitlab.MergeEvent, metricLabels prometheus.Labels) bool {
+	// GitLab's merge request webhook duplicates the MR's labels at both the
+	// top level and under object_attributes. Checking both guards against
+	// either one being empty, since GitLab does not document either as
+	// authoritative.
+	if !hasSkipPlanLabel(w.cfg.SkipPlanLabels, event.ObjectAttributes.Labels, event.Labels) {
 		return false
 	}
-	log.Info().Str("project", projectName).Int("mergeRequestID", mrIID).
+	log.Info().Str("project", projectName).Int("mergeRequestID", event.ObjectAttributes.IID).
 		Msg("skipping automatic tfc plan: merge request has a skip-plan label")
 	metricLabels["reason"] = "skip-plan-label"
 	gitlabWebHookIgnored.With(metricLabels).Inc()
 	return true
 }
 
-// hasSkipPlanLabel reports whether mrLabels contains any of skipLabels. The
-// comparison is case-insensitive since GitLab label titles are free text and
-// a mismatched case would otherwise silently fail to skip the plan.
-func hasSkipPlanLabel(mrLabels []*gogitlab.EventLabel, skipLabels []string) bool {
+// hasSkipPlanLabel reports whether any label set in labelSets contains any of
+// skipLabels. The comparison is case-insensitive since GitLab label titles
+// are free text and a mismatched case would otherwise silently fail to skip
+// the plan.
+func hasSkipPlanLabel(skipLabels []string, labelSets ...[]*gogitlab.EventLabel) bool {
 	for _, skip := range skipLabels {
-		for _, label := range mrLabels {
-			if label != nil && strings.EqualFold(label.Title, skip) {
-				return true
+		for _, mrLabels := range labelSets {
+			for _, label := range mrLabels {
+				if label != nil && strings.EqualFold(label.Title, skip) {
+					return true
+				}
 			}
 		}
 	}

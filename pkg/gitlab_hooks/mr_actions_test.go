@@ -43,45 +43,63 @@ func TestLogErroredWorkspacesToleratesNil(t *testing.T) {
 func TestHasSkipPlanLabel(t *testing.T) {
 	tests := []struct {
 		name       string
-		mrLabels   []*gogitlab.EventLabel
+		labelSets  [][]*gogitlab.EventLabel
 		skipLabels []string
 		want       bool
 	}{
 		{
 			name:       "no skip labels configured",
-			mrLabels:   []*gogitlab.EventLabel{{Title: "do-not-plan"}},
+			labelSets:  [][]*gogitlab.EventLabel{{{Title: "do-not-plan"}}},
 			skipLabels: nil,
 			want:       false,
 		},
 		{
 			name:       "mr has none of the configured labels",
-			mrLabels:   []*gogitlab.EventLabel{{Title: "bug"}},
+			labelSets:  [][]*gogitlab.EventLabel{{{Title: "bug"}}},
 			skipLabels: []string{"do-not-plan", "wip"},
 			want:       false,
 		},
 		{
 			name:       "mr has a configured label",
-			mrLabels:   []*gogitlab.EventLabel{{Title: "bug"}, {Title: "wip"}},
+			labelSets:  [][]*gogitlab.EventLabel{{{Title: "bug"}, {Title: "wip"}}},
 			skipLabels: []string{"do-not-plan", "wip"},
 			want:       true,
 		},
 		{
 			name:       "match is case-insensitive",
-			mrLabels:   []*gogitlab.EventLabel{{Title: "WIP"}},
+			labelSets:  [][]*gogitlab.EventLabel{{{Title: "WIP"}}},
 			skipLabels: []string{"wip"},
 			want:       true,
 		},
 		{
 			name:       "mr has no labels",
-			mrLabels:   nil,
+			labelSets:  [][]*gogitlab.EventLabel{nil},
 			skipLabels: []string{"wip"},
 			want:       false,
+		},
+		{
+			name: "match found only in the second label set (object_attributes.labels empty, top-level labels populated)",
+			labelSets: [][]*gogitlab.EventLabel{
+				nil,
+				{{Title: "do-not-plan"}},
+			},
+			skipLabels: []string{"do-not-plan"},
+			want:       true,
+		},
+		{
+			name: "match found only in the first label set (top-level labels empty, object_attributes.labels populated)",
+			labelSets: [][]*gogitlab.EventLabel{
+				{{Title: "do-not-plan"}},
+				nil,
+			},
+			skipLabels: []string{"do-not-plan"},
+			want:       true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, hasSkipPlanLabel(tt.mrLabels, tt.skipLabels))
+			assert.Equal(t, tt.want, hasSkipPlanLabel(tt.skipLabels, tt.labelSets...))
 		})
 	}
 }
@@ -92,28 +110,41 @@ func TestHasSkipPlanLabel(t *testing.T) {
 // merge/close still runs regardless of labels.
 func TestProcessMergeRequestEventSkipPlanLabel(t *testing.T) {
 	tests := []struct {
-		name       string
-		action     string
-		mrLabels   []*gogitlab.EventLabel
-		skipLabels []string
+		name             string
+		action           string
+		objectAttrLabels []*gogitlab.EventLabel
+		topLevelLabels   []*gogitlab.EventLabel
+		skipLabels       []string
 	}{
 		{
-			name:       "open is skipped when a skip-plan label is present",
-			action:     "open",
-			mrLabels:   []*gogitlab.EventLabel{{Title: "do-not-plan"}},
-			skipLabels: []string{"do-not-plan"},
+			name:             "open is skipped when object_attributes.labels has a skip-plan label",
+			action:           "open",
+			objectAttrLabels: []*gogitlab.EventLabel{{Title: "do-not-plan"}},
+			skipLabels:       []string{"do-not-plan"},
 		},
 		{
-			name:       "reopen is skipped when a skip-plan label is present",
-			action:     "reopen",
-			mrLabels:   []*gogitlab.EventLabel{{Title: "do-not-plan"}},
-			skipLabels: []string{"do-not-plan"},
+			name:           "open is skipped when only the top-level labels field has a skip-plan label",
+			action:         "open",
+			topLevelLabels: []*gogitlab.EventLabel{{Title: "do-not-plan"}},
+			skipLabels:     []string{"do-not-plan"},
 		},
 		{
-			name:       "update with a new commit is skipped when a skip-plan label is present",
-			action:     "update",
-			mrLabels:   []*gogitlab.EventLabel{{Title: "do-not-plan"}},
-			skipLabels: []string{"do-not-plan"},
+			name:             "reopen is skipped when a skip-plan label is present",
+			action:           "reopen",
+			objectAttrLabels: []*gogitlab.EventLabel{{Title: "do-not-plan"}},
+			skipLabels:       []string{"do-not-plan"},
+		},
+		{
+			name:             "update with a new commit is skipped when a skip-plan label is present",
+			action:           "update",
+			objectAttrLabels: []*gogitlab.EventLabel{{Title: "do-not-plan"}},
+			skipLabels:       []string{"do-not-plan"},
+		},
+		{
+			name:           "update with a new commit is skipped when only the top-level labels field has a skip-plan label",
+			action:         "update",
+			topLevelLabels: []*gogitlab.EventLabel{{Title: "do-not-plan"}},
+			skipLabels:     []string{"do-not-plan"},
 		},
 	}
 
@@ -145,7 +176,8 @@ func TestProcessMergeRequestEventSkipPlanLabel(t *testing.T) {
 			event.ObjectAttributes.IID = 101
 			event.ObjectAttributes.Action = tt.action
 			event.ObjectAttributes.SourceBranch = "feature-branch"
-			event.ObjectAttributes.Labels = tt.mrLabels
+			event.ObjectAttributes.Labels = tt.objectAttrLabels
+			event.Labels = tt.topLevelLabels
 			event.ObjectAttributes.LastCommit.ID = "abc123"
 			event.ObjectAttributes.OldRev = "def456"
 			event.ObjectAttributes.Source = &gogitlab.Repository{PathWithNamespace: "zapier/tfbuddy"}
