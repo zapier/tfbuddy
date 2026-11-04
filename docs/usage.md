@@ -76,6 +76,7 @@ The full list of supported environment variables and flags is described below:
 |`TFBUDDY_REQUIRE_PIPELINE_SUCCESS`|`--require-pipeline-success`|Refuse `tfc apply` while the merge request pipeline for the commit has a job that has not succeeded. Only takes effect for GitLab projects that also set `only_allow_merge_if_pipeline_succeeds`. TFBuddy's own TFC/* commit statuses are ignored, so a pending apply status does not block itself.|`false`|
 |`TFBUDDY_BLOCK_APPLY_ON_DRAFT`|`--block-apply-on-draft`|Refuse `tfc apply` while the merge request is a Draft. A Draft cannot be merged, so an apply on one leaves live infrastructure ahead of the target branch. `tfc plan` is still allowed.|`false`|
 |`TFBUDDY_STATUS_TRIGGER_WAIT`|`--status-trigger-wait`|How long `tfc status` waits for TFBuddy to publish a commit status for the pipeline's commit before failing the job. Accepts a Go duration string (e.g. 5m).|`5m0s`|
+|`TFBUDDY_SKIP_PLAN_LABELS`|`--skip-plan-labels`|Comma-separated GitLab merge request labels (case-insensitive). When a merge request carries any of these labels, TFBuddy skips automatic `tfc plan` triggering from GitLab webhook events (open, reopen, and new commits pushed). Does not affect `tfc plan`/`tfc apply` run from an MR comment, and does not block cleanup when the MR is merged or closed.||
 <!-- END GENERATED CONFIGURATION -->
 
 For sensitive environment variables use `secrets.envs` which can contain a list of key/value pairs
@@ -159,6 +160,20 @@ comment is processed, so marking the MR ready and commenting again is enough.
 
 The setting also covers GitHub, where the same check refuses `tfc apply` on a
 Draft pull request and asks for it to be marked ready for review.
+
+##### Skipping automatic plan by label
+
+Set `TFBUDDY_SKIP_PLAN_LABELS` to a comma-separated list of GitLab merge
+request labels (e.g. `TFBUDDY_SKIP_PLAN_LABELS=do-not-plan,wip`) to make
+TFBuddy skip the automatic `tfc plan` it would otherwise trigger when a merge
+request is opened, reopened, or pushed to. The match is case-insensitive and
+checks against any label on the merge request.
+
+This only affects plans TFBuddy triggers on its own from a GitLab webhook.
+Running `tfc plan` or `tfc apply` from an MR comment still works regardless of
+labels, and cleanup when the MR is merged or closed (releasing locks, etc.)
+still runs. This setting applies to GitLab only; it has no effect on GitHub
+pull requests.
 
 ##### .tfbuddy.yaml
 
