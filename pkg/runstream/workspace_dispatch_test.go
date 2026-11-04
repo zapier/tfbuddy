@@ -35,6 +35,14 @@ func TestClaimWorkspaceDispatch(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, claimed, "a redelivery of the same trigger must not claim the workspace again")
 
+	// The GitHub comment path reads the SHA from the live pull request, so a
+	// redelivery can carry a different one after the target branch moves.
+	movedBase := claim
+	movedBase.CommitSHA = "def456"
+	claimed, err = s.ClaimWorkspaceDispatch(movedBase)
+	require.NoError(t, err)
+	require.False(t, claimed, "a redelivery with a different commit SHA must not claim the workspace again")
+
 	otherWorkspace := claim
 	otherWorkspace.Workspace = "ws-b"
 	claimed, err = s.ClaimWorkspaceDispatch(otherWorkspace)

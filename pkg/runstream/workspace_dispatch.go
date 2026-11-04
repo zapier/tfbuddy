@@ -30,6 +30,11 @@ type WorkspaceDispatchClaim struct {
 	VcsProvider  string `json:"vcsProvider"`
 	Project      string `json:"project"`
 	MergeRequest int    `json:"mergeRequest"`
+	// CommitSHA is recorded for debugging but is not part of the claim's
+	// identity: the GitHub comment path reads it from the live pull request
+	// on every delivery, so a redelivery after the target branch moved would
+	// otherwise claim the workspace a second time. Trigger already tells new
+	// triggers apart.
 	CommitSHA    string `json:"commitSHA"`
 	Action       string `json:"action"`
 	Trigger      string `json:"trigger"`
@@ -39,7 +44,7 @@ type WorkspaceDispatchClaim struct {
 
 func (c WorkspaceDispatchClaim) key() string {
 	hash := sha256.Sum256([]byte(strings.Join([]string{
-		c.VcsProvider, c.Project, fmt.Sprintf("%d", c.MergeRequest), c.CommitSHA,
+		c.VcsProvider, c.Project, fmt.Sprintf("%d", c.MergeRequest),
 		c.Action, c.Trigger, c.Organization, c.Workspace,
 	}, "\x00")))
 	return hex.EncodeToString(hash[:])
