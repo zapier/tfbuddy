@@ -175,6 +175,13 @@ labels, and cleanup when the MR is merged or closed (releasing locks, etc.)
 still runs. This setting applies to GitLab only; it has no effect on GitHub
 pull requests.
 
+When a plan is skipped this way, TFBuddy still posts a single
+`TFC/plan/skip-auto-plan-label` commit status in the `pending` state, so a
+step that waits for any `TFC/*` status (such as the `tfc status` CI job
+behind `TFBUDDY_STATUS_TRIGGER_WAIT` above) does not time out. This status is
+not tied to a specific workspace and is never resolved to success or failure,
+since no plan actually runs for it to report on.
+
 ##### .tfbuddy.yaml
 
 To use TF Buddy in a given repo, place a file named `.tfbuddy.yaml` in its root, with contents similar to this:
