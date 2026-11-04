@@ -100,7 +100,12 @@ func TestTFCEvents_RedeliveredTriggerSkipsWorkspacesItAlreadyDispatched(t *testi
 	})
 
 	require.ElementsMatch(t, []string{"ws-a", "ws-b"}, got.Executed)
+	// Workspaces are not dispatched in a fixed order, so find ws-a's claim.
 	require.Len(t, rs.claims, 2)
+	byWorkspace := map[string]runstream.WorkspaceDispatchClaim{}
+	for _, c := range rs.claims {
+		byWorkspace[c.Workspace] = c
+	}
 	require.Equal(t, runstream.WorkspaceDispatchClaim{
 		VcsProvider:  "gitlab",
 		Project:      ts.MetaData.ProjectNameNS,
@@ -110,7 +115,8 @@ func TestTFCEvents_RedeliveredTriggerSkipsWorkspacesItAlreadyDispatched(t *testi
 		Trigger:      "delivery:delivery-123",
 		Organization: "zapier-test",
 		Workspace:    "ws-a",
-	}, rs.claims[0])
+	}, byWorkspace["ws-a"])
+	require.Contains(t, byWorkspace, "ws-b")
 }
 
 func TestTFCEvents_CommentWithoutDeliveryIDClaimsByNoteID(t *testing.T) {
