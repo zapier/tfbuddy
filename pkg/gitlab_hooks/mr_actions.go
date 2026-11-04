@@ -46,7 +46,7 @@ func (w *GitlabEventWorker) processMergeRequestEvent(msg *MergeRequestEventMsg) 
 		return projectName, err
 	}
 
-	trigger := tfc_trigger.NewTFCTrigger(w.cfg, w.gl, w.tfc, w.runstream, cfg)
+	trigger := w.triggerCreation(w.cfg, w.gl, w.tfc, w.runstream, cfg)
 	if w.workspaceStream != nil {
 		trigger.SetWorkspaceStream(w.workspaceStream)
 	}
