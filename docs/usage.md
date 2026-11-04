@@ -76,7 +76,7 @@ The full list of supported environment variables and flags is described below:
 |`TFBUDDY_REQUIRE_PIPELINE_SUCCESS`|`--require-pipeline-success`|Refuse `tfc apply` while the merge request pipeline for the commit has a job that has not succeeded. Only takes effect for GitLab projects that also set `only_allow_merge_if_pipeline_succeeds`. TFBuddy's own TFC/* commit statuses are ignored, so a pending apply status does not block itself.|`false`|
 |`TFBUDDY_BLOCK_APPLY_ON_DRAFT`|`--block-apply-on-draft`|Refuse `tfc apply` while the merge request is a Draft. A Draft cannot be merged, so an apply on one leaves live infrastructure ahead of the target branch. `tfc plan` is still allowed.|`false`|
 |`TFBUDDY_STATUS_TRIGGER_WAIT`|`--status-trigger-wait`|How long `tfc status` waits for TFBuddy to publish a commit status for the pipeline's commit before failing the job. Accepts a Go duration string (e.g. 5m).|`5m0s`|
-|`TFBUDDY_SKIP_AUTO_PLAN_LABELS`|`--skip-auto-plan-labels`|Comma-separated GitLab merge request labels (case-insensitive). When a merge request carries any of these labels, TFBuddy skips automatic `tfc plan` triggering from GitLab webhook events (open, reopen, and new commits pushed). Does not affect `tfc plan`/`tfc apply` run from an MR comment, and does not block cleanup when the MR is merged or closed.||
+|`TFBUDDY_SKIP_AUTO_PLAN_LABELS`|`--skip-auto-plan-labels`|Comma-separated GitLab merge request labels (case-insensitive). When a merge request carries any of these labels, TFBuddy skips automatic `tfc plan` triggering from GitLab webhook events (open, reopen, and new commits pushed), but still discovers every affected workspace and posts a pending TFC/plan/<workspace> and TFC/apply/<workspace> commit status for each, without creating a Terraform Cloud run. Does not affect `tfc plan`/`tfc apply` run from an MR comment, and does not block cleanup when the MR is merged or closed.||
 <!-- END GENERATED CONFIGURATION -->
 
 For sensitive environment variables use `secrets.envs` which can contain a list of key/value pairs
@@ -175,12 +175,23 @@ labels, and cleanup when the MR is merged or closed (releasing locks, etc.)
 still runs. This setting applies to GitLab only; it has no effect on GitHub
 pull requests.
 
-When a plan is skipped this way, TFBuddy still posts a single
-`TFC/plan/skip-auto-plan-label` commit status in the `pending` state, so a
-step that waits for any `TFC/*` status (such as the `tfc status` CI job
-behind `TFBUDDY_STATUS_TRIGGER_WAIT` above) does not time out. This status is
-not tied to a specific workspace and is never resolved to success or failure,
-since no plan actually runs for it to report on.
+When a plan is skipped this way, TFBuddy still discovers every workspace the
+merge request would have affected (the same discovery `tfc plan` uses) and
+posts a `TFC/plan/<workspace>` and `TFC/apply/<workspace>` commit status, in
+the `pending` state, for each one — without cloning the repository or
+creating a Terraform Cloud run. This matters for merge requests that touch
+many workspaces at once: without a per-workspace status, a newly-added
+workspace could merge in having never been planned or applied at all. A
+workspace already excluded by the allow/deny list still gets its usual
+`skipped` status instead.
+
+These pending statuses satisfy a step that waits for any `TFC/*` status
+(such as the `tfc status` CI job behind `TFBUDDY_STATUS_TRIGGER_WAIT` above),
+but — unlike a real plan/apply — they are never resolved to success or
+failure, since no run actually exists to report on. If the GitLab project
+also has **Pipelines must succeed** enabled, a pending status that never
+resolves can block the merge request from merging; plan carefully before
+combining the two.
 
 ##### .tfbuddy.yaml
 

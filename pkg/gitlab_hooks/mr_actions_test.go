@@ -169,20 +169,14 @@ func TestProcessMergeRequestEventSkipPlanLabel(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 
-			// No expectations set on the trigger: if the skip check fails to
-			// short-circuit, any call made against it fails the test.
+			// No TriggerTFCEvents expectation: if the skip check fails to
+			// short-circuit, calling it fails the test. SkipTFCEvents is
+			// expected instead, simulating the workflow for every workspace
+			// the MR would have affected.
 			trigger := mocks.NewMockTrigger(ctrl)
-
-			gl := mocks.NewMockGitClient(ctrl)
-			gl.EXPECT().SetWorkspaceStatus(gomock.Any(), vcs.WorkspaceStatus{
-				Project:         "zapier/tfbuddy",
-				CommitSHA:       "abc123",
-				MergeRequestIID: 101,
-				Workspace:       skipPlanWorkspaceName,
-				Action:          "plan",
-				State:           vcs.CommitStatePending,
-				Description:     "tfc plan skipped: merge request has a skip-auto-plan label",
-			}).Return(nil)
+			trigger.EXPECT().SkipTFCEvents(gomock.Any(), skipPlanReason).Return(&tfc_trigger.TriggeredTFCWorkspaces{
+				Executed: []string{"service-tf-buddy"},
+			}, nil)
 
 			cfg := config.C
 			cfg.GitlabProjectAllowList = []string{"zapier/"}
@@ -190,7 +184,7 @@ func TestProcessMergeRequestEventSkipPlanLabel(t *testing.T) {
 
 			worker := &GitlabEventWorker{
 				cfg:       cfg,
-				gl:        gl,
+				gl:        mocks.NewMockGitClient(ctrl),
 				tfc:       mocks.NewMockApiClient(ctrl),
 				runstream: mocks.NewMockStreamClient(ctrl),
 				triggerCreation: func(appCfg config.Config, gl vcs.GitClient, tfc tfc_api.ApiClient, rs runstream.StreamClient, cfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger {
@@ -215,17 +209,15 @@ func TestProcessMergeRequestEventSkipPlanLabel(t *testing.T) {
 	}
 }
 
-// TestSkipAutoPlanPostsPendingStatusEvenOnPostError checks that a failure
-// posting the skip-plan commit status is only logged: it must not turn into
-// an error returned from processMergeRequestEvent, since a commit status is a
-// best-effort notification, not a precondition for skipping the plan.
-func TestSkipAutoPlanPostsPendingStatusEvenOnPostError(t *testing.T) {
+// TestSkipAutoPlanToleratesSkipTFCEventsError checks that a failure from
+// SkipTFCEvents (e.g. posting a commit status) is only logged: it must not
+// turn into an error returned from processMergeRequestEvent, since the skip
+// decision itself does not depend on whether the notification succeeds.
+func TestSkipAutoPlanToleratesSkipTFCEventsError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	trigger := mocks.NewMockTrigger(ctrl)
-
-	gl := mocks.NewMockGitClient(ctrl)
-	gl.EXPECT().SetWorkspaceStatus(gomock.Any(), gomock.Any()).Return(assert.AnError)
+	trigger.EXPECT().SkipTFCEvents(gomock.Any(), skipPlanReason).Return(nil, assert.AnError)
 
 	cfg := config.C
 	cfg.GitlabProjectAllowList = []string{"zapier/"}
@@ -233,7 +225,7 @@ func TestSkipAutoPlanPostsPendingStatusEvenOnPostError(t *testing.T) {
 
 	worker := &GitlabEventWorker{
 		cfg:       cfg,
-		gl:        gl,
+		gl:        mocks.NewMockGitClient(ctrl),
 		tfc:       mocks.NewMockApiClient(ctrl),
 		runstream: mocks.NewMockStreamClient(ctrl),
 		triggerCreation: func(appCfg config.Config, gl vcs.GitClient, tfc tfc_api.ApiClient, rs runstream.StreamClient, cfg *tfc_trigger.TFCTriggerOptions) tfc_trigger.Trigger {

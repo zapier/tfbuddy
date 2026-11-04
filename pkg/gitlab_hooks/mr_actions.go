@@ -8,15 +8,13 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/zapier/tfbuddy/pkg/allow_list"
 	"github.com/zapier/tfbuddy/pkg/tfc_trigger"
-	"github.com/zapier/tfbuddy/pkg/vcs"
 	gogitlab "gitlab.com/gitlab-org/api/client-go"
 	"go.opentelemetry.io/otel"
 )
 
-// skipPlanWorkspaceName is the synthetic workspace name used for the single
-// commit status skipAutoPlan posts. The real per-workspace names are unknown
-// at this point, since skipping happens before workspace discovery runs.
-const skipPlanWorkspaceName = "skip-auto-plan-label"
+// skipPlanReason is the commit status description posted for every workspace
+// TFBUDDY_SKIP_AUTO_PLAN_LABELS skips.
+const skipPlanReason = "skipped: merge request has a skip-auto-plan label"
 
 func (w *GitlabEventWorker) processMergeRequestEvent(msg *MergeRequestEventMsg) (projectName string, err error) {
 	ctx, span := otel.Tracer("GitlabHandler").Start(msg.Context, "processMergeRequestEvent")
@@ -59,7 +57,7 @@ func (w *GitlabEventWorker) processMergeRequestEvent(msg *MergeRequestEventMsg) 
 	}
 	switch event.ObjectAttributes.Action {
 	case "open", "reopen":
-		if w.skipAutoPlan(ctx, projectName, event, labels) {
+		if w.skipAutoPlan(ctx, projectName, event, trigger, labels) {
 			return projectName, nil
 		}
 		log.Debug().Str("project", projectName).Int("mergeRequestID", event.ObjectAttributes.IID).Msg("triggering TFC events for merge request")
@@ -69,7 +67,7 @@ func (w *GitlabEventWorker) processMergeRequestEvent(msg *MergeRequestEventMsg) 
 
 	case "update":
 		if event.ObjectAttributes.OldRev != "" && event.ObjectAttributes.OldRev != event.ObjectAttributes.LastCommit.ID {
-			if w.skipAutoPlan(ctx, projectName, event, labels) {
+			if w.skipAutoPlan(ctx, projectName, event, trigger, labels) {
 				return projectName, nil
 			}
 			log.Debug().Str("project", projectName).Int("mergeRequestID", event.ObjectAttributes.IID).Msg("triggering TFC events for merge request")
@@ -91,11 +89,14 @@ func (w *GitlabEventWorker) processMergeRequestEvent(msg *MergeRequestEventMsg) 
 
 // skipAutoPlan reports whether TFBUDDY_SKIP_AUTO_PLAN_LABELS matches one of
 // the merge request's labels. When it does, it records the metric/log an
-// operator needs to explain the missing TFC/* commit status, posts a
-// TFC/plan/<skipPlanWorkspaceName> pending commit status so a gate waiting on
-// any TFC/* status (e.g. `tfc status` in CI) does not time out, and returns
-// true so the caller can skip triggering a plan without calling the TFC API.
-func (w *GitlabEventWorker) skipAutoPlan(ctx context.Context, projectName string, event *gogitlab.MergeEvent, metricLabels prometheus.Labels) bool {
+// operator needs to explain the skip, then runs the same workspace discovery
+// TriggerTFCEvents would have used and posts a pending TFC/plan/<ws> and
+// TFC/apply/<ws> commit status for every workspace the MR would have
+// affected — without ever cloning the repo or creating a Terraform Cloud
+// run — so a workspace cannot merge in having never been planned, and so a
+// gate waiting on any TFC/* status (e.g. `tfc status` in CI) does not time
+// out. It returns true so the caller skips calling TriggerTFCEvents.
+func (w *GitlabEventWorker) skipAutoPlan(ctx context.Context, projectName string, event *gogitlab.MergeEvent, trigger tfc_trigger.Trigger, metricLabels prometheus.Labels) bool {
 	// GitLab's merge request webhook duplicates the MR's labels at both the
 	// top level and under object_attributes. Checking both guards against
 	// either one being empty, since GitLab does not document either as
@@ -108,18 +109,13 @@ func (w *GitlabEventWorker) skipAutoPlan(ctx context.Context, projectName string
 	metricLabels["reason"] = "skip-plan-label"
 	gitlabWebHookIgnored.With(metricLabels).Inc()
 
-	if err := w.gl.SetWorkspaceStatus(ctx, vcs.WorkspaceStatus{
-		Project:         projectName,
-		CommitSHA:       event.ObjectAttributes.LastCommit.ID,
-		MergeRequestIID: event.ObjectAttributes.IID,
-		Workspace:       skipPlanWorkspaceName,
-		Action:          "plan",
-		State:           vcs.CommitStatePending,
-		Description:     "tfc plan skipped: merge request has a skip-auto-plan label",
-	}); err != nil {
+	executed, err := trigger.SkipTFCEvents(ctx, skipPlanReason)
+	if err != nil {
 		log.Error().Err(err).Str("project", projectName).Int("mergeRequestID", event.ObjectAttributes.IID).
-			Msg("could not post skip-auto-plan commit status")
+			Msg("could not post skip-auto-plan commit statuses")
+		return true
 	}
+	logErroredWorkspaces(projectName, event.ObjectAttributes.IID, executed)
 	return true
 }
 
