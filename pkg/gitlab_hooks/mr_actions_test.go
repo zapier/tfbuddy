@@ -123,7 +123,7 @@ func baseMergeEvent(action string) *gogitlab.MergeEvent {
 }
 
 // TestProcessMergeRequestEventSkipPlanLabel checks that a matching
-// TFBUDDY_SKIP_PLAN_LABELS entry skips automatic plan triggering on webhook
+// TFBUDDY_SKIP_AUTO_PLAN_LABELS entry skips automatic plan triggering on webhook
 // MR events without consulting TFC or the GitLab API.
 func TestProcessMergeRequestEventSkipPlanLabel(t *testing.T) {
 	tests := []struct {
@@ -175,7 +175,7 @@ func TestProcessMergeRequestEventSkipPlanLabel(t *testing.T) {
 
 			cfg := config.C
 			cfg.GitlabProjectAllowList = []string{"zapier/"}
-			cfg.SkipPlanLabels = tt.skipLabels
+			cfg.SkipAutoPlanLabels = tt.skipLabels
 
 			worker := &GitlabEventWorker{
 				cfg:       cfg,
@@ -207,7 +207,7 @@ func TestProcessMergeRequestEventSkipPlanLabel(t *testing.T) {
 // TestProcessMergeRequestEventTriggersPlanWhenNotSkipped guards against a
 // regression where the skip-plan-label check swallows every automatic plan:
 // it checks that open/reopen/push-update still reach TriggerTFCEvents when
-// TFBUDDY_SKIP_PLAN_LABELS is unset, or set but not matching the MR's labels.
+// TFBUDDY_SKIP_AUTO_PLAN_LABELS is unset, or set but not matching the MR's labels.
 func TestProcessMergeRequestEventTriggersPlanWhenNotSkipped(t *testing.T) {
 	tests := []struct {
 		name             string
@@ -253,7 +253,7 @@ func TestProcessMergeRequestEventTriggersPlanWhenNotSkipped(t *testing.T) {
 
 			cfg := config.C
 			cfg.GitlabProjectAllowList = []string{"zapier/"}
-			cfg.SkipPlanLabels = tt.skipLabels
+			cfg.SkipAutoPlanLabels = tt.skipLabels
 
 			worker := &GitlabEventWorker{
 				cfg:       cfg,
@@ -297,7 +297,7 @@ func TestProcessMergeRequestEventMergeCloseAlwaysCleansUp(t *testing.T) {
 
 			cfg := config.C
 			cfg.GitlabProjectAllowList = []string{"zapier/"}
-			cfg.SkipPlanLabels = []string{"do-not-plan"}
+			cfg.SkipAutoPlanLabels = []string{"do-not-plan"}
 
 			worker := &GitlabEventWorker{
 				cfg:       cfg,

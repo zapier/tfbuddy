@@ -82,16 +82,17 @@ func (w *GitlabEventWorker) processMergeRequestEvent(msg *MergeRequestEventMsg) 
 	return projectName, nil
 }
 
-// skipAutoPlan reports whether TFBUDDY_SKIP_PLAN_LABELS matches one of the
-// merge request's labels. When it does, it records the metric/log an operator
-// needs to explain the missing TFC/* commit status and returns true so the
-// caller can skip triggering a plan without calling the TFC/GitLab APIs.
+// skipAutoPlan reports whether TFBUDDY_SKIP_AUTO_PLAN_LABELS matches one of
+// the merge request's labels. When it does, it records the metric/log an
+// operator needs to explain the missing TFC/* commit status and returns true
+// so the caller can skip triggering a plan without calling the TFC/GitLab
+// APIs.
 func (w *GitlabEventWorker) skipAutoPlan(projectName string, event *gogitlab.MergeEvent, metricLabels prometheus.Labels) bool {
 	// GitLab's merge request webhook duplicates the MR's labels at both the
 	// top level and under object_attributes. Checking both guards against
 	// either one being empty, since GitLab does not document either as
 	// authoritative.
-	if !hasSkipPlanLabel(w.cfg.SkipPlanLabels, event.ObjectAttributes.Labels, event.Labels) {
+	if !hasSkipPlanLabel(w.cfg.SkipAutoPlanLabels, event.ObjectAttributes.Labels, event.Labels) {
 		return false
 	}
 	log.Info().Str("project", projectName).Int("mergeRequestID", event.ObjectAttributes.IID).
