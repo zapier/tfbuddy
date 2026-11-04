@@ -71,8 +71,12 @@ func NewGithubHooksHandler(cfg config.Config, vcs vcs.GitClient, tfc tfc_api.Api
 	// wire up worker callbacks
 	// gongs.NewGenericStream takes the subject before the stream, so comment
 	// events are published on getGithubJetstreamName().
-	_, err := jsqueue.QueueSubscribe[GithubIssueCommentEventMsg](js, hooks_stream.HooksStreamName, getGithubJetstreamName(),
-		"github_comment_event_worker", jsqueue.Options{}, h.processIssueCommentEvent)
+	_, err := jsqueue.Consume[GithubIssueCommentEventMsg](js, jsqueue.Queue{
+		Stream:            hooks_stream.HooksStreamName,
+		Subject:           getGithubJetstreamName(),
+		Durable:           "github_comment_event_pull_worker",
+		LegacyPushDurable: "github_comment_event_worker",
+	}, jsqueue.Options{}, h.processIssueCommentEvent)
 	if err != nil {
 		log.Error().Err(err).Msg("github worker: could not subscribe to hook stream")
 	}

@@ -33,17 +33,26 @@ func NewGitlabEventWorker(h *GitlabHooksHandler, js nats.JetStreamContext) *Gitl
 		workspaceStream: h.workspaceStream,
 	}
 
-	// One event can plan every workspace of a merge request, which outlasts
-	// any fixed AckWait. jsqueue keeps the event in progress meanwhile, so
-	// JetStream does not hand it to another replica to plan again.
-	_, err := jsqueue.QueueSubscribe[MergeRequestEventMsg](js, hooks_stream.HooksStreamName, mrEventsStreamSubject(),
-		"gitlab_mr_event_worker", jsqueue.Options{}, w.processMREventStreamMsg)
+	// One event can plan every workspace of a merge request, which takes
+	// minutes. Each replica pulls one event at a time and keeps it in
+	// progress while it runs, so JetStream never hands it to another replica
+	// to plan again, and a burst of events waits in the stream.
+	_, err := jsqueue.Consume[MergeRequestEventMsg](js, jsqueue.Queue{
+		Stream:            hooks_stream.HooksStreamName,
+		Subject:           mrEventsStreamSubject(),
+		Durable:           "gitlab_mr_event_pull_worker",
+		LegacyPushDurable: "gitlab_mr_event_worker",
+	}, jsqueue.Options{}, w.processMREventStreamMsg)
 	if err != nil {
 		log.Error().Err(err).Msg("could not subscribe to hook stream")
 	}
 
-	_, err = jsqueue.QueueSubscribe[NoteEventMsg](js, hooks_stream.HooksStreamName, noteEventsStreamSubject(),
-		"gitlab_note_event_worker", jsqueue.Options{}, w.processNoteEventStreamMsg)
+	_, err = jsqueue.Consume[NoteEventMsg](js, jsqueue.Queue{
+		Stream:            hooks_stream.HooksStreamName,
+		Subject:           noteEventsStreamSubject(),
+		Durable:           "gitlab_note_event_pull_worker",
+		LegacyPushDurable: "gitlab_note_event_worker",
+	}, jsqueue.Options{}, w.processNoteEventStreamMsg)
 	if err != nil {
 		log.Error().Err(err).Msg("could not subscribe to hook stream")
 	}

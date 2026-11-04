@@ -20,7 +20,10 @@ import (
 const (
 	WorkspaceTriggerStreamName = "TFBUDDY_WORKSPACE_TRIGGERS"
 	workspaceTriggerSubject    = WorkspaceTriggerStreamName + ".dispatch"
-	workspaceTriggerQueueName  = "tfbuddy_workspace_trigger_worker"
+	workspaceTriggerQueueName  = "tfbuddy_workspace_trigger_pull_worker"
+	// legacyWorkspaceTriggerQueueName is the push consumer used before
+	// workspace triggers were pulled; it is deleted on startup.
+	legacyWorkspaceTriggerQueueName = "tfbuddy_workspace_trigger_worker"
 
 	workspaceStreamMaxMsgs = 10240
 	workspaceStreamMaxAge  = time.Hour
@@ -132,11 +135,15 @@ func (s *WorkspaceStream) Publish(ctx context.Context, msg *WorkspaceTriggerMsg)
 	return err
 }
 
-// QueueSubscribe binds workers to a shared queue so each message is delivered
-// to one replica, and kept in progress while that replica runs the workspace.
-func (s *WorkspaceStream) QueueSubscribe(handler func(*WorkspaceTriggerMsg) error) (*nats.Subscription, error) {
-	return jsqueue.QueueSubscribe[WorkspaceTriggerMsg](s.js, WorkspaceTriggerStreamName, workspaceTriggerSubject,
-		workspaceTriggerQueueName, jsqueue.Options{}, handler)
+// QueueSubscribe binds workers to a shared queue. Each replica pulls one
+// message at a time and keeps it in progress while it runs the workspace.
+func (s *WorkspaceStream) QueueSubscribe(handler func(*WorkspaceTriggerMsg) error) (*jsqueue.Consumer, error) {
+	return jsqueue.Consume[WorkspaceTriggerMsg](s.js, jsqueue.Queue{
+		Stream:            WorkspaceTriggerStreamName,
+		Subject:           workspaceTriggerSubject,
+		Durable:           workspaceTriggerQueueName,
+		LegacyPushDurable: legacyWorkspaceTriggerQueueName,
+	}, jsqueue.Options{}, handler)
 }
 
 // HealthCheck reports unhealthy when the stream is missing from JetStream,

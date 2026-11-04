@@ -1,19 +1,27 @@
-// Package jsqueue runs JetStream queue consumers whose handlers can take
-// longer than the consumer's AckWait.
+// Package jsqueue runs JetStream work queues whose handlers can take longer
+// than the consumer's AckWait.
 //
-// A JetStream consumer redelivers a message once AckWait passes without an
-// ack. TFBuddy's hook handlers plan every workspace of a merge request before
-// they return, which takes far longer than JetStream's 30s default on a large
-// merge request. Without a progress signal, the message went to another
-// replica every 30s, and each replica planned the whole merge request again.
+// TFBuddy's hook handlers plan every workspace of a merge request before they
+// return, which can take minutes. Two things used to turn that into repeated
+// plans:
 //
-// QueueSubscribe keeps the message in progress while the handler runs, and
-// settles it explicitly once the handler returns.
+//   - A message whose handler outlived AckWait was redelivered to another
+//     replica, which planned the whole merge request again.
+//   - The old consumers were push consumers. JetStream pushed every waiting
+//     message to the replicas at once, and a message's AckWait clock ran while
+//     it sat in a busy replica's buffer, so a burst of merge requests timed out
+//     and was redelivered before anyone had started on it.
+//
+// Consume fixes both. Each replica pulls one message, handles it, and only
+// then pulls the next, so waiting messages stay in the stream with no clock
+// running. While a handler runs, its message is kept in progress, so a live
+// handler never loses it.
 package jsqueue
 
 import (
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -37,14 +45,32 @@ const (
 	// DefaultMaxInProgress is how long a handler may keep a message before the
 	// heartbeat stops, so a hung handler cannot hold a message forever.
 	DefaultMaxInProgress = 30 * time.Minute
+	// DefaultFetchWait is how long one pull request waits for a message.
+	DefaultFetchWait = 10 * time.Second
+
+	maxFetchErrorDelay = 30 * time.Second
 )
 
-// Options tune a queue consumer. Zero values take the defaults above.
+// Queue names a durable pull consumer on a stream.
+type Queue struct {
+	Stream  string
+	Subject string
+	// Durable names the pull consumer.
+	Durable string
+	// LegacyPushDurable names the push consumer this queue replaces. A push
+	// consumer with this name is deleted before the pull consumer is created,
+	// because a work-queue stream allows one consumer per subject. Messages it
+	// had not acked stay in the stream and go to the pull consumer.
+	LegacyPushDurable string
+}
+
+// Options tune a queue. Zero values take the defaults above.
 type Options struct {
 	AckWait       time.Duration
 	MaxDeliver    int
 	NakDelay      time.Duration
 	MaxInProgress time.Duration
+	FetchWait     time.Duration
 	// Heartbeat is how often a running handler extends the ack deadline.
 	// It defaults to a third of AckWait.
 	Heartbeat time.Duration
@@ -62,6 +88,9 @@ func (o Options) withDefaults() Options {
 	}
 	if o.MaxInProgress <= 0 {
 		o.MaxInProgress = DefaultMaxInProgress
+	}
+	if o.FetchWait <= 0 {
+		o.FetchWait = DefaultFetchWait
 	}
 	if o.Heartbeat <= 0 || o.Heartbeat >= o.AckWait {
 		o.Heartbeat = o.AckWait / 3
@@ -103,53 +132,143 @@ func init() {
 	prometheus.MustRegister(messagesSettled, messagesRedelivered)
 }
 
-// QueueSubscribe binds fn to the durable queue consumer named queue on
-// subject in stream. Each message is handled by one subscriber.
-//
-// The consumer is created with Options' AckWait and MaxDeliver. An existing
-// consumer is updated to them first, since nats.go refuses to bind to a
-// consumer whose AckWait or MaxDeliver differ from the requested ones.
-func QueueSubscribe[T any, I Event[T]](js nats.JetStreamContext, stream, subject, queue string, opts Options, fn Handler[T]) (*nats.Subscription, error) {
-	o := opts.withDefaults()
-	if err := ensureConsumer(js, stream, queue, o); err != nil {
-		return nil, err
-	}
-	sub, err := js.QueueSubscribe(subject, queue,
-		func(msg *nats.Msg) { handle[T, I](msg, queue, o, fn) },
-		nats.BindStream(stream),
-		nats.ManualAck(),
-		nats.AckWait(o.AckWait),
-		nats.MaxDeliver(o.MaxDeliver),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("could not subscribe %s to %s: %w", queue, subject, err)
-	}
-	return sub, nil
+// Consumer is a running Consume loop.
+type Consumer struct {
+	sub      *nats.Subscription
+	done     chan struct{}
+	stopped  chan struct{}
+	stopOnce sync.Once
 }
 
-// ensureConsumer brings an existing durable consumer's AckWait and MaxDeliver
-// in line with o. A missing consumer is left for QueueSubscribe to create.
-func ensureConsumer(js nats.JetStreamContext, stream, durable string, o Options) error {
+// Stop ends the loop and waits for the message being handled, if any.
+func (c *Consumer) Stop() {
+	c.stopOnce.Do(func() {
+		close(c.done)
+		_ = c.sub.Unsubscribe()
+	})
+	<-c.stopped
+}
+
+// Consume handles q's messages with fn, one at a time: it pulls the next
+// message only once fn has returned, so several replicas calling Consume
+// share the queue and each takes the next message when it is free.
+func Consume[T any, I Event[T]](js nats.JetStreamContext, q Queue, opts Options, fn Handler[T]) (*Consumer, error) {
+	o := opts.withDefaults()
+	if err := ensurePullConsumer(js, q, o); err != nil {
+		return nil, err
+	}
+	sub, err := js.PullSubscribe(q.Subject, q.Durable, nats.Bind(q.Stream, q.Durable))
+	if err != nil {
+		return nil, fmt.Errorf("could not bind to consumer %s on stream %s: %w", q.Durable, q.Stream, err)
+	}
+	c := &Consumer{sub: sub, done: make(chan struct{}), stopped: make(chan struct{})}
+	go c.run(func(msg *nats.Msg) { handle[T, I](msg, q.Durable, o, fn) }, q, o)
+	return c, nil
+}
+
+func (c *Consumer) run(handleMsg func(*nats.Msg), q Queue, o Options) {
+	defer close(c.stopped)
+	logger := log.With().Str("stream", q.Stream).Str("queue", q.Durable).Logger()
+	errDelay := time.Second
+	for {
+		select {
+		case <-c.done:
+			return
+		default:
+		}
+		msgs, err := c.sub.Fetch(1, nats.MaxWait(o.FetchWait))
+		switch {
+		case err == nil:
+			errDelay = time.Second
+			for _, msg := range msgs {
+				handleMsg(msg)
+			}
+		case errors.Is(err, nats.ErrTimeout):
+			// No message within FetchWait: ask again.
+		case errors.Is(err, nats.ErrBadSubscription), errors.Is(err, nats.ErrConnectionClosed):
+			select {
+			case <-c.done:
+			default:
+				logger.Error().Err(err).Msg("JetStream pull subscription closed; no longer consuming")
+			}
+			return
+		default:
+			logger.Warn().Err(err).Dur("retryIn", errDelay).Msg("could not fetch JetStream message")
+			select {
+			case <-c.done:
+				return
+			case <-time.After(errDelay):
+			}
+			errDelay = min(2*errDelay, maxFetchErrorDelay)
+		}
+	}
+}
+
+// ensurePullConsumer replaces q's legacy push consumer, if any, with a pull
+// consumer configured from o. Replicas starting together may race here; every
+// step tolerates another replica having done it first.
+func ensurePullConsumer(js nats.JetStreamContext, q Queue, o Options) error {
+	if q.LegacyPushDurable != "" {
+		if err := deleteLegacyPushConsumer(js, q.Stream, q.LegacyPushDurable); err != nil {
+			return err
+		}
+	}
+
+	want := nats.ConsumerConfig{
+		Durable:       q.Durable,
+		FilterSubject: q.Subject,
+		DeliverPolicy: nats.DeliverAllPolicy,
+		AckPolicy:     nats.AckExplicitPolicy,
+		AckWait:       o.AckWait,
+		MaxDeliver:    o.MaxDeliver,
+	}
+	info, err := js.ConsumerInfo(q.Stream, q.Durable)
+	if errors.Is(err, nats.ErrConsumerNotFound) {
+		if _, err := js.AddConsumer(q.Stream, &want); err == nil {
+			log.Info().Str("stream", q.Stream).Str("consumer", q.Durable).Msg("created JetStream pull consumer")
+			return nil
+		}
+		// Another replica may have created it first.
+		info, err = js.ConsumerInfo(q.Stream, q.Durable)
+	}
+	if err != nil {
+		return fmt.Errorf("could not set up consumer %s on stream %s: %w", q.Durable, q.Stream, err)
+	}
+	if info.Config.DeliverSubject != "" {
+		return fmt.Errorf("consumer %s on stream %s is a push consumer; delete it so TFBuddy can recreate it as a pull consumer", q.Durable, q.Stream)
+	}
+	cfg := info.Config
+	if cfg.AckWait == o.AckWait && cfg.MaxDeliver == o.MaxDeliver && cfg.FilterSubject == q.Subject {
+		return nil
+	}
+	cfg.AckWait = o.AckWait
+	cfg.MaxDeliver = o.MaxDeliver
+	cfg.FilterSubject = q.Subject
+	if _, err := js.UpdateConsumer(q.Stream, &cfg); err != nil {
+		return fmt.Errorf("could not update consumer %s on stream %s: %w", q.Durable, q.Stream, err)
+	}
+	log.Info().Str("stream", q.Stream).Str("consumer", q.Durable).
+		Dur("ackWait", o.AckWait).Int("maxDeliver", o.MaxDeliver).
+		Msg("updated JetStream pull consumer")
+	return nil
+}
+
+func deleteLegacyPushConsumer(js nats.JetStreamContext, stream, durable string) error {
 	info, err := js.ConsumerInfo(stream, durable)
 	if errors.Is(err, nats.ErrConsumerNotFound) {
 		return nil
 	}
 	if err != nil {
-		return fmt.Errorf("could not read consumer %s on stream %s: %w", durable, stream, err)
+		return fmt.Errorf("could not read legacy consumer %s on stream %s: %w", durable, stream, err)
 	}
-	if info.Config.AckWait == o.AckWait && info.Config.MaxDeliver == o.MaxDeliver {
+	if info.Config.DeliverSubject == "" {
 		return nil
 	}
-	cfg := info.Config
-	cfg.AckWait = o.AckWait
-	cfg.MaxDeliver = o.MaxDeliver
-	if _, err := js.UpdateConsumer(stream, &cfg); err != nil {
-		return fmt.Errorf("could not update consumer %s on stream %s: %w", durable, stream, err)
+	if err := js.DeleteConsumer(stream, durable); err != nil && !errors.Is(err, nats.ErrConsumerNotFound) {
+		return fmt.Errorf("could not delete legacy push consumer %s on stream %s: %w", durable, stream, err)
 	}
 	log.Info().Str("stream", stream).Str("consumer", durable).
-		Dur("ackWait", o.AckWait).Int("maxDeliver", o.MaxDeliver).
-		Dur("previousAckWait", info.Config.AckWait).Int("previousMaxDeliver", info.Config.MaxDeliver).
-		Msg("updated JetStream consumer")
+		Msg("deleted legacy JetStream push consumer; its unacked messages go to the pull consumer")
 	return nil
 }
 
