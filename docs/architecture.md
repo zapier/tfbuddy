@@ -37,9 +37,15 @@ The fan-out is gated by `TFBUDDY_WORKSPACE_FANOUT_ENABLED` (default `true`). Set
 
 Each fan-out message carries the upstream webhook delivery ID (`X-GitHub-Delivery` for GitHub, `X-Gitlab-Event-UUID`/`Idempotency-Key` for GitLab). That ID combined with the workspace name is used as the JetStream dedup key, so a single webhook fanning out to N workspaces produces N distinct keys, while a legitimate retrigger (a new push or comment within the dedup window) carries a fresh delivery ID and is *not* swallowed by the dedup window.
 
-Target-branch evaluation runs once in the publisher, so the MR-level "could not evaluate target branch" warning is posted at most once per delivery. Each worker then re-clones the repo to upload the workspace directory to TFC, so an MR touching N workspaces still does N+1 clones in fan-out mode. On large monorepos this measurably increases git egress and per-message latency; mitigate via `TFBUDDY_GITHUB_CLONE_DEPTH` / `TFBUDDY_GITLAB_CLONE_DEPTH`, or disable fan-out (`TFBUDDY_WORKSPACE_FANOUT_ENABLED=false`) and accept the AckWait risk.
+Target-branch evaluation runs once in the publisher, so the MR-level "could not evaluate target branch" warning is posted at most once per delivery. Each worker then re-clones the repo to upload the workspace directory to TFC, so an MR touching N workspaces still does N+1 clones in fan-out mode. On large monorepos this measurably increases git egress and per-message latency; mitigate via `TFBUDDY_GITHUB_CLONE_DEPTH` / `TFBUDDY_GITLAB_CLONE_DEPTH`, or disable fan-out (`TFBUDDY_WORKSPACE_FANOUT_ENABLED=false`) and plan every workspace in the hook worker instead.
 
 The workspace stream exposes the same `consumers >= 1` liveness check as the other streams, wired into `/live` so a stuck or unsubscribed worker is caught by Kubernetes probes rather than silently piling up unprocessed messages.
+
+### Long-running hook events
+
+A JetStream consumer redelivers a message when its `AckWait` passes without an ack. The hook workers (`gitlab_mr_event_worker`, `gitlab_note_event_worker`, `github_comment_event_worker`) and the workspace worker keep a message in progress while they handle it, extending its ack deadline every 20s, so an MR that takes minutes to plan is not handed to another replica to plan again. Their consumers use a 60s `AckWait`, which only bounds how long a crashed replica holds a message, and at most 5 deliveries. A handler error retries after 30s; a permanent error, a panic or an undecodable message is dropped. TFBuddy updates existing consumers to these settings at startup.
+
+Each workspace dispatch is also recorded in the `WORKSPACE_DISPATCHES` KV bucket, keyed by the webhook delivery ID (or the GitLab note ID) and the workspace, for 2 hours. When a hook event is delivered again anyway, after a crash for example, the workspaces it already dispatched are skipped instead of planned a second time. A new push or `tfc plan` comment is a new trigger and always runs. The metrics `tfbuddy_jetstream_messages_settled` and `tfbuddy_jetstream_messages_redelivered` show how each queue's messages end and how often they are redelivered.
 
 ### TFC API Rate Limiter
 

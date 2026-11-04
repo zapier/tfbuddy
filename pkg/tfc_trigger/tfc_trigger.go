@@ -717,11 +717,8 @@ func (t *TFCTrigger) postWorkspaceStatusForAll(ctx context.Context, workspaces [
 	}
 }
 
-// statusWriteBudget bounds one status write on the synchronous webhook path.
-// The merge-request consumer uses JetStream's 30s default AckWait, and
-// overrunning it gets the delivery redelivered and the whole merge request
-// reprocessed — the duplicate discussions and duplicate TFC runs the
-// per-workspace fan-out exists to prevent.
+// statusWriteBudget bounds one status write on the synchronous webhook path,
+// so a slow VCS API cannot hold up the dispatch of the remaining workspaces.
 //
 // Giving up is cheap: a status posted without a pipeline ID still lands, on
 // the implicit "external" pipeline. The budget is per write rather than
@@ -937,12 +934,65 @@ func (t *TFCTrigger) LockUnlockWorkspace(ws *tfe.Workspace, mr vcs.DetailedMR, l
 	return ErrWorkspaceUnlocked
 }
 
+// dispatchTrigger identifies the webhook delivery or merge request comment
+// that asked for this dispatch. It is empty when neither is known.
+func (t *TFCTrigger) dispatchTrigger() string {
+	if t.cfg.DeliveryID != "" {
+		return "delivery:" + t.cfg.DeliveryID
+	}
+	if t.GetTriggerSource() == CommentTrigger && t.cfg.AutoMergeSequence > 0 {
+		return fmt.Sprintf("note:%d", t.cfg.AutoMergeSequence)
+	}
+	return ""
+}
+
+// claimWorkspaceDispatch reports whether this trigger should dispatch ws. It
+// is false when an earlier delivery of the same trigger already dispatched ws,
+// which happens when JetStream redelivers a hook event: without the claim,
+// the redelivered event would start a second run for every workspace.
+//
+// A claim is taken before the run is created and is never released, so each
+// trigger dispatches a workspace at most once. A delivery that dies between
+// the claim and the run leaves that workspace without a run; a new `tfc plan`
+// comment is a new trigger and runs it. When the claim cannot be recorded the
+// workspace is dispatched anyway, as it was before claims existed.
+func (t *TFCTrigger) claimWorkspaceDispatch(ws *TFCWorkspace) bool {
+	trigger := t.dispatchTrigger()
+	if trigger == "" || t.runstream == nil {
+		return true
+	}
+	claimed, err := t.runstream.ClaimWorkspaceDispatch(runstream.WorkspaceDispatchClaim{
+		VcsProvider:  t.GetVcsProvider(),
+		Project:      t.GetProjectNameWithNamespace(),
+		MergeRequest: t.GetMergeRequestIID(),
+		CommitSHA:    t.GetCommitSHA(),
+		Action:       t.GetAction().String(),
+		Trigger:      trigger,
+		Organization: ws.Organization,
+		Workspace:    ws.Name,
+	})
+	if err != nil {
+		log.Warn().Err(err).Str("ws", ws.Name).Str("trigger", trigger).
+			Msg("could not record workspace dispatch; dispatching without duplicate protection")
+		return true
+	}
+	if !claimed {
+		log.Info().Str("ws", ws.Name).Str("trigger", trigger).
+			Msg("skipping workspace already dispatched by an earlier delivery of this trigger")
+	}
+	return claimed
+}
+
 func (t *TFCTrigger) triggerRunForWorkspace(ctx context.Context, cfgWS *TFCWorkspace, mr vcs.DetailedMR, cloneDir string) error {
 	ctx, span := otel.Tracer("TFC").Start(ctx, "triggerRunForWorkspace")
 	defer span.End()
 
 	org := cfgWS.Organization
 	wsName := cfgWS.Name
+
+	if !t.claimWorkspaceDispatch(cfgWS) {
+		return nil
+	}
 
 	// retrieve TFC workspace details, so we can sanity check this request.
 	ws, err := t.tfc.GetWorkspaceByName(ctx, org, wsName)

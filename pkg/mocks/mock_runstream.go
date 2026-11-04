@@ -70,6 +70,21 @@ func (mr *MockStreamClientMockRecorder) BeginAutoMergeApply(ref, workspaces any)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BeginAutoMergeApply", reflect.TypeOf((*MockStreamClient)(nil).BeginAutoMergeApply), ref, workspaces)
 }
 
+// ClaimWorkspaceDispatch mocks base method.
+func (m *MockStreamClient) ClaimWorkspaceDispatch(claim runstream.WorkspaceDispatchClaim) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ClaimWorkspaceDispatch", claim)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ClaimWorkspaceDispatch indicates an expected call of ClaimWorkspaceDispatch.
+func (mr *MockStreamClientMockRecorder) ClaimWorkspaceDispatch(claim any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClaimWorkspaceDispatch", reflect.TypeOf((*MockStreamClient)(nil).ClaimWorkspaceDispatch), claim)
+}
+
 // EnsureAutoMergeState mocks base method.
 func (m *MockStreamClient) EnsureAutoMergeState(state *runstream.AutoMergeState) error {
 	m.ctrl.T.Helper()

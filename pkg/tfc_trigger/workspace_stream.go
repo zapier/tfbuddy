@@ -12,6 +12,7 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/rs/zerolog/log"
 	"github.com/sl1pm4t/gongs"
+	"github.com/zapier/tfbuddy/pkg/jsqueue"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 )
@@ -132,9 +133,10 @@ func (s *WorkspaceStream) Publish(ctx context.Context, msg *WorkspaceTriggerMsg)
 }
 
 // QueueSubscribe binds workers to a shared queue so each message is delivered
-// to exactly one replica.
+// to one replica, and kept in progress while that replica runs the workspace.
 func (s *WorkspaceStream) QueueSubscribe(handler func(*WorkspaceTriggerMsg) error) (*nats.Subscription, error) {
-	return s.stream.QueueSubscribe(workspaceTriggerQueueName, handler)
+	return jsqueue.QueueSubscribe[WorkspaceTriggerMsg](s.js, WorkspaceTriggerStreamName, workspaceTriggerSubject,
+		workspaceTriggerQueueName, jsqueue.Options{}, handler)
 }
 
 // HealthCheck reports unhealthy when the stream is missing from JetStream,

@@ -4,6 +4,8 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/rs/zerolog/log"
 	"github.com/zapier/tfbuddy/internal/config"
+	"github.com/zapier/tfbuddy/pkg/hooks_stream"
+	"github.com/zapier/tfbuddy/pkg/jsqueue"
 	"github.com/zapier/tfbuddy/pkg/runstream"
 	"github.com/zapier/tfbuddy/pkg/tfc_api"
 	"github.com/zapier/tfbuddy/pkg/tfc_trigger"
@@ -31,12 +33,17 @@ func NewGitlabEventWorker(h *GitlabHooksHandler, js nats.JetStreamContext) *Gitl
 		workspaceStream: h.workspaceStream,
 	}
 
-	_, err := h.mrStream.QueueSubscribe("gitlab_mr_event_worker", w.processMREventStreamMsg)
+	// One event can plan every workspace of a merge request, which outlasts
+	// any fixed AckWait. jsqueue keeps the event in progress meanwhile, so
+	// JetStream does not hand it to another replica to plan again.
+	_, err := jsqueue.QueueSubscribe[MergeRequestEventMsg](js, hooks_stream.HooksStreamName, mrEventsStreamSubject(),
+		"gitlab_mr_event_worker", jsqueue.Options{}, w.processMREventStreamMsg)
 	if err != nil {
 		log.Error().Err(err).Msg("could not subscribe to hook stream")
 	}
 
-	_, err = h.notesStream.QueueSubscribe("gitlab_note_event_worker", w.processNoteEventStreamMsg)
+	_, err = jsqueue.QueueSubscribe[NoteEventMsg](js, hooks_stream.HooksStreamName, noteEventsStreamSubject(),
+		"gitlab_note_event_worker", jsqueue.Options{}, w.processNoteEventStreamMsg)
 	if err != nil {
 		log.Error().Err(err).Msg("could not subscribe to hook stream")
 	}

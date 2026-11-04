@@ -11,6 +11,8 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/sl1pm4t/gongs"
 	"github.com/zapier/tfbuddy/internal/config"
+	"github.com/zapier/tfbuddy/pkg/hooks_stream"
+	"github.com/zapier/tfbuddy/pkg/jsqueue"
 	"github.com/zapier/tfbuddy/pkg/runstream"
 	"github.com/zapier/tfbuddy/pkg/tfc_api"
 	"github.com/zapier/tfbuddy/pkg/tfc_trigger"
@@ -67,7 +69,10 @@ func NewGithubHooksHandler(cfg config.Config, vcs vcs.GitClient, tfc tfc_api.Api
 	h.ghEvents = ghEvents
 
 	// wire up worker callbacks
-	_, err := commentStream.QueueSubscribe("github_comment_event_worker", h.processIssueCommentEvent)
+	// gongs.NewGenericStream takes the subject before the stream, so comment
+	// events are published on getGithubJetstreamName().
+	_, err := jsqueue.QueueSubscribe[GithubIssueCommentEventMsg](js, hooks_stream.HooksStreamName, getGithubJetstreamName(),
+		"github_comment_event_worker", jsqueue.Options{}, h.processIssueCommentEvent)
 	if err != nil {
 		log.Error().Err(err).Msg("github worker: could not subscribe to hook stream")
 	}
