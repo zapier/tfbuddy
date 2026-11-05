@@ -125,6 +125,59 @@ func (s *Stream) addTFRunPollingTask(ctx context.Context, task *TFRunPollingTask
 	return err
 }
 
+// pollingTaskStuckAfter is how long a dispatched polling task can go without
+// an update before the dispatcher sends it again. A dispatched task is
+// normally handled within seconds. One that is not was lost, for example
+// because the NATS server holding RUN_POLLING restarted before storing it,
+// and without this its run would never be polled again.
+const pollingTaskStuckAfter = 2 * time.Minute
+
+// pollingTaskDue reports whether the dispatcher should send task now: it is
+// waiting and its next poll is due, or it was dispatched but has not been
+// handled for pollingTaskStuckAfter (stuck).
+func pollingTaskDue(task *TFRunPollingTask, now time.Time) (due, stuck bool) {
+	if !task.Processing {
+		return now.After(task.NextPoll), false
+	}
+	stuck = now.Sub(task.LastUpdate) > pollingTaskStuckAfter
+	return stuck, stuck
+}
+
+// dispatchPollingTask claims task and publishes it to RUN_POLLING. If the
+// publish fails, the claim is released so the next pass dispatches it again.
+func (s *Stream) dispatchPollingTask(task *TFRunPollingTask, stuck bool) {
+	ctx, span := otel.Tracer("terraform").Start(task.GetContext(), "polling")
+	defer span.End()
+
+	if stuck {
+		log.Warn().Str("runID", task.GetRunID()).Time("lastUpdate", task.LastUpdate).
+			Msg("dispatching a polling task again: it was dispatched but never handled")
+	}
+	// Claim the task. When another replica's dispatcher claims it first, the
+	// update fails on the KV revision and this replica leaves it alone.
+	task.Processing = true
+	if err := task.update(ctx); err != nil {
+		return
+	}
+
+	b, err := encodeTFRunPollingTask(ctx, task)
+	if err == nil {
+		log.Debug().Str("runID", task.GetRunID()).Msg("enqueuing polling task")
+		// Wait for the stream to store the task. An asynchronous publish that
+		// fails goes unnoticed and leaves the task marked as processing.
+		_, err = s.js.Publish(pollingStreamKey(task), b)
+	}
+	if err != nil {
+		span.RecordError(err)
+		log.Warn().Err(err).Str("runID", task.GetRunID()).Msg("could not queue polling task; it will be dispatched again")
+		task.Processing = false
+		if err := task.update(ctx); err != nil {
+			// The task stays claimed; pollingTaskStuckAfter recovers it.
+			log.Warn().Err(err).Str("runID", task.GetRunID()).Msg("could not release a polling task after a failed publish")
+		}
+	}
+}
+
 func (s *Stream) startPollingTaskDispatcher() {
 	go func() {
 		for {
@@ -153,22 +206,8 @@ func (s *Stream) startPollingTaskDispatcher() {
 					}
 					continue
 				}
-				if !task.Processing && time.Now().After(task.NextPoll) {
-					ctx, span := otel.Tracer("terraform").Start(task.GetContext(), "polling")
-					// set & get processing status
-					task.Processing = true
-					err := task.update(ctx)
-					if err == nil {
-						// dispatch task and wait for response
-						b, _ := encodeTFRunPollingTask(ctx, task)
-						log.Debug().Str("runID", task.GetRunID()).Msg("enqueuing polling task")
-						if _, err := s.js.PublishAsync(pollingStreamKey(task), b); err != nil {
-							span.RecordError(err)
-							log.Error().Err(err).Msg("could not queue polling task")
-							continue
-						}
-					}
-					span.End()
+				if due, stuck := pollingTaskDue(task, time.Now()); due {
+					s.dispatchPollingTask(task, stuck)
 				}
 
 			}
