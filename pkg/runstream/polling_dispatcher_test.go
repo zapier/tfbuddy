@@ -109,7 +109,7 @@ func TestPollingDispatcherLeavesAFreshlyDispatchedTaskAlone(t *testing.T) {
 // When RUN_POLLING cannot store a dispatched task, the dispatcher releases
 // its claim and sends the task again once the stream is back.
 func TestPollingDispatcherRetriesAFailedPublish(t *testing.T) {
-	s, polled := newTestPollingStream(t)
+	s, _ := newTestPollingStream(t)
 	require.NoError(t, s.js.DeleteStream(RunPollingStreamNameV0))
 
 	task := s.NewTFRunPollingTask(&TFRunMetadata{RunID: "run-1"}, TaskPollingDelayMinimum).(*TFRunPollingTask)
@@ -127,11 +127,11 @@ func TestPollingDispatcherRetriesAFailedPublish(t *testing.T) {
 		return err == nil && entry.Revision() >= created+2 && !stored.Processing
 	}, 10*time.Second, 50*time.Millisecond)
 
+	// Once the stream is back, a later pass stores the task in it. The plain
+	// subscription also saw the failed attempts, so check the stream itself.
 	configureTFRunPollingTaskStream(s.js)
-	select {
-	case runID := <-polled:
-		require.Equal(t, "run-1", runID)
-	case <-time.After(10 * time.Second):
-		t.Fatal("the task was not dispatched again after the stream came back")
-	}
+	require.Eventually(t, func() bool {
+		info, err := s.js.StreamInfo(RunPollingStreamNameV0)
+		return err == nil && info.State.Msgs > 0
+	}, 10*time.Second, 50*time.Millisecond, "the task was not stored after the stream came back")
 }
