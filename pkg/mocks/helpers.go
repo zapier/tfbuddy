@@ -184,6 +184,7 @@ func (ts *TestSuite) InitTestSuite() {
 	ts.MockStreamClient.EXPECT().RegisterAutoMergeRun(gomock.Any()).AnyTimes()
 	ts.MockStreamClient.EXPECT().RecordAutoMergeRequested(gomock.Any()).AnyTimes()
 	ts.MockStreamClient.EXPECT().FinalizeAutoMerge(gomock.Any(), gomock.Any()).Return(runstream.AutoMergeResult(""), false, nil).AnyTimes()
+	ts.MockStreamClient.EXPECT().ClaimWorkspaceDispatch(gomock.Any()).Return(true, nil).AnyTimes()
 
 	ts.MockProject.EXPECT().GetPathWithNamespace().Return(ts.MetaData.ProjectNameNS).AnyTimes()
 

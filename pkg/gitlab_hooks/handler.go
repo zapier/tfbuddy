@@ -14,6 +14,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 	nats "github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/rs/zerolog/log"
 	gogitlab "gitlab.com/gitlab-org/api/client-go"
 
@@ -62,7 +63,7 @@ type GitlabHooksHandler struct {
 	hooksWorker   *GitlabEventWorker
 }
 
-func NewGitlabHooksHandler(cfg config.Config, gl vcs.GitClient, tfc tfc_api.ApiClient, rs runstream.StreamClient, js nats.JetStreamContext, workspaceStream tfc_trigger.WorkspacePublisher) *GitlabHooksHandler {
+func NewGitlabHooksHandler(cfg config.Config, gl vcs.GitClient, tfc tfc_api.ApiClient, rs runstream.StreamClient, js nats.JetStreamContext, jsc jetstream.JetStream, workspaceStream tfc_trigger.WorkspacePublisher) *GitlabHooksHandler {
 	notesStream := gongs.NewGenericStream[NoteEventMsg](js, noteEventsStreamSubject(), hooks_stream.HooksStreamName)
 	mrStream := gongs.NewGenericStream[MergeRequestEventMsg](js, mrEventsStreamSubject(), hooks_stream.HooksStreamName)
 
@@ -78,7 +79,7 @@ func NewGitlabHooksHandler(cfg config.Config, gl vcs.GitClient, tfc tfc_api.ApiC
 		hookSecretKey:   cfg.GitlabHookSecretKey,
 	}
 
-	h.hooksWorker = NewGitlabEventWorker(h, js)
+	h.hooksWorker = NewGitlabEventWorker(h, jsc)
 
 	return h
 }
