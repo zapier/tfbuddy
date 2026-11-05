@@ -1,6 +1,8 @@
 package gitlab
 
 import (
+	"context"
+
 	"github.com/hashicorp/go-tfe"
 	"github.com/rs/zerolog/log"
 	"github.com/zapier/tfbuddy/internal/config"
@@ -40,6 +42,30 @@ func (p *RunStatusUpdater) Close() {
 	p.eventQCloser()
 }
 
+// runFinishedSince reports whether the run finished while re was being
+// handled. The comment above can take seconds, and in that time another
+// replica may handle the run's final event and set its final status. Writing
+// re's in-progress status after that would undo it, so it is skipped. A
+// failed check keeps the old behaviour and writes the status.
+func (p *RunStatusUpdater) runFinishedSince(ctx context.Context, re runstream.RunEvent) bool {
+	if tfc_api.IsFinalRunStatus(tfe.RunStatus(re.GetNewStatus())) {
+		return false
+	}
+	run, err := p.tfc.GetRun(ctx, re.GetRunID())
+	if err != nil {
+		log.Warn().Err(err).Str("runID", re.GetRunID()).Msg("could not recheck the run before updating its status")
+		return false
+	}
+	if !tfc_api.IsStaleRunEvent(run.Status, re.GetNewStatus()) {
+		return false
+	}
+	log.Info().Str("runID", re.GetRunID()).
+		Str("eventStatus", re.GetNewStatus()).
+		Str("runStatus", string(run.Status)).
+		Msg("not updating the commit status: the run finished while its event was handled")
+	return true
+}
+
 // eventStreamCallback processes TFC run notifications via the NATS stream
 func (p *RunStatusUpdater) eventStreamCallback(re runstream.RunEvent) bool {
 	ctx, span := otel.Tracer("TFC").Start(re.GetContext(), "eventStreamCallback")
@@ -62,6 +88,9 @@ func (p *RunStatusUpdater) eventStreamCallback(re runstream.RunEvent) bool {
 	run.Status = tfe.RunStatus(re.GetNewStatus())
 
 	p.postRunStatusComment(ctx, run, re.GetMetadata())
+	if p.runFinishedSince(ctx, re) {
+		return true
+	}
 	if err := p.updateCommitStatusForRun(ctx, run, re.GetMetadata()); err != nil {
 		span.RecordError(err)
 		log.Error().Err(err).Str("runID", re.GetRunID()).Msg("could not reconcile auto-merge state")

@@ -66,8 +66,9 @@ func TestEventStreamCallbackSkipsStaleEvent(t *testing.T) {
 func TestEventStreamCallbackHandlesEventsForARunInProgress(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	tfc := mocks.NewMockApiClient(ctrl)
-	// The run has moved on to policy checks, but it has not finished.
-	tfc.EXPECT().GetRun(gomock.Any(), "run-123").Return(testRun(tfe.RunPolicyChecking), nil)
+	// The run has moved on to policy checks, but it has not finished, both
+	// when the event arrives and when the status is written.
+	tfc.EXPECT().GetRun(gomock.Any(), "run-123").Return(testRun(tfe.RunPolicyChecking), nil).Times(2)
 	client := mocks.NewMockGitClient(ctrl)
 	client.EXPECT().UpdateMergeRequestDiscussionNote(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	client.EXPECT().AddMergeRequestDiscussionReply(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
@@ -84,6 +85,27 @@ func TestEventStreamCallbackHandlesEventsForARunInProgress(t *testing.T) {
 	}
 	if got.State != vcs.CommitStateRunning || got.Action != runstream.PlanAction {
 		t.Errorf("status = %s/%s, want plan/running", got.Action, got.State)
+	}
+}
+
+// The run finishes while the event for an earlier status is being handled,
+// for example while its comment is posted. Another replica sets the final
+// status meanwhile, so this event's in-progress status must not overwrite it.
+func TestEventStreamCallbackSkipsTheStatusWhenTheRunFinishesMeanwhile(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	tfc := mocks.NewMockApiClient(ctrl)
+	gomock.InOrder(
+		tfc.EXPECT().GetRun(gomock.Any(), "run-123").Return(testRun(tfe.RunPlanning), nil),
+		tfc.EXPECT().GetRun(gomock.Any(), "run-123").Return(testRun(tfe.RunPlannedAndFinished), nil),
+	)
+	client := mocks.NewMockGitClient(ctrl)
+	client.EXPECT().UpdateMergeRequestDiscussionNote(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+	client.EXPECT().AddMergeRequestDiscussionReply(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+	// No SetWorkspaceStatus expectation: writing "running" fails the test.
+	r := &RunStatusUpdater{cfg: config.C, tfc: tfc, client: client}
+
+	if !r.eventStreamCallback(testPlanRunEvent(tfe.RunPlanning)) {
+		t.Fatal("event was not acked")
 	}
 }
 
