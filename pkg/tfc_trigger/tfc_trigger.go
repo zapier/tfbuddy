@@ -697,6 +697,79 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 	return t.dispatchWorkspaces(ctx, triggeredWorkspaces, blocked, dispatch), nil
 }
 
+// SkipTFCEvents discovers the same workspaces TriggerTFCEvents would trigger
+// and posts a pending TFC/plan/<ws> and TFC/apply/<ws> commit status for each
+// one, without ever cloning the repository or creating a Terraform Cloud run.
+//
+// It exists for callers that intentionally decline to plan a commit (e.g. a
+// skip-plan label) but still need every affected workspace to carry a
+// visible, per-workspace status: posting one synthetic status for the whole
+// merge request would let a merge gate that checks per-workspace statuses
+// pass newly-added workspaces straight through, unreviewed.
+func (t *TFCTrigger) SkipTFCEvents(ctx context.Context, reason string) (*TriggeredTFCWorkspaces, error) {
+	ctx, span := otel.Tracer(t.tracerName()).Start(ctx, "SkipTFCEvents")
+	defer span.End()
+
+	mr, err := t.gl.GetMergeRequest(ctx, t.GetMergeRequestIID(), t.GetProjectNameWithNamespace())
+	if err != nil {
+		return nil, fmt.Errorf("could not read MergeRequest data from VCS API: %w", err)
+	}
+	triggeredWorkspaces, _, err := t.getTriggeredWorkspacesForRequest(ctx, mr, false)
+	if err != nil {
+		return nil, fmt.Errorf("could not read triggered workspaces: %w", err)
+	}
+	if len(triggeredWorkspaces) == 0 {
+		log.Debug().Msg("No Terraform changes found in changeset.")
+		return &TriggeredTFCWorkspaces{}, nil
+	}
+
+	status := &TriggeredTFCWorkspaces{
+		Errored:  make([]*ErroredWorkspace, 0),
+		Executed: make([]string, 0),
+	}
+	for _, ws := range triggeredWorkspaces {
+		if !isWorkspaceAllowed(t.appCfg, ws.Name, ws.Organization) {
+			log.Info().Str("ws", ws.Name).Msg("Ignoring workspace, because of allow/deny list.")
+			t.postWorkspaceStatus(ctx, ws, vcs.CommitStateSkipped,
+				"skipped: excluded by TFBuddy configuration")
+			status.Errored = append(status.Errored, &ErroredWorkspace{
+				Name:  ws.Name,
+				Error: "Ignoring workspace, because of allow/deny list.",
+			})
+			continue
+		}
+		t.postPendingStatusForAction(ctx, ws, PlanAction, reason)
+		t.postPendingStatusForAction(ctx, ws, ApplyAction, reason)
+		status.Executed = append(status.Executed, ws.Name)
+	}
+	return status, nil
+}
+
+// postPendingStatusForAction posts a pending TFC/<action>/<ws> commit status
+// for one workspace, for the given action rather than t.GetAction(): unlike
+// postWorkspaceStatus, SkipTFCEvents needs to post both a plan and an apply
+// status per workspace regardless of which action this trigger was built
+// for. Failures are logged, never propagated, matching postWorkspaceStatus.
+func (t *TFCTrigger) postPendingStatusForAction(ctx context.Context, ws *TFCWorkspace, action TriggerAction, description string) {
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, statusWriteBudget)
+		defer cancel()
+	}
+	if err := t.gl.SetWorkspaceStatus(ctx, vcs.WorkspaceStatus{
+		Project:         t.GetProjectNameWithNamespace(),
+		CommitSHA:       t.GetCommitSHA(),
+		MergeRequestIID: t.GetMergeRequestIID(),
+		Workspace:       ws.Name,
+		Action:          action.String(),
+		State:           vcs.CommitStatePending,
+		Description:     description,
+	}); err != nil {
+		log.Error().Err(err).Str("ws", ws.Name).Str("action", action.String()).
+			Msg("could not set workspace commit status")
+	}
+}
+
 // workspaceDispatchFn runs (inline) or enqueues (fan-out) a single workspace.
 // Returning an error puts the workspace into status.Errored verbatim.
 type workspaceDispatchFn func(ctx context.Context, ws *TFCWorkspace) error

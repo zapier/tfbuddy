@@ -217,6 +217,21 @@ func (mr *MockTriggerMockRecorder) SetWorkspaceStream(arg0 any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetWorkspaceStream", reflect.TypeOf((*MockTrigger)(nil).SetWorkspaceStream), arg0)
 }
 
+// SkipTFCEvents mocks base method.
+func (m *MockTrigger) SkipTFCEvents(ctx context.Context, reason string) (*tfc_trigger.TriggeredTFCWorkspaces, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SkipTFCEvents", ctx, reason)
+	ret0, _ := ret[0].(*tfc_trigger.TriggeredTFCWorkspaces)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SkipTFCEvents indicates an expected call of SkipTFCEvents.
+func (mr *MockTriggerMockRecorder) SkipTFCEvents(ctx, reason any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SkipTFCEvents", reflect.TypeOf((*MockTrigger)(nil).SkipTFCEvents), ctx, reason)
+}
+
 // TriggerCleanupEvent mocks base method.
 func (m *MockTrigger) TriggerCleanupEvent(arg0 context.Context) error {
 	m.ctrl.T.Helper()
