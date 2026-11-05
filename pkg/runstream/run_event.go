@@ -10,6 +10,8 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/nats-io/nats.go"
 	"github.com/rs/zerolog/log"
+	"github.com/zapier/tfbuddy/pkg/jsqueue"
+	"github.com/zapier/tfbuddy/pkg/utils"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 )
@@ -91,67 +93,52 @@ func tfRunEventMsgID(runID, newStatus string) string {
 	return runID + ":" + newStatus
 }
 
+// runEventQueue is the pull consumer that delivers vcsProvider's run events.
+// Older releases read them through a push consumer named after the provider,
+// which a work-queue stream does not allow alongside this one.
+func runEventQueue(vcsProvider string) jsqueue.Queue {
+	return jsqueue.Queue{
+		Stream:            RunEventsStreamName,
+		Subject:           fmt.Sprintf("%s.%s", RunEventsStreamName, vcsProvider),
+		Durable:           vcsProvider + "_run_event_pull_worker",
+		LegacyPushDurable: vcsProvider,
+	}
+}
+
+// runEventMessage decodes a RUN_EVENTS message for jsqueue.
+type runEventMessage struct {
+	RunEvent
+}
+
+func (m *runEventMessage) DecodeEventData(b []byte) error {
+	re, err := decodeTFRunEvent(b)
+	m.RunEvent = re
+	return err
+}
+
+// SubscribeTFRunEvents hands vcsProvider's run events to cb, one at a time
+// per replica. An event cb does not handle (cb returns false) is retried
+// after a delay, a limited number of times.
 func (s *Stream) SubscribeTFRunEvents(vcsProvider string, cb func(run RunEvent) bool) (closer func(), err error) {
-	sub, err := s.js.QueueSubscribe(
-		fmt.Sprintf("%s.%s", RunEventsStreamName, vcsProvider),
-		vcsProvider,
-		func(msg *nats.Msg) {
-			re, err := decodeTFRunEvent(msg.Data)
-			if err != nil {
-				log.Error().Err(err).Msg("could not decode Run")
-				if err := msg.Term(); err != nil {
-					log.Error().Err(err).Msg("could not Terminate NATS msg")
-				}
-				return
-			}
-			log := log.With().
-				Str("stream", RunEventsStreamName).
-				Str("RunID", re.GetRunID()).Logger()
+	cc, err := jsqueue.Consume[runEventMessage](s.jsc, runEventQueue(vcsProvider), jsqueue.Options{}, func(m *runEventMessage) error {
+		re := m.RunEvent
+		// Enrich TFRunEvent with TFRunMetadata from our KV
+		rmd, err := s.waitForTFRunMetadata(re)
+		if err != nil {
+			return fmt.Errorf("no metadata for run %s: %w", re.GetRunID(), utils.ErrPermanent)
+		}
+		re.SetMetadata(rmd)
 
-			if err := msg.InProgress(); err != nil {
-				if err := msg.Nak(); err != nil {
-					log.Error().Err(err).Msg("could not Nak NATS msg")
-				}
-				return
-			}
-
-			// Enrich TFRunEvent with TFRunMetadata from our KV
-			rmd, err := s.waitForTFRunMetadata(re)
-			if err != nil {
-				if err := msg.Term(); err != nil {
-					log.Error().Err(err).Msg("could not Terminate NATS msg")
-				}
-				return
-			}
-			re.SetMetadata(rmd)
-
-			log.Debug().Msg("sending TFRunEvent to subscriber.")
-			if cb(re) {
-				log.Debug().Msg("ACKd.")
-				if err := msg.Ack(); err != nil {
-					log.Error().Err(err).Msg("could not Ack NATS msg")
-				}
-			} else {
-				log.Debug().Msg("NACK.")
-				if err := msg.Nak(); err != nil {
-					log.Error().Err(err).Msg("could not Nak NATS msg")
-				}
-			}
-		},
-	)
+		log.Debug().Str("stream", RunEventsStreamName).Str("RunID", re.GetRunID()).Msg("sending TFRunEvent to subscriber.")
+		if !cb(re) {
+			return fmt.Errorf("%s event for run %s was not handled", re.GetNewStatus(), re.GetRunID())
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-
-	closer = func() {
-		// TODO: unsure if we actually want this for a Queue that is shared across pods
-		err := sub.Unsubscribe()
-		if err != nil {
-			log.Error().Err(err).Msg("could not unsubscribe from NATS queue")
-		}
-	}
-
-	return closer, nil
+	return cc.Stop, nil
 }
 
 // configureTFRunEventsStream provisions the RUN_EVENTS stream. dedupWindow

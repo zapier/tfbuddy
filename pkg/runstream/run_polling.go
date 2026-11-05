@@ -8,6 +8,7 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"github.com/rs/zerolog/log"
+	"github.com/zapier/tfbuddy/pkg/jsqueue"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
@@ -177,47 +178,49 @@ func (s *Stream) startPollingTaskDispatcher() {
 	}()
 }
 
-const pollingQueueName = "polling"
+// pollingQueue is the pull consumer that delivers polling tasks. Older
+// releases read them through a push consumer named "polling", which a
+// work-queue stream does not allow alongside this one.
+var pollingQueue = jsqueue.Queue{
+	Stream:            RunPollingStreamNameV0,
+	Subject:           fmt.Sprintf("%s.*", RunPollingStreamNameV0),
+	Durable:           "run_polling_pull_worker",
+	LegacyPushDurable: "polling",
+}
 
+// pollingTaskMessage decodes a RUN_POLLING message for jsqueue.
+type pollingTaskMessage struct {
+	task *TFRunPollingTask
+}
+
+func (m *pollingTaskMessage) DecodeEventData(b []byte) error {
+	task, err := decodeTFRunPollingTaskData(b)
+	m.task = task
+	return err
+}
+
+// SubscribeTFRunPollingTasks hands polling tasks to cb, one at a time per
+// replica. When cb fails to poll a run (it returns false), the task goes back
+// to the dispatcher, which polls the run again after the usual delay.
 func (s *Stream) SubscribeTFRunPollingTasks(cb func(task RunPollingTask) bool) (closer func(), err error) {
-	_, err = s.js.QueueSubscribe(
-		fmt.Sprintf("%s.*", RunPollingStreamNameV0),
-		pollingQueueName,
-		func(msg *nats.Msg) {
-			task, err := s.decodeTFRunPollingTask(msg.Data)
-			if err != nil {
-				if err := msg.Term(); err != nil {
-					log.Error().Err(err).Msg("could not Terminate NATS msg")
-				}
-				return
-			}
-			log := log.With().
-				Str("queue", "PollingTasks").
-				Str("RunID", task.GetRunID()).
-				Logger()
-
-			if err := msg.InProgress(); err != nil {
-				if err := msg.Nak(); err != nil {
-					log.Error().Err(err).Msg("could not Nak NATS msg")
-				}
-				return
-			}
-			if cb(task) {
-				if err := msg.Ack(); err != nil {
-					log.Error().Err(err).Msg("could not Ack NATS msg")
-				}
-			} else {
-				if err := msg.Nak(); err != nil {
-					log.Error().Err(err).Msg("could not Nak NATS msg")
-				}
-			}
-		},
-	)
-
-	closer = func() {
-		// sub.Unsubscribe()
+	opts := jsqueue.Options{NakDelay: TaskPollingDelayDefault}
+	cc, err := jsqueue.Consume[pollingTaskMessage](s.jsc, pollingQueue, opts, func(m *pollingTaskMessage) error {
+		task := m.task
+		task.stream = s
+		if cb(task) {
+			return nil
+		}
+		// Redelivering the message right away, as older releases did, polls
+		// TFC again immediately and indefinitely while it is failing.
+		if err := task.Reschedule(task.GetContext()); err != nil {
+			return fmt.Errorf("could not reschedule the polling task for run %s: %w", task.GetRunID(), err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	return closer, err
+	return cc.Stop, nil
 }
 
 func (s *Stream) decodeTFRunPollingTaskKVEntry(entry nats.KeyValueEntry) (*TFRunPollingTask, error) {
@@ -245,11 +248,10 @@ func (s *Stream) decodeTFRunPollingTaskKVEntry(entry nats.KeyValueEntry) (*TFRun
 	return run, err
 }
 
-func (s *Stream) decodeTFRunPollingTask(b []byte) (*TFRunPollingTask, error) {
+func decodeTFRunPollingTaskData(b []byte) (*TFRunPollingTask, error) {
 	run := &TFRunPollingTask{}
 	run.RunMetadata = &TFRunMetadata{}
 	err := json.Unmarshal(b, &run)
-	run.stream = s
 
 	ctx := context.Background()
 	run.ctx = otel.GetTextMapPropagator().Extract(ctx, run.Carrier)

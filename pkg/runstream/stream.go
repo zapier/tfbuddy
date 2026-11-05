@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/rs/zerolog/log"
 )
 
@@ -13,6 +14,7 @@ const RunMetadataKvBucket = "RUN_METADATA"
 type Stream struct {
 	//nc         *nats.Conn
 	js          nats.JetStreamContext
+	jsc         jetstream.JetStream // reads the run event and polling queues
 	metadataKV  nats.KeyValue
 	pollingKV   nats.KeyValue
 	autoMergeKV nats.KeyValue
@@ -22,8 +24,9 @@ type Stream struct {
 // NewStream wires up the runstream JetStream client. dedupWindow is the
 // JetStream Duplicates window applied to the RUN_EVENTS stream so that
 // Nats-Msg-Id-based dedup actually fires server-side. Operators tune it via
-// TFBUDDY_JETSTREAM_DEDUP_WINDOW.
-func NewStream(js nats.JetStreamContext, dedupWindow time.Duration) StreamClient {
+// TFBUDDY_JETSTREAM_DEDUP_WINDOW. jsc, created from the same connection,
+// reads the run event and polling queues.
+func NewStream(js nats.JetStreamContext, jsc jetstream.JetStream, dedupWindow time.Duration) StreamClient {
 
 	configureTFRunEventsStream(js, dedupWindow)
 	configureTFRunPollingTaskStream(js)
@@ -37,6 +40,7 @@ func NewStream(js nats.JetStreamContext, dedupWindow time.Duration) StreamClient
 
 	s := &Stream{
 		js:          js,
+		jsc:         jsc,
 		metadataKV:  kv,
 		pollingKV:   pollingKV,
 		autoMergeKV: autoMergeKV,
