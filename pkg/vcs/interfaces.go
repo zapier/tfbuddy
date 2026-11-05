@@ -32,6 +32,11 @@ type GitClient interface {
 	GetOldRunUrls(ctx context.Context, mrIID int, project string, rootCommentID int, workspace string, action string) (string, error)
 	MergeMR(ctx context.Context, mrIID int, project string) error
 	MergeMRAtSHA(ctx context.Context, mrIID int, project, expectedSHA string) error
+	// GetMergeRequestCommits returns every commit on a merge request.
+	GetMergeRequestCommits(ctx context.Context, mrIID int, project string) ([]MRCommit, error)
+	// SetClassStatus publishes the TFC/class commit status of an Auto Mode merge
+	// request.
+	SetClassStatus(ctx context.Context, status ClassStatus) error
 }
 type GitRepo interface {
 	FetchUpstreamBranch(string) error

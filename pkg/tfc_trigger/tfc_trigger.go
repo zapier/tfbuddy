@@ -135,6 +135,16 @@ type TFCTriggerOptions struct {
 	TFVersion         string `short:"v" long:"tf_version" description:"A specific terraform version to use" required:"false"`
 	Target            string `short:"t" long:"target" description:"A specific terraform target to use" required:"false"`
 	AllowEmptyRun     bool   `short:"e" long:"allow_empty_run" description:"A specific terraform AllowEmptyRun" required:"false"`
+
+	// Auto Mode marks a merge request whose author runs in Auto Mode, AutoModeAuthor is
+	// that author, ChangeClass is its change class and ClassWorkspaces the
+	// workspaces whose plans decide TFC/class. TFBuddy sets all four from the
+	// target branch's .tfbuddy.yaml; they have no flags, so no comment can set
+	// them.
+	AutoMode        bool
+	AutoModeAuthor  string
+	ChangeClass     string
+	ClassWorkspaces []string
 }
 
 func NewTFCTriggerConfig(opts *TFCTriggerOptions) (*TFCTriggerOptions, error) {
@@ -616,6 +626,10 @@ func (t *TFCTrigger) beginAutoMergeApply(workspaces []*TFCWorkspace) error {
 		case t.cfg.AutoMergeSequence > 0:
 			t.cfg.AutoMergeGeneration = fmt.Sprintf("gitlab-note-%d", t.cfg.AutoMergeSequence)
 		default:
+			if t.cfg.AutoMode {
+				// Auto Mode must merge what it applies.
+				return errors.New("an Auto Mode apply needs auto-merge, and this apply has no stable GitLab delivery or note ID")
+			}
 			log.Warn().Msg("auto-merge disabled for apply without a stable GitLab delivery or note ID")
 			return nil
 		}
@@ -660,6 +674,19 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 		return &TriggeredTFCWorkspaces{}, nil
 	}
 
+	if err := t.resolveAutoMode(ctx, mr, affectedWorkspaces); err != nil {
+		t.postWorkspaceStatusForAll(ctx, triggeredWorkspaces, vcs.CommitStateFailed,
+			fmt.Sprintf("could not decide whether this MR runs in Auto Mode: %v", err))
+		return nil, fmt.Errorf("could not decide whether this MR runs in Auto Mode: %w", err)
+	}
+	if t.cfg.AutoMode && t.GetAction() == ApplyAction && !autoMergeEligible(t.appCfg, affectedWorkspaces) {
+		// Auto Mode must merge what it applies, or live state stays ahead of the
+		// target branch with nobody watching.
+		err := errors.New("refusing an Auto Mode apply: auto-merge must be enabled, and every affected workspace must use mode apply-before-merge with autoMerge enabled")
+		t.postWorkspaceStatusForAll(ctx, triggeredWorkspaces, vcs.CommitStateFailed, err.Error())
+		return nil, utils.CreatePermanentError(err)
+	}
+
 	repo, err := t.cloneGitRepo(ctx, mr)
 	if err != nil {
 		t.postWorkspaceStatusForAll(ctx, triggeredWorkspaces, vcs.CommitStateFailed,
@@ -673,6 +700,17 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 	}()
 
 	blocked, err := t.getModifiedWorkspacesOnTargetBranch(ctx, mr, repo, triggeredWorkspaces)
+	if err != nil && t.cfg.AutoMode {
+		// Auto Mode has nobody reading a warning, so a divergence check that
+		// cannot run blocks every workspace instead.
+		t.postWorkspaceStatusForAll(ctx, triggeredWorkspaces, vcs.CommitStateFailed,
+			"blocked: could not check the target branch for changes to workspace paths")
+		if t.GetAction() == PlanAction {
+			t.postClassStatus(ctx, vcs.CommitStateFailed, fmt.Sprintf(
+				"class %s failed: could not check the target branch; the MR falls back to Manual Mode", t.cfg.ChangeClass))
+		}
+		return nil, utils.CreatePermanentError(fmt.Errorf("could not check the target branch for an Auto Mode MR: %w", err))
+	}
 	if err != nil {
 		if err := t.postUpdate(ctx, MRCommentTargetBranchEvalFailed); err != nil {
 			log.Error().Err(err).Msg("could not update MR with message")
@@ -690,11 +728,27 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 		return nil, fmt.Errorf("could not initialize apply generation: %w", err)
 	}
 
+	classPlan := t.cfg.AutoMode && t.GetAction() == PlanAction && t.GetWorkspace() == ""
+	if classPlan {
+		t.postClassStatus(ctx, vcs.CommitStatePending, fmt.Sprintf("class %s: waiting for plans", t.cfg.ChangeClass))
+	}
+
 	dispatch := t.runInline(mr, repo)
 	if t.workspaceStream != nil {
 		dispatch = t.enqueue
 	}
-	return t.dispatchWorkspaces(ctx, triggeredWorkspaces, blocked, dispatch), nil
+	status := t.dispatchWorkspaces(ctx, triggeredWorkspaces, blocked, dispatch)
+	if classPlan && len(status.Errored) > 0 {
+		// A workspace that did not plan never counts as a clean one, and no
+		// run event will arrive for it to fail the class later.
+		names := make([]string, 0, len(status.Errored))
+		for _, ws := range status.Errored {
+			names = append(names, ws.Name)
+		}
+		t.postClassStatus(ctx, vcs.CommitStateFailed, fmt.Sprintf(
+			"class %s failed: %s did not plan; the MR falls back to Manual Mode", t.cfg.ChangeClass, strings.Join(names, ", ")))
+	}
+	return status, nil
 }
 
 // workspaceDispatchFn runs (inline) or enqueues (fan-out) a single workspace.
@@ -1044,6 +1098,12 @@ func (t *TFCTrigger) triggerRunForWorkspace(ctx context.Context, cfgWS *TFCWorks
 		// the worker ACKs and stops redelivering.
 		return fmt.Errorf("run action was not apply or plan. %w", utils.ErrPermanent)
 	}
+	// Build the message before taking the lock, so a run TFBuddy refuses to
+	// create never holds the workspace.
+	message, err := t.runMessage(mr.GetTitle())
+	if err != nil {
+		return err
+	}
 	// If the workspace is locked tell the user and don't queue a run
 	// Otherwise, TFC wil queue an apply, which might put them out of order
 	if isApply {
@@ -1137,7 +1197,7 @@ func (t *TFCTrigger) triggerRunForWorkspace(ctx context.Context, cfgWS *TFCWorks
 	run, err := t.tfc.CreateRunFromSource(ctx, &tfc_api.ApiRunOptions{
 		IsApply:       isApply,
 		Path:          pkgDir,
-		Message:       fmt.Sprintf("MR [!%d]: %s", t.GetMergeRequestIID(), mr.GetTitle()),
+		Message:       message,
 		Organization:  org,
 		Workspace:     wsName,
 		TFVersion:     t.cfg.TFVersion,
@@ -1178,6 +1238,10 @@ func (t *TFCTrigger) publishRunToStream(ctx context.Context, run *tfe.Run, cfgWS
 		AutoMerge:                            cfgWS.AutoMerge,
 		AutoMergeGeneration:                  t.cfg.AutoMergeGeneration,
 		AutoMergeSequence:                    t.cfg.AutoMergeSequence,
+	}
+	if t.cfg.AutoMode {
+		rmd.ChangeClass = t.cfg.ChangeClass
+		rmd.ClassWorkspaces = t.cfg.ClassWorkspaces
 	}
 	//disable Auto Merge and log if the mode is not apply-before-merge
 	if cfgWS.Mode != "apply-before-merge" && cfgWS.AutoMerge {
