@@ -12,7 +12,7 @@ func newTestAutoMergeStream(t *testing.T) *Stream {
 	nc := testConnect(t, url)
 	t.Cleanup(nc.Close)
 	js := testGetJetstreamContext(t, nc)
-	return NewStream(js, testDedupWindow).(*Stream)
+	return NewStream(js, testJetStream(t, nc), testDedupWindow).(*Stream)
 }
 
 func autoMergeTestRef(workspace, runID, commitSHA string) AutoMergeRef {
