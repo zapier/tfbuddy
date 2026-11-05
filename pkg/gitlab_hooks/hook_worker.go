@@ -1,9 +1,11 @@
 package gitlab_hooks
 
 import (
-	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/rs/zerolog/log"
 	"github.com/zapier/tfbuddy/internal/config"
+	"github.com/zapier/tfbuddy/pkg/hooks_stream"
+	"github.com/zapier/tfbuddy/pkg/jsqueue"
 	"github.com/zapier/tfbuddy/pkg/runstream"
 	"github.com/zapier/tfbuddy/pkg/tfc_api"
 	"github.com/zapier/tfbuddy/pkg/tfc_trigger"
@@ -21,7 +23,7 @@ type GitlabEventWorker struct {
 	workspaceStream tfc_trigger.WorkspacePublisher
 }
 
-func NewGitlabEventWorker(h *GitlabHooksHandler, js nats.JetStreamContext) *GitlabEventWorker {
+func NewGitlabEventWorker(h *GitlabHooksHandler, js jetstream.JetStream) *GitlabEventWorker {
 	w := &GitlabEventWorker{
 		cfg:             h.cfg,
 		tfc:             h.tfc,
@@ -31,12 +33,26 @@ func NewGitlabEventWorker(h *GitlabHooksHandler, js nats.JetStreamContext) *Gitl
 		workspaceStream: h.workspaceStream,
 	}
 
-	_, err := h.mrStream.QueueSubscribe("gitlab_mr_event_worker", w.processMREventStreamMsg)
+	// One event can plan every workspace of a merge request, which takes
+	// minutes. Each replica pulls one event at a time and keeps it in
+	// progress while it runs, so JetStream never hands it to another replica
+	// to plan again, and a burst of events waits in the stream.
+	_, err := jsqueue.Consume[MergeRequestEventMsg](js, jsqueue.Queue{
+		Stream:            hooks_stream.HooksStreamName,
+		Subject:           mrEventsStreamSubject(),
+		Durable:           "gitlab_mr_event_pull_worker",
+		LegacyPushDurable: "gitlab_mr_event_worker",
+	}, jsqueue.Options{}, w.processMREventStreamMsg)
 	if err != nil {
 		log.Error().Err(err).Msg("could not subscribe to hook stream")
 	}
 
-	_, err = h.notesStream.QueueSubscribe("gitlab_note_event_worker", w.processNoteEventStreamMsg)
+	_, err = jsqueue.Consume[NoteEventMsg](js, jsqueue.Queue{
+		Stream:            hooks_stream.HooksStreamName,
+		Subject:           noteEventsStreamSubject(),
+		Durable:           "gitlab_note_event_pull_worker",
+		LegacyPushDurable: "gitlab_note_event_worker",
+	}, jsqueue.Options{}, w.processNoteEventStreamMsg)
 	if err != nil {
 		log.Error().Err(err).Msg("could not subscribe to hook stream")
 	}

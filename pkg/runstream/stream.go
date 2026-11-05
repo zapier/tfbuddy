@@ -16,6 +16,7 @@ type Stream struct {
 	metadataKV  nats.KeyValue
 	pollingKV   nats.KeyValue
 	autoMergeKV nats.KeyValue
+	dispatchKV  nats.KeyValue
 }
 
 // NewStream wires up the runstream JetStream client. dedupWindow is the
@@ -29,12 +30,17 @@ func NewStream(js nats.JetStreamContext, dedupWindow time.Duration) StreamClient
 	kv, _ := configureTFRunMetadataKVStore(js)
 	pollingKV, _ := configureRunPollingKVStore(js)
 	autoMergeKV, _ := configureAutoMergeMetadataKVStore(js)
+	dispatchKV, err := configureWorkspaceDispatchKVStore(js)
+	if err != nil {
+		log.Error().Err(err).Msg("could not configure workspace dispatch KV store; redelivered triggers may start duplicate runs")
+	}
 
 	s := &Stream{
-		js,
-		kv,
-		pollingKV,
-		autoMergeKV,
+		js:          js,
+		metadataKV:  kv,
+		pollingKV:   pollingKV,
+		autoMergeKV: autoMergeKV,
+		dispatchKV:  dispatchKV,
 	}
 
 	s.startPollingTaskDispatcher()
