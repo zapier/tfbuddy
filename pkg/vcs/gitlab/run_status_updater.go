@@ -52,6 +52,13 @@ func (p *RunStatusUpdater) eventStreamCallback(re runstream.RunEvent) bool {
 		log.Error().Err(err).Str("runID", re.GetRunID()).Msg("could not get run")
 		return false
 	}
+	if tfc_api.IsStaleRunEvent(run.Status, re.GetNewStatus()) {
+		log.Info().Str("runID", re.GetRunID()).
+			Str("eventStatus", re.GetNewStatus()).
+			Str("runStatus", string(run.Status)).
+			Msg("skipping a stale run event: the run has already finished")
+		return true
+	}
 	run.Status = tfe.RunStatus(re.GetNewStatus())
 
 	p.postRunStatusComment(ctx, run, re.GetMetadata())
