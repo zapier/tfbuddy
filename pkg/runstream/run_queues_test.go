@@ -176,12 +176,15 @@ func TestSubscribeTFRunPollingTasksReschedulesAFailedPoll(t *testing.T) {
 		return err == nil && !stored.Processing && stored.NextPoll.After(failedAt.Add(TaskPollingDelayDefault/2))
 	}, 5*time.Second, 50*time.Millisecond)
 
-	// The message itself was acked, not redelivered.
+	// The message itself was acked, not redelivered. The ack follows the KV
+	// update above, so wait for it.
 	cons, err := s.jsc.Consumer(context.Background(), RunPollingStreamNameV0, pollingQueue.Durable)
 	require.NoError(t, err)
-	info, err := cons.Info(context.Background())
-	require.NoError(t, err)
-	require.Zero(t, info.NumAckPending)
+	var info *jetstream.ConsumerInfo
+	require.Eventually(t, func() bool {
+		info, err = cons.Info(context.Background())
+		return err == nil && info.NumAckPending == 0
+	}, 5*time.Second, 50*time.Millisecond)
 	require.Zero(t, info.NumRedelivered)
 	select {
 	case <-polls:
