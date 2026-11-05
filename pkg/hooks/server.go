@@ -52,7 +52,7 @@ func StartServer(cfg config.Config) {
 	}
 
 	hs := hooks_stream.NewHooksStream(nc)
-	rs := runstream.NewStream(js, cfg.JetStreamDedupWindow)
+	rs := runstream.NewStream(js, jsc, cfg.JetStreamDedupWindow)
 	health.AddReadinessCheck("nats-connection", tfnats.HealthcheckFn(nc))
 	health.AddLivenessCheck("nats-connection", tfnats.HealthcheckFn(nc))
 	health.AddLivenessCheck("runstream-streams", rs.HealthCheck)

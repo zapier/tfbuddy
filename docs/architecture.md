@@ -49,6 +49,20 @@ On startup TFBuddy deletes the push consumers older releases used (`gitlab_mr_ev
 
 Each workspace dispatch is also recorded in the `WORKSPACE_DISPATCHES` KV bucket, keyed by the webhook delivery ID (or the GitLab note ID) and the workspace, for 2 hours. When a hook event is delivered again anyway, after a crash for example, the workspaces it already dispatched are skipped instead of planned a second time. A new push or `tfc plan` comment is a new trigger and always runs. The metrics `tfbuddy_jetstream_messages_settled` and `tfbuddy_jetstream_messages_redelivered` show how each queue's messages end and how often they are redelivered.
 
+### Run events and polling
+
+Run status events (`RUN_EVENTS`) and polling tasks (`RUN_POLLING`) go through the same kind of pull consumer: `gitlab_run_event_pull_worker` and `github_run_event_pull_worker` on `RUN_EVENTS`, and `run_polling_pull_worker` on `RUN_POLLING`. Each replica handles one message at a time, with the same ack deadline, retry and metrics behaviour as the hook queues. Older releases read these streams through push consumers that redelivered an event whenever it waited in a busy replica's buffer for more than 30s, so the same status was often handled several times, sometimes long after the run had finished.
+
+A run event that the handler does not handle, for example because the TFC API call failed, is retried after 30s, at most 5 deliveries in all. A failed poll is not redelivered: the task goes back to the polling KV with its usual 10s delay, and the dispatcher sends it again from there.
+
+On startup TFBuddy deletes the push consumers older releases used on these streams (`gitlab`, `github` and `polling`). Rolling back to such a release needs the pull consumers deleted first:
+
+```
+nats consumer rm RUN_EVENTS gitlab_run_event_pull_worker
+nats consumer rm RUN_EVENTS github_run_event_pull_worker
+nats consumer rm RUN_POLLING run_polling_pull_worker
+```
+
 ### TFC API Rate Limiter
 
 The TFC API client wraps its HTTP transport with a token-bucket rate limiter (`TFBUDDY_TFC_RATE_LIMIT_RPS`, default `30`; burst `TFBUDDY_TFC_RATE_LIMIT_BURST`, default `30`) so concurrent workspace workers cooperatively stay under TFC's documented per-token limit. The client deliberately has no top-level `Timeout`: `ConfigurationVersions.Upload` streams the cloned repo and a fixed cap would truncate slow uploads on large repos. Per-call deadlines flow through `context.Context`.
