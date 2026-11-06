@@ -18,7 +18,7 @@ const (
 	// already dispatched.
 	WorkspaceDispatchKvBucket = "WORKSPACE_DISPATCHES"
 	// workspaceDispatchTTL outlives every redelivery of a trigger: the HOOKS
-	// and workspace fan-out streams both drop messages after an hour.
+	// stream drops messages after an hour.
 	workspaceDispatchTTL = 2 * time.Hour
 )
 

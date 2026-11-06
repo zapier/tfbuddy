@@ -66,8 +66,8 @@ const IssueCommentEvent = "IssueCommentEvent"
 
 type GithubIssueCommentEventMsg struct {
 	Payload *github.IssueCommentEvent `json:"payload"`
-	// DeliveryID is the X-GitHub-Delivery header; anchors the workspace
-	// fan-out dedup key to the upstream webhook.
+	// DeliveryID is the X-GitHub-Delivery header. It identifies the webhook
+	// delivery, so a redelivery is recognised as the same trigger.
 	DeliveryID string                 `json:"deliveryID"`
 	Carrier    propagation.MapCarrier `json:"Carrier"`
 	Context    context.Context

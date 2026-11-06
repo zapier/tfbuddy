@@ -10,8 +10,6 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/zapier/tfbuddy/internal/config"
 	"github.com/zapier/tfbuddy/pkg/hooks_stream"
-	"github.com/zapier/tfbuddy/pkg/tfc_trigger"
-	"github.com/zapier/tfbuddy/pkg/vcs"
 	"github.com/zapier/tfbuddy/pkg/vcs/github"
 	"github.com/ziflex/lecho/v3"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/labstack/echo/otelecho"
@@ -63,27 +61,6 @@ func StartServer(cfg config.Config) {
 	gh := github.NewGithubClient(cfg)
 	tfc := tfc_api.NewTFCClient()
 
-	// Per-workspace fan-out queue. Flagged so operators can fall back to the
-	// legacy inline path during rollout.
-	var workspaceStream tfc_trigger.WorkspacePublisher
-	if cfg.WorkspaceFanoutEnabled {
-		ws, err := tfc_trigger.NewWorkspaceStream(js, jsc, cfg.WorkspaceJetStreamReplicas, cfg.JetStreamDedupWindow)
-		if err != nil {
-			log.Fatal().Err(err).Msg("could not configure workspace trigger stream")
-		}
-		vcsClients := map[string]vcs.GitClient{
-			"gitlab": gl,
-			"github": gh,
-		}
-		if _, err := tfc_trigger.NewWorkspaceTriggerWorker(ws, cfg, vcsClients, tfc, rs); err != nil {
-			log.Fatal().Err(err).Msg("could not start workspace trigger worker")
-		}
-		health.AddLivenessCheck("workspace-trigger-stream", ws.HealthCheck)
-		workspaceStream = ws
-	} else {
-		log.Info().Msg("workspace fan-out disabled via config; using inline per-MR loop")
-	}
-
 	hooksGroup := e.Group("/hooks")
 
 	// add otel middleware to hooks group
@@ -98,13 +75,13 @@ func StartServer(cfg config.Config) {
 	//
 	// Github
 	//
-	githubHooksHandler := ghHooks.NewGithubHooksHandler(cfg, gh, tfc, rs, js, jsc, workspaceStream)
+	githubHooksHandler := ghHooks.NewGithubHooksHandler(cfg, gh, tfc, rs, js, jsc)
 	hooksGroup.POST("/github/events", githubHooksHandler.Handler)
 
 	//
 	// Gitlab
 	//
-	gitlabGroupHandler := gitlab_hooks.NewGitlabHooksHandler(cfg, gl, tfc, rs, js, jsc, workspaceStream)
+	gitlabGroupHandler := gitlab_hooks.NewGitlabHooksHandler(cfg, gl, tfc, rs, js, jsc)
 	hooksGroup.POST("/gitlab/group", gitlabGroupHandler.GroupHandler())
 	hooksGroup.POST("/gitlab/project", gitlabGroupHandler.ProjectHandler())
 
