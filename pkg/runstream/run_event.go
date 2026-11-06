@@ -141,14 +141,14 @@ func (s *Stream) SubscribeTFRunEvents(vcsProvider string, cb func(run RunEvent) 
 	return cc.Stop, nil
 }
 
+// runEventsMaxAge is how long RUN_EVENTS keeps a message, acked or not.
+const runEventsMaxAge = 6 * time.Hour
+
 // configureTFRunEventsStream provisions the RUN_EVENTS stream. dedupWindow
 // sets the JetStream Duplicates window used in tandem with the Nats-Msg-Id
 // stamped by PublishTFRunEvent. Operators tune the window via the
 // TFBUDDY_JETSTREAM_DEDUP_WINDOW env var; tests pass an explicit value.
-// runEventsMaxAge is how long RUN_EVENTS keeps a message, acked or not.
-const runEventsMaxAge = 6 * time.Hour
-
-func configureTFRunEventsStream(js nats.JetStreamContext, dedupWindow time.Duration) {
+func configureTFRunEventsStream(js nats.JetStreamContext, dedupWindow time.Duration) error {
 	sCfg := &nats.StreamConfig{
 		Name:        RunEventsStreamName,
 		Description: "Terraform Cloud Run Notifications",
@@ -160,7 +160,7 @@ func configureTFRunEventsStream(js nats.JetStreamContext, dedupWindow time.Durat
 		Duplicates:  dedupWindow,
 	}
 
-	addOrUpdateStream(js, sCfg)
+	return addOrUpdateStream(js, sCfg)
 }
 
 func (s *Stream) waitForTFRunMetadata(run RunEvent) (RunMetadata, error) {
