@@ -70,9 +70,6 @@ func (w *GitlabEventWorker) processNoteEvent(ctx context.Context, event vcs.MRCo
 	}
 
 	trigger := w.triggerCreation(w.cfg, w.gl, w.tfc, w.runstream, cfg)
-	if w.workspaceStream != nil {
-		trigger.SetWorkspaceStream(w.workspaceStream)
-	}
 
 	if event.GetAttributes().GetType() == string(gitlab.DiscussionNote) {
 		trigger.SetMergeRequestDiscussionID(event.GetAttributes().GetDiscussionID())
