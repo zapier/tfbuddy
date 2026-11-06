@@ -2,9 +2,12 @@ package gitlab
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/hashicorp/go-tfe"
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/zapier/tfbuddy/internal/config"
 	"github.com/zapier/tfbuddy/pkg/mocks"
 	"github.com/zapier/tfbuddy/pkg/runstream"
@@ -132,4 +135,109 @@ func TestEventStreamCallbackHandlesTheFinalEvent(t *testing.T) {
 	if got.State != vcs.CommitStateFailed || got.Action != runstream.PlanAction {
 		t.Errorf("status = %s/%s, want plan/failed", got.Action, got.State)
 	}
+}
+
+// runsFinished reads tfbuddy_tfc_runs_finished for a GitLab plan run with
+// status from the default registry, 0 if it has not been counted yet.
+func runsFinished(t *testing.T, status tfe.RunStatus) float64 {
+	t.Helper()
+	families, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"provider": "gitlab", "runType": runstream.PlanAction, "status": string(status)}
+	for _, f := range families {
+		if f.GetName() != "tfbuddy_tfc_runs_finished" {
+			continue
+		}
+		for _, m := range f.GetMetric() {
+			if labelsMatch(m.GetLabel(), want) {
+				return m.GetCounter().GetValue()
+			}
+		}
+	}
+	return 0
+}
+
+func labelsMatch(got []*dto.LabelPair, want map[string]string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for _, l := range got {
+		if want[l.GetName()] != l.GetValue() {
+			return false
+		}
+	}
+	return true
+}
+
+// tfbuddy_tfc_runs_finished is the completion SLI: a run counts once its
+// final status has been handled and the event is acked.
+func TestEventStreamCallbackCountsAFinishedRun(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	tfc := mocks.NewMockApiClient(ctrl)
+	tfc.EXPECT().GetRun(gomock.Any(), "run-123").Return(testRun(tfe.RunErrored), nil)
+	client := mocks.NewMockGitClient(ctrl)
+	client.EXPECT().GetOldRunUrls(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+	client.EXPECT().UpdateMergeRequestDiscussionNote(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+	client.EXPECT().AddMergeRequestDiscussionReply(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+	client.EXPECT().SetWorkspaceStatus(gomock.Any(), gomock.Any()).Return(nil).Times(1)
+	r := &RunStatusUpdater{cfg: config.C, tfc: tfc, client: client}
+	before := runsFinished(t, tfe.RunErrored)
+
+	if !r.eventStreamCallback(testPlanRunEvent(tfe.RunErrored)) {
+		t.Fatal("event was not acked")
+	}
+	if got := runsFinished(t, tfe.RunErrored) - before; got != 1 {
+		t.Errorf("runs finished went up by %v, want 1", got)
+	}
+}
+
+// Events for a run in progress, stale events and events that will be retried
+// are not a finished run.
+func TestEventStreamCallbackDoesNotCountUnfinishedRuns(t *testing.T) {
+	t.Run("in progress", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		tfc := mocks.NewMockApiClient(ctrl)
+		tfc.EXPECT().GetRun(gomock.Any(), "run-123").Return(testRun(tfe.RunPlanning), nil).Times(2)
+		client := mocks.NewMockGitClient(ctrl)
+		client.EXPECT().UpdateMergeRequestDiscussionNote(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+		client.EXPECT().AddMergeRequestDiscussionReply(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+		client.EXPECT().SetWorkspaceStatus(gomock.Any(), gomock.Any()).Return(nil).Times(1)
+		r := &RunStatusUpdater{cfg: config.C, tfc: tfc, client: client}
+		before := runsFinished(t, tfe.RunPlanning)
+
+		r.eventStreamCallback(testPlanRunEvent(tfe.RunPlanning))
+
+		if got := runsFinished(t, tfe.RunPlanning) - before; got != 0 {
+			t.Errorf("runs finished went up by %v for a run in progress", got)
+		}
+	})
+	t.Run("stale", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		tfc := mocks.NewMockApiClient(ctrl)
+		tfc.EXPECT().GetRun(gomock.Any(), "run-123").Return(testRun(tfe.RunPlannedAndFinished), nil)
+		r := &RunStatusUpdater{cfg: config.C, tfc: tfc, client: mocks.NewMockGitClient(ctrl)}
+		before := runsFinished(t, tfe.RunPlannedAndFinished)
+
+		r.eventStreamCallback(testPlanRunEvent(tfe.RunPlanning))
+
+		if got := runsFinished(t, tfe.RunPlannedAndFinished) - before; got != 0 {
+			t.Errorf("runs finished went up by %v for a stale event", got)
+		}
+	})
+	t.Run("retried", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		tfc := mocks.NewMockApiClient(ctrl)
+		tfc.EXPECT().GetRun(gomock.Any(), "run-123").Return(nil, errors.New("TFC is down"))
+		r := &RunStatusUpdater{cfg: config.C, tfc: tfc, client: mocks.NewMockGitClient(ctrl)}
+		before := runsFinished(t, tfe.RunErrored)
+
+		if r.eventStreamCallback(testPlanRunEvent(tfe.RunErrored)) {
+			t.Fatal("an event whose run could not be read must be retried")
+		}
+		if got := runsFinished(t, tfe.RunErrored) - before; got != 0 {
+			t.Errorf("runs finished went up by %v for an event that will be retried", got)
+		}
+	})
 }

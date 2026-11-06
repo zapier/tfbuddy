@@ -99,7 +99,7 @@ func onError(deliveryID string, eventName string, event interface{}, err error) 
 
 	log.Warn().Str("deliveryID", deliveryID).Str("eventName", eventName).Err(err).Msg("GitHub hook handler error")
 	lbl := prometheus.Labels{}
-	lbl["event-type"] = eventName
+	lbl["eventType"] = eventName
 	lbl["repository"] = ""
 	span.RecordError(err, trace.WithAttributes(
 		attribute.String("event-type", eventName),
@@ -123,7 +123,9 @@ func (h *GithubHooksHandler) handleIssueCommentCreatedEvent(deliveryID string, e
 		DeliveryID: deliveryID,
 	})
 	if err != nil {
+		log.Error().Err(err).Str("deliveryID", deliveryID).Msg("could not publish GitHub issue comment event to stream")
 		githubWebHookFailed.With(lbls).Inc()
+		return nil
 	}
 	githubWebHookSuccess.With(lbls).Inc()
 

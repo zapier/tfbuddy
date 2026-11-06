@@ -63,6 +63,18 @@ nats consumer rm RUN_EVENTS github_run_event_pull_worker
 nats consumer rm RUN_POLLING run_polling_pull_worker
 ```
 
+### Metrics for SLOs
+
+TFBuddy answers every webhook with `200 OK` and does the work later, so HTTP status codes don't show whether it is working. These metrics follow an event from the webhook to the final status on the merge request:
+
+| Question | Metric | Example SLI |
+|---|---|---|
+| Did TFBuddy queue the webhook? | `tfbuddy_gitlab_webhook_success`, `tfbuddy_gitlab_webhook_failed{reason}` | `sum(rate(tfbuddy_gitlab_webhook_success[1h])) / (sum(rate(tfbuddy_gitlab_webhook_success[1h])) + sum(rate(tfbuddy_gitlab_webhook_failed{reason=~"decode-error\|publish-error"}[1h])))` |
+| How long did it wait before a replica picked it up? | `tfbuddy_jetstream_message_wait_seconds{queue}`, a histogram of each message's first delivery | `histogram_quantile(0.99, sum by (le, queue) (rate(tfbuddy_jetstream_message_wait_seconds_bucket[1h])))` |
+| Did the run's final status reach the merge request? | `tfbuddy_tfc_runs_finished{provider,runType,status}` against `tfbuddy_tfc_runs_started` | `sum(increase(tfbuddy_tfc_runs_finished[6h])) / sum(increase(tfbuddy_tfc_runs_started[6h]))` |
+
+`tfbuddy_gitlab_webhook_failed` has one of four reasons: `invalid-token` and `invalid-event` for requests TFBuddy rejects, `decode-error` for a body it cannot read, and `publish-error` when the event could not be written to the `HOOKS` stream, for example while NATS is down. A run is counted in `tfbuddy_tfc_runs_finished` once, when the run event worker has handled its final status and acked the event. Runs take minutes, so compare the two counters over hours rather than minutes.
+
 ### TFC API Rate Limiter
 
 The TFC API client wraps its HTTP transport with a token-bucket rate limiter (`TFBUDDY_TFC_RATE_LIMIT_RPS`, default `30`; burst `TFBUDDY_TFC_RATE_LIMIT_BURST`, default `30`) so concurrent workspace workers cooperatively stay under TFC's documented per-token limit. The client deliberately has no top-level `Timeout`: `ConfigurationVersions.Upload` streams the cloned repo and a fixed cap would truncate slow uploads on large repos. Per-call deadlines flow through `context.Context`.

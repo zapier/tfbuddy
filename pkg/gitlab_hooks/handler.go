@@ -109,7 +109,10 @@ func (h *GitlabHooksHandler) handler(c echo.Context) error {
 		return c.String(http.StatusBadRequest, "Invalid X-Gitlab-Event")
 	}
 
+	// err and failReason are set inside the cases below and read after the
+	// switch, so the cases must assign them, not declare their own.
 	var err error
+	var failReason string
 	var proj string
 	labels["eventType"] = string(eventType)
 	switch eventType {
@@ -117,8 +120,10 @@ func (h *GitlabHooksHandler) handler(c echo.Context) error {
 		ctx, span := otel.Tracer("GitlabHandler").Start(c.Request().Context(), "Gitlab - MergeRequestHook")
 		defer span.End()
 
-		event, err := getGitlabEventBody[gogitlab.MergeEvent](c)
+		var event *gogitlab.MergeEvent
+		event, err = getGitlabEventBody[gogitlab.MergeEvent](c)
 		if checkError(ctx, err, "could not decode merge request event") {
+			failReason = hookFailedDecode
 			break
 		}
 		log.Info().Str("project", event.Project.PathWithNamespace).Str("action", event.ObjectAttributes.Action).Int("mergeRequestID", event.ObjectAttributes.IID).Msg("processing GitLab Merge Request event")
@@ -137,14 +142,18 @@ func (h *GitlabHooksHandler) handler(c echo.Context) error {
 
 		proj = event.Project.PathWithNamespace
 		_, err = h.mrStream.Publish(ctx, msg)
-		checkError(ctx, err, fmt.Sprintf("could not publish merge request event to stream for project: %s, merge request ID: %d", proj, event.ObjectAttributes.IID))
+		if checkError(ctx, err, fmt.Sprintf("could not publish merge request event to stream for project: %s, merge request ID: %d", proj, event.ObjectAttributes.IID)) {
+			failReason = hookFailedPublish
+		}
 
 	case gogitlab.EventTypeNote:
 		ctx, span := otel.Tracer("GitlabHandler").Start(c.Request().Context(), "Gitlab - EventTypeNote")
 		defer span.End()
 
-		event, err := getNoteEventBody(c)
+		var event *NoteEventMsg
+		event, err = getNoteEventBody(c)
 		if checkError(ctx, err, "could not decode Note/Comment event") {
+			failReason = hookFailedDecode
 			break
 		}
 		event.DeliveryID = gitlabDeliveryID(c.Request())
@@ -152,7 +161,9 @@ func (h *GitlabHooksHandler) handler(c echo.Context) error {
 
 		proj = event.Payload.GetProject().GetPathWithNamespace()
 		_, err = h.notesStream.Publish(ctx, event)
-		checkError(ctx, err, fmt.Sprintf("could not publish note event to stream for project: %s, merge request ID: %d, discussion ID: %s", proj, event.Payload.GetMR().GetInternalID(), event.Payload.GetDiscussionID()))
+		if checkError(ctx, err, fmt.Sprintf("could not publish note event to stream for project: %s, merge request ID: %d, discussion ID: %s", proj, event.Payload.GetMR().GetInternalID(), event.Payload.GetDiscussionID())) {
+			failReason = hookFailedPublish
+		}
 
 	default:
 		log.Info().Msgf("Ignoring Gitlab Event type: %s", eventType)
@@ -164,7 +175,7 @@ func (h *GitlabHooksHandler) handler(c echo.Context) error {
 	labels["project"] = proj
 
 	if err != nil {
-		labels["reason"] = "error"
+		labels["reason"] = failReason
 		gitlabWebHookFailed.With(labels).Inc()
 	} else {
 		labels["reason"] = "processed"
