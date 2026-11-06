@@ -330,7 +330,7 @@ func configureRunPollingKVStore(js nats.JetStreamContext) (nats.KeyValue, error)
 	return js.CreateKeyValue(cfg)
 }
 
-func configureTFRunPollingTaskStream(js nats.JetStreamContext) {
+func configureTFRunPollingTaskStream(js nats.JetStreamContext) error {
 	sCfg := &nats.StreamConfig{
 		Name:        RunPollingStreamNameV0,
 		Description: "Terraform Cloud Run Polling Tasks",
@@ -341,5 +341,5 @@ func configureTFRunPollingTaskStream(js nats.JetStreamContext) {
 		Replicas:    1,
 	}
 
-	addOrUpdateStream(js, sCfg)
+	return addOrUpdateStream(js, sCfg)
 }
