@@ -145,7 +145,7 @@ func (s *Stream) SubscribeTFRunEvents(vcsProvider string, cb func(run RunEvent) 
 // sets the JetStream Duplicates window used in tandem with the Nats-Msg-Id
 // stamped by PublishTFRunEvent. Operators tune the window via the
 // TFBUDDY_JETSTREAM_DEDUP_WINDOW env var; tests pass an explicit value.
-func configureTFRunEventsStream(js nats.JetStreamContext, dedupWindow time.Duration) {
+func configureTFRunEventsStream(js nats.JetStreamContext, dedupWindow time.Duration) error {
 	sCfg := &nats.StreamConfig{
 		Name:        RunEventsStreamName,
 		Description: "Terraform Cloud Run Notifications",
@@ -157,7 +157,7 @@ func configureTFRunEventsStream(js nats.JetStreamContext, dedupWindow time.Durat
 		Duplicates:  dedupWindow,
 	}
 
-	addOrUpdateStream(js, sCfg)
+	return addOrUpdateStream(js, sCfg)
 }
 
 func (s *Stream) waitForTFRunMetadata(run RunEvent) (RunMetadata, error) {

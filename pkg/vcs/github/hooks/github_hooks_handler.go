@@ -41,6 +41,8 @@ type GithubHooksHandler struct {
 	triggerCreation TriggerCreationFunc
 	workspaceStream tfc_trigger.WorkspacePublisher
 
+	publishRetry hooks_stream.RetryPolicy
+
 	// streams
 	prStream      *gongs.GenericStream[PullRequestEventMsg, *PullRequestEventMsg]
 	commentStream *gongs.GenericStream[GithubIssueCommentEventMsg, *GithubIssueCommentEventMsg]
@@ -60,6 +62,7 @@ func NewGithubHooksHandler(cfg config.Config, vcs vcs.GitClient, tfc tfc_api.Api
 		prStream:        prStream,
 		triggerCreation: tfc_trigger.NewTFCTrigger,
 		workspaceStream: workspaceStream,
+		publishRetry:    hooks_stream.DefaultRetryPolicy,
 	}
 
 	ghEvents := githubevents.New(cfg.GithubHookSecretKey)
@@ -118,14 +121,28 @@ func (h *GithubHooksHandler) handleIssueCommentCreatedEvent(deliveryID string, e
 		"eventType":  eventName,
 		"repository": *event.Repo.FullName,
 	}
-	_, err := h.commentStream.Publish(ctx, &GithubIssueCommentEventMsg{
+	msg := &GithubIssueCommentEventMsg{
 		Payload:    event,
 		DeliveryID: deliveryID,
-	})
-	if err != nil {
-		githubWebHookFailed.With(lbls).Inc()
 	}
-	githubWebHookSuccess.With(lbls).Inc()
+	// GitHub doesn't redeliver a failed delivery on its own, so a publish that
+	// fails, for example while a NATS server restarts, is retried in the
+	// background after the webhook has been answered.
+	ok := hooks_stream.PublishWithRetry(func() error {
+		_, err := h.commentStream.Publish(ctx, msg)
+		return err
+	}, h.publishRetry, func(err error, attempts int) {
+		if err != nil {
+			githubWebHookFailed.With(lbls).Inc()
+			log.Error().Err(err).Str("deliveryID", deliveryID).Int("attempts", attempts).
+				Msg("could not publish GitHub issue comment event; GitHub won't redeliver it, so redeliver it from the webhook's recent deliveries")
+			return
+		}
+		githubWebHookSuccess.With(lbls).Inc()
+	})
+	if !ok {
+		log.Warn().Str("deliveryID", deliveryID).Msg("could not publish GitHub issue comment event; retrying in the background")
+	}
 
 	return nil
 }
