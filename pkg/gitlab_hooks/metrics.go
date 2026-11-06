@@ -2,6 +2,13 @@ package gitlab_hooks
 
 import "github.com/prometheus/client_golang/prometheus"
 
+// Reasons tfbuddy_gitlab_webhook_failed records for an event TFBuddy accepted
+// but could not queue.
+const (
+	hookFailedDecode  = "decode-error"
+	hookFailedPublish = "publish-error"
+)
+
 var (
 	gitlabWebHookReceived = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "tfbuddy_gitlab_webhook_received",
@@ -19,10 +26,13 @@ var (
 		},
 		commonLabels,
 	)
+	// gitlabWebHookFailed's reason is invalid-token, invalid-event,
+	// decode-error or publish-error. The handler answers GitLab with 200 OK
+	// either way, so this counter is the only sign that an event was lost.
 	gitlabWebHookFailed = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "tfbuddy_gitlab_webhook_failed",
-			Help: "Count of all GitLab WebHook that could not publish to stream",
+			Help: "Count of all GitLab WebHooks that were rejected or could not be published to the stream, by reason",
 		},
 		commonLabels,
 	)

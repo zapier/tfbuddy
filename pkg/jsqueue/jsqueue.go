@@ -121,10 +121,29 @@ var (
 		Name: "tfbuddy_jetstream_messages_redelivered",
 		Help: "JetStream queue messages received on a second or later delivery, by queue",
 	}, []string{"queue"})
+	// messageWait measures queue freshness: how long a message sat in the
+	// stream before a replica picked it up the first time. Redeliveries are
+	// left out, since their wait includes the earlier attempts; they are
+	// counted by messagesRedelivered.
+	messageWait = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "tfbuddy_jetstream_message_wait_seconds",
+		Help:    "Seconds a JetStream queue message waited in the stream before its first delivery, by queue",
+		Buckets: []float64{0.1, 0.5, 1, 5, 10, 30, 60, 120, 300, 600, 1800, 3600},
+	}, []string{"queue"})
 )
 
 func init() {
-	prometheus.MustRegister(messagesSettled, messagesRedelivered)
+	prometheus.MustRegister(messagesSettled, messagesRedelivered, messageWait)
+}
+
+// observeWait records how long a first delivery waited in the stream. A
+// stored time ahead of this replica's clock counts as no wait.
+func observeWait(queue string, stored, now time.Time) {
+	wait := now.Sub(stored)
+	if wait < 0 {
+		wait = 0
+	}
+	messageWait.WithLabelValues(queue).Observe(wait.Seconds())
 }
 
 // Consume handles q's messages with fn, one at a time: the next message is
@@ -193,6 +212,9 @@ func handle[T any, I Event[T]](msg jetstream.Msg, queue string, o Options, fn Ha
 	if md, err := msg.Metadata(); err == nil {
 		delivered = md.NumDelivered
 		logger = logger.With().Uint64("streamSeq", md.Sequence.Stream).Uint64("delivery", delivered).Logger()
+		if delivered == 1 {
+			observeWait(queue, md.Timestamp, time.Now())
+		}
 	}
 	if delivered > 1 {
 		messagesRedelivered.WithLabelValues(queue).Inc()
