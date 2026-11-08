@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-tfe"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
@@ -157,4 +158,41 @@ func TestTFCEvents_UnavailableClaimStoreStillDispatches(t *testing.T) {
 
 	require.Len(t, rs.claims, 1)
 	require.Equal(t, []string{"ws-a"}, got.Executed)
+}
+
+// runsCreated reads tfbuddy_tfc_runs_created for provider and runType from
+// the default registry.
+func runsCreated(t *testing.T, provider, runType string) float64 {
+	t.Helper()
+	families, err := prometheus.DefaultGatherer.Gather()
+	require.NoError(t, err)
+	for _, f := range families {
+		if f.GetName() != "tfbuddy_tfc_runs_created" {
+			continue
+		}
+		for _, m := range f.GetMetric() {
+			labels := map[string]string{}
+			for _, l := range m.GetLabel() {
+				labels[l.GetName()] = l.GetValue()
+			}
+			if labels["provider"] == provider && labels["runType"] == runType {
+				return m.GetCounter().GetValue()
+			}
+		}
+	}
+	t.Fatalf("no tfbuddy_tfc_runs_created series for %s/%s", provider, runType)
+	return 0
+}
+
+// Each run TFBuddy creates is counted once in tfbuddy_tfc_runs_created, the
+// completion SLI's denominator.
+func TestTFCEvents_CountsEachCreatedRun(t *testing.T) {
+	ts := newPlanTestSuite(t, []string{"ws-a", "ws-b"}, "ws-a", "ws-b")
+	rs := &claimRecorder{StreamClient: ts.MockStreamClient, answer: func(runstream.WorkspaceDispatchClaim) (bool, error) { return true, nil }}
+	before := runsCreated(t, "gitlab", "plan")
+
+	got := triggerPlan(t, ts, rs, tfc_trigger.TFCTriggerOptions{TriggerSource: tfc_trigger.MergeRequestEventTrigger})
+
+	require.ElementsMatch(t, []string{"ws-a", "ws-b"}, got.Executed)
+	require.Equal(t, before+2, runsCreated(t, "gitlab", "plan"))
 }
