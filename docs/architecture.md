@@ -65,32 +65,35 @@ nats consumer rm RUN_POLLING run_polling_pull_worker
 
 ### Metrics for SLOs
 
-TFBuddy answers every webhook with `200 OK` and does the work later, so HTTP status codes don't show whether it is working. These metrics follow an event from the webhook to the final status on the merge request:
+TFBuddy answers every webhook with `200 OK` and does the work later, so HTTP status codes don't show whether it is working. These metrics follow an event from the webhook to the handling of the run's final status:
 
 | Question | Metric |
 |---|---|
-| Did TFBuddy queue the webhook? | `tfbuddy_gitlab_webhook_success`, `tfbuddy_gitlab_webhook_failed{reason}` |
+| Did TFBuddy queue the webhook? | `tfbuddy_gitlab_webhook_failed{reason}` against `tfbuddy_gitlab_webhook_received` |
 | How long did it wait before a replica picked it up? | `tfbuddy_jetstream_message_wait_seconds{queue}`, a histogram of each message's first delivery |
-| Did the run's final status reach the merge request? | `tfbuddy_tfc_runs_finished{provider,runType,status}` against `tfbuddy_tfc_runs_started` |
+| Did TFBuddy handle each run's final status? | `tfbuddy_tfc_runs_finished{provider,runType,status}` against `tfbuddy_tfc_runs_created{provider,runType}` |
 
-Example SLIs, in the same order. A labelled counter has no series until it is first incremented, and a sum over no series returns no data, so the counters that can be missing are defaulted to zero:
+`rate()` and `increase()` ignore the value a series starts with, so a series that first appears at 1 hides that first event. Every series these SLIs read is created at zero when TFBuddy starts, or when a queue starts consuming, so none is missed. That is also why the SLIs don't use `tfbuddy_gitlab_webhook_success` or `tfbuddy_tfc_runs_started`: their `project` and `workspace` labels make a new series for each project's or workspace's first event on each pod.
+
+Example SLIs, in the same order:
 
 ```promql
 # Share of webhooks queued
-(sum(rate(tfbuddy_gitlab_webhook_success[1h])) or vector(0))
-  / ((sum(rate(tfbuddy_gitlab_webhook_success[1h])) or vector(0))
-     + (sum(rate(tfbuddy_gitlab_webhook_failed{reason=~"decode-error|publish-error"}[1h])) or vector(0)))
+1 - sum(rate(tfbuddy_gitlab_webhook_failed{reason=~"decode-error|publish-error"}[1h]))
+    / sum(rate(tfbuddy_gitlab_webhook_received[1h]))
 
 # p99 wait before a message is picked up, per queue
 histogram_quantile(0.99, sum by (le, queue) (rate(tfbuddy_jetstream_message_wait_seconds_bucket[1h])))
 
-# Share of started runs whose final status was reported
-(sum(increase(tfbuddy_tfc_runs_finished[6h])) or vector(0)) / sum(increase(tfbuddy_tfc_runs_started[6h]))
+# Share of created runs whose final status was handled
+sum(increase(tfbuddy_tfc_runs_finished[6h])) / sum(increase(tfbuddy_tfc_runs_created[6h]))
 ```
 
-With no webhooks or no started runs in the window, the first and last queries return no data or `NaN`, which means there was nothing to measure.
+With no webhooks or no created runs in the window, the first and last queries return `NaN`: there was nothing to measure.
 
-`tfbuddy_gitlab_webhook_failed` has one of four reasons: `invalid-token` and `invalid-event` for requests TFBuddy rejects, `decode-error` for a body it cannot read, and `publish-error` when the event could not be written to the `HOOKS` stream, for example while NATS is down. A run is counted in `tfbuddy_tfc_runs_finished` when the run event worker has handled its final status. JetStream delivers the final event again if its ack is lost, so the worker also records the run in the `WORKSPACE_DISPATCHES` bucket, and a later delivery of the same run is not counted. Runs take minutes, so compare the two counters over hours rather than minutes.
+`tfbuddy_gitlab_webhook_failed` has one of four reasons: `invalid-token` and `invalid-event` for requests TFBuddy rejects, `decode-error` for a body it cannot read, and `publish-error` when the event could not be written to the `HOOKS` stream, for example while NATS is down. `decode-error` and `publish-error` are recorded without the project; the project is in the error log.
+
+A run is counted in `tfbuddy_tfc_runs_finished` when a run event worker has handled its final status event. That means the handler ran to the end, not that every comment and commit status reached the merge request: a failed comment or status write is logged, not counted. JetStream delivers the final event again if its ack is lost, so the worker records the run in the `RUN_COMPLETIONS` KV bucket, which keeps it for longer than `RUN_EVENTS` keeps messages, and a later delivery of the same run is not counted. Runs take minutes, so compare the two counters over hours rather than minutes.
 
 ### TFC API Rate Limiter
 

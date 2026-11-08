@@ -175,8 +175,9 @@ func (h *GitlabHooksHandler) handler(c echo.Context) error {
 	labels["project"] = proj
 
 	if err != nil {
-		labels["reason"] = failReason
-		gitlabWebHookFailed.With(labels).Inc()
+		// Recorded without the project so the series exist from startup
+		// (see init in metrics.go). The project is in the error log above.
+		gitlabWebHookFailed.WithLabelValues(labels["eventType"], failReason, "").Inc()
 	} else {
 		labels["reason"] = "processed"
 		gitlabWebHookSuccess.With(labels).Inc()

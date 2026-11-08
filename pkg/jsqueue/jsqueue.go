@@ -136,6 +136,16 @@ func init() {
 	prometheus.MustRegister(messagesSettled, messagesRedelivered, messageWait)
 }
 
+// initMetrics creates queue's series at zero, so that rate() and increase()
+// count its first message: they ignore the value a series starts with.
+func initMetrics(queue string) {
+	messageWait.WithLabelValues(queue)
+	messagesRedelivered.WithLabelValues(queue)
+	for _, outcome := range []string{outcomeAck, outcomeNak, outcomeTerm} {
+		messagesSettled.WithLabelValues(queue, outcome)
+	}
+}
+
 // observeWait records how long a first delivery waited in the stream. A
 // stored time ahead of this replica's clock counts as no wait.
 func observeWait(queue string, stored, now time.Time) {
@@ -171,6 +181,7 @@ func Consume[T any, I Event[T]](js jetstream.JetStream, q Queue, opts Options, f
 		return nil, fmt.Errorf("could not set up consumer %s on stream %s: %w", q.Durable, q.Stream, err)
 	}
 
+	initMetrics(q.Durable)
 	logger := log.With().Str("stream", q.Stream).Str("queue", q.Durable).Logger()
 	// With PullMaxMessages(1), Consume asks for the next message only after
 	// the handler returns. It also pauses its own idle-heartbeat check while

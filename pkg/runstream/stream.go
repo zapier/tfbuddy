@@ -19,6 +19,8 @@ type Stream struct {
 	pollingKV   nats.KeyValue
 	autoMergeKV nats.KeyValue
 	dispatchKV  nats.KeyValue
+	// completionKV records the runs already counted as finished.
+	completionKV nats.KeyValue
 }
 
 // NewStream wires up the runstream JetStream client. dedupWindow is the
@@ -37,14 +39,19 @@ func NewStream(js nats.JetStreamContext, jsc jetstream.JetStream, dedupWindow ti
 	if err != nil {
 		log.Error().Err(err).Msg("could not configure workspace dispatch KV store; redelivered triggers may start duplicate runs")
 	}
+	completionKV, err := configureRunCompletionKVStore(js)
+	if err != nil {
+		log.Error().Err(err).Msg("could not configure run completion KV store; a redelivered final run event may be counted twice")
+	}
 
 	s := &Stream{
-		js:          js,
-		jsc:         jsc,
-		metadataKV:  kv,
-		pollingKV:   pollingKV,
-		autoMergeKV: autoMergeKV,
-		dispatchKV:  dispatchKV,
+		js:           js,
+		jsc:          jsc,
+		metadataKV:   kv,
+		pollingKV:    pollingKV,
+		autoMergeKV:  autoMergeKV,
+		dispatchKV:   dispatchKV,
+		completionKV: completionKV,
 	}
 
 	s.startPollingTaskDispatcher()

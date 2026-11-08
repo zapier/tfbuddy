@@ -448,3 +448,32 @@ func TestObserveWaitTreatsAFutureTimestampAsNoWait(t *testing.T) {
 	require.Equal(t, countBefore+1, count)
 	require.Equal(t, sumBefore, sum)
 }
+
+// rate() ignores the value a series starts with, so a queue's series must
+// exist at zero as soon as it starts consuming.
+func TestConsumeCreatesTheQueueSeries(t *testing.T) {
+	srv, _ := startJetStream(t)
+	const queue = "series_test_pull_worker"
+	q := testQueue
+	q.Durable = queue
+	q.LegacyPushDurable = ""
+	cc, err := Consume[testMsg](replica(t, srv), q, Options{}, func(*testMsg) error { return nil })
+	require.NoError(t, err)
+	t.Cleanup(cc.Stop)
+
+	families, err := prometheus.DefaultGatherer.Gather()
+	require.NoError(t, err)
+	found := map[string]int{}
+	for _, f := range families {
+		for _, m := range f.GetMetric() {
+			for _, l := range m.GetLabel() {
+				if l.GetName() == "queue" && l.GetValue() == queue {
+					found[f.GetName()]++
+				}
+			}
+		}
+	}
+	require.Equal(t, 1, found["tfbuddy_jetstream_message_wait_seconds"])
+	require.Equal(t, 1, found["tfbuddy_jetstream_messages_redelivered"])
+	require.Equal(t, 3, found["tfbuddy_jetstream_messages_settled"])
+}

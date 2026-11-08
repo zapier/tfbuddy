@@ -11,6 +11,7 @@ import (
 	"github.com/labstack/echo/v4"
 	natstest "github.com/nats-io/nats-server/v2/test"
 	"github.com/nats-io/nats.go"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/sl1pm4t/gongs"
 	"github.com/stretchr/testify/require"
@@ -73,8 +74,10 @@ var (
 	noteHookBody = fmt.Sprintf(`{"object_kind":"note","project":{"path_with_namespace":%q},"merge_request":{"iid":1},"object_attributes":{"id":2,"discussion_id":"d1","note":"tfc plan"}}`, metricsTestProject)
 )
 
+// hookCounts reads the failed counter, which has no project, and the success
+// counter for project.
 func hookCounts(eventType gogitlab.EventType, reason, project string) (failed, success float64) {
-	failed = testutil.ToFloat64(gitlabWebHookFailed.WithLabelValues(string(eventType), reason, project))
+	failed = testutil.ToFloat64(gitlabWebHookFailed.WithLabelValues(string(eventType), reason, ""))
 	success = testutil.ToFloat64(gitlabWebHookSuccess.WithLabelValues(string(eventType), "processed", project))
 	return failed, success
 }
@@ -129,4 +132,29 @@ func TestHandlerCountsUndecodableEvents(t *testing.T) {
 
 	after := testutil.ToFloat64(gitlabWebHookFailed.WithLabelValues(string(gogitlab.EventTypeMergeRequest), hookFailedDecode, ""))
 	require.Equal(t, before+1, after)
+}
+
+// rate() ignores the value a series starts with, so the failure series the
+// acceptance SLI reads must exist at zero before the first failure.
+func TestFailureSeriesExistFromStartup(t *testing.T) {
+	families, err := prometheus.DefaultGatherer.Gather()
+	require.NoError(t, err)
+	found := map[string]bool{}
+	for _, f := range families {
+		if f.GetName() != "tfbuddy_gitlab_webhook_failed" {
+			continue
+		}
+		for _, m := range f.GetMetric() {
+			labels := map[string]string{}
+			for _, l := range m.GetLabel() {
+				labels[l.GetName()] = l.GetValue()
+			}
+			found[labels["eventType"]+"/"+labels["reason"]+"/"+labels["project"]] = true
+		}
+	}
+	for _, eventType := range []gogitlab.EventType{gogitlab.EventTypeMergeRequest, gogitlab.EventTypeNote} {
+		for _, reason := range []string{hookFailedDecode, hookFailedPublish} {
+			require.True(t, found[string(eventType)+"/"+reason+"/"], "missing %s/%s", eventType, reason)
+		}
+	}
 }
