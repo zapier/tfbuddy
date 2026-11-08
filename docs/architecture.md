@@ -69,7 +69,7 @@ TFBuddy answers every webhook with `200 OK` and does the work later, so HTTP sta
 
 | Question | Metric |
 |---|---|
-| Did TFBuddy queue the webhook? | `tfbuddy_gitlab_webhook_failed{reason}` against `tfbuddy_gitlab_webhook_received` |
+| Did TFBuddy queue the webhook? | `tfbuddy_gitlab_webhook_failed{reason}` against `tfbuddy_gitlab_webhook_enqueue_attempts{eventType}` |
 | How long did it wait before a replica picked it up? | `tfbuddy_jetstream_message_wait_seconds{queue}`, a histogram of each message's first delivery |
 | Did TFBuddy handle each run's final status? | `tfbuddy_tfc_runs_finished{provider,runType,status}` against `tfbuddy_tfc_runs_created{provider,runType}` |
 
@@ -78,9 +78,9 @@ TFBuddy answers every webhook with `200 OK` and does the work later, so HTTP sta
 Example SLIs, in the same order:
 
 ```promql
-# Share of webhooks queued
+# Share of merge request and note webhooks queued
 1 - sum(rate(tfbuddy_gitlab_webhook_failed{reason=~"decode-error|publish-error"}[1h]))
-    / sum(rate(tfbuddy_gitlab_webhook_received[1h]))
+    / sum(rate(tfbuddy_gitlab_webhook_enqueue_attempts[1h]))
 
 # p99 wait before a message is picked up, per queue
 histogram_quantile(0.99, sum by (le, queue) (rate(tfbuddy_jetstream_message_wait_seconds_bucket[1h])))
@@ -91,7 +91,7 @@ sum(increase(tfbuddy_tfc_runs_finished[6h])) / sum(increase(tfbuddy_tfc_runs_cre
 
 With no webhooks or no created runs in the window, the first and last queries return `NaN`: there was nothing to measure.
 
-`tfbuddy_gitlab_webhook_failed` has one of four reasons: `invalid-token` and `invalid-event` for requests TFBuddy rejects, `decode-error` for a body it cannot read, and `publish-error` when the event could not be written to the `HOOKS` stream, for example while NATS is down. `decode-error` and `publish-error` are recorded without the project; the project is in the error log.
+`tfbuddy_gitlab_webhook_failed` has one of four reasons: `invalid-token` and `invalid-event` for requests TFBuddy rejects, `decode-error` for a body it cannot read, and `publish-error` when the event could not be written to the `HOOKS` stream, for example while NATS is down. `decode-error` and `publish-error` are recorded without the project; the project is in the error log. `tfbuddy_gitlab_webhook_enqueue_attempts` counts the authorized merge request and note events TFBuddy tries to queue, which is where those two failures come from. `tfbuddy_gitlab_webhook_received` is not used as the denominator because it also counts rejected requests and event types TFBuddy ignores.
 
 A run is counted in `tfbuddy_tfc_runs_finished` when a run event worker has handled its final status event. That means the handler ran to the end, not that every comment and commit status reached the merge request: a failed comment or status write is logged, not counted. JetStream delivers the final event again if its ack is lost, so the worker records the run in the `RUN_COMPLETIONS` KV bucket, which keeps it for longer than `RUN_EVENTS` keeps messages, and a later delivery of the same run is not counted. Runs take minutes, so compare the two counters over hours rather than minutes.
 

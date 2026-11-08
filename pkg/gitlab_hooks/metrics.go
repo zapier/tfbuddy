@@ -43,6 +43,17 @@ var (
 		},
 		commonLabels,
 	)
+	// gitlabWebHookEnqueueAttempts counts the authorized merge request and
+	// note events TFBuddy tries to queue: the population decode-error and
+	// publish-error failures come from, without the rejected requests and
+	// ignored event types that tfbuddy_gitlab_webhook_received also counts.
+	gitlabWebHookEnqueueAttempts = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "tfbuddy_gitlab_webhook_enqueue_attempts",
+			Help: "Count of authorized GitLab merge request and note WebHooks TFBuddy tried to publish to the stream, by event type",
+		},
+		[]string{"eventType"},
+	)
 	gitlabWebHookIgnored = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "tfbuddy_gitlab_webhook_ignored",
@@ -62,7 +73,9 @@ func init() {
 	r.MustRegister(gitlabWebHookReceived)
 	r.MustRegister(gitlabWebHookSuccess)
 	r.MustRegister(gitlabWebHookFailed)
+	r.MustRegister(gitlabWebHookEnqueueAttempts)
 	for _, eventType := range []gogitlab.EventType{gogitlab.EventTypeMergeRequest, gogitlab.EventTypeNote} {
+		gitlabWebHookEnqueueAttempts.WithLabelValues(string(eventType))
 		for _, reason := range []string{hookFailedDecode, hookFailedPublish} {
 			gitlabWebHookFailed.WithLabelValues(string(eventType), reason, "")
 		}

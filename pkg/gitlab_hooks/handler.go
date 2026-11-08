@@ -117,6 +117,7 @@ func (h *GitlabHooksHandler) handler(c echo.Context) error {
 	labels["eventType"] = string(eventType)
 	switch eventType {
 	case gogitlab.EventTypeMergeRequest:
+		gitlabWebHookEnqueueAttempts.WithLabelValues(string(eventType)).Inc()
 		ctx, span := otel.Tracer("GitlabHandler").Start(c.Request().Context(), "Gitlab - MergeRequestHook")
 		defer span.End()
 
@@ -147,6 +148,7 @@ func (h *GitlabHooksHandler) handler(c echo.Context) error {
 		}
 
 	case gogitlab.EventTypeNote:
+		gitlabWebHookEnqueueAttempts.WithLabelValues(string(eventType)).Inc()
 		ctx, span := otel.Tracer("GitlabHandler").Start(c.Request().Context(), "Gitlab - EventTypeNote")
 		defer span.End()
 
