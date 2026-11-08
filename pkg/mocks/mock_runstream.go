@@ -201,6 +201,18 @@ func (mr *MockStreamClientMockRecorder) RecordAutoMergeSuccess(ref any) *gomock.
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RecordAutoMergeSuccess", reflect.TypeOf((*MockStreamClient)(nil).RecordAutoMergeSuccess), ref)
 }
 
+// RecordRunFinished mocks base method.
+func (m *MockStreamClient) RecordRunFinished(provider string, re runstream.RunEvent) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "RecordRunFinished", provider, re)
+}
+
+// RecordRunFinished indicates an expected call of RecordRunFinished.
+func (mr *MockStreamClientMockRecorder) RecordRunFinished(provider, re any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RecordRunFinished", reflect.TypeOf((*MockStreamClient)(nil).RecordRunFinished), provider, re)
+}
+
 // RegisterAutoMergeRun mocks base method.
 func (m *MockStreamClient) RegisterAutoMergeRun(ref runstream.AutoMergeRef) error {
 	m.ctrl.T.Helper()

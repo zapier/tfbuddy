@@ -71,7 +71,7 @@ func (w *RunEventsWorker) eventStreamCallback(re runstream.RunEvent) bool {
 	w.postRunStatusComment(ctx, run, re.GetMetadata())
 	//w.updateCommitStatusForRun(run, re.GetMetadata())
 	if tfc_api.IsFinalRunStatus(run.Status) {
-		runstream.RecordRunFinished("github", re.GetMetadata().GetAction(), string(run.Status))
+		w.rs.RecordRunFinished("github", re)
 	}
 	return true
 }

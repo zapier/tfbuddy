@@ -15,7 +15,7 @@ import (
 
 const (
 	// WorkspaceDispatchKvBucket records which workspaces each trigger has
-	// already dispatched.
+	// already dispatched, and which runs have been counted as finished.
 	WorkspaceDispatchKvBucket = "WORKSPACE_DISPATCHES"
 	// workspaceDispatchTTL outlives every redelivery of a trigger: the HOOKS
 	// and workspace fan-out streams both drop messages after an hour.

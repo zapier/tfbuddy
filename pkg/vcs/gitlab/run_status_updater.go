@@ -97,7 +97,7 @@ func (p *RunStatusUpdater) eventStreamCallback(re runstream.RunEvent) bool {
 		return false
 	}
 	if tfc_api.IsFinalRunStatus(run.Status) {
-		runstream.RecordRunFinished("gitlab", re.GetMetadata().GetAction(), string(run.Status))
+		p.rs.RecordRunFinished("gitlab", re)
 	}
 	return true
 }

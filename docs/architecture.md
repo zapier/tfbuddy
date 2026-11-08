@@ -73,22 +73,24 @@ TFBuddy answers every webhook with `200 OK` and does the work later, so HTTP sta
 | How long did it wait before a replica picked it up? | `tfbuddy_jetstream_message_wait_seconds{queue}`, a histogram of each message's first delivery |
 | Did the run's final status reach the merge request? | `tfbuddy_tfc_runs_finished{provider,runType,status}` against `tfbuddy_tfc_runs_started` |
 
-Example SLIs, in the same order:
+Example SLIs, in the same order. A labelled counter has no series until it is first incremented, and a sum over no series returns no data, so the counters that can be missing are defaulted to zero:
 
 ```promql
 # Share of webhooks queued
-sum(rate(tfbuddy_gitlab_webhook_success[1h]))
-  / (sum(rate(tfbuddy_gitlab_webhook_success[1h]))
-     + sum(rate(tfbuddy_gitlab_webhook_failed{reason=~"decode-error|publish-error"}[1h])))
+(sum(rate(tfbuddy_gitlab_webhook_success[1h])) or vector(0))
+  / ((sum(rate(tfbuddy_gitlab_webhook_success[1h])) or vector(0))
+     + (sum(rate(tfbuddy_gitlab_webhook_failed{reason=~"decode-error|publish-error"}[1h])) or vector(0)))
 
 # p99 wait before a message is picked up, per queue
 histogram_quantile(0.99, sum by (le, queue) (rate(tfbuddy_jetstream_message_wait_seconds_bucket[1h])))
 
 # Share of started runs whose final status was reported
-sum(increase(tfbuddy_tfc_runs_finished[6h])) / sum(increase(tfbuddy_tfc_runs_started[6h]))
+(sum(increase(tfbuddy_tfc_runs_finished[6h])) or vector(0)) / sum(increase(tfbuddy_tfc_runs_started[6h]))
 ```
 
-`tfbuddy_gitlab_webhook_failed` has one of four reasons: `invalid-token` and `invalid-event` for requests TFBuddy rejects, `decode-error` for a body it cannot read, and `publish-error` when the event could not be written to the `HOOKS` stream, for example while NATS is down. A run is counted in `tfbuddy_tfc_runs_finished` once, when the run event worker has handled its final status and acked the event. Runs take minutes, so compare the two counters over hours rather than minutes.
+With no webhooks or no started runs in the window, the first and last queries return no data or `NaN`, which means there was nothing to measure.
+
+`tfbuddy_gitlab_webhook_failed` has one of four reasons: `invalid-token` and `invalid-event` for requests TFBuddy rejects, `decode-error` for a body it cannot read, and `publish-error` when the event could not be written to the `HOOKS` stream, for example while NATS is down. A run is counted in `tfbuddy_tfc_runs_finished` when the run event worker has handled its final status. JetStream delivers the final event again if its ack is lost, so the worker also records the run in the `WORKSPACE_DISPATCHES` bucket, and a later delivery of the same run is not counted. Runs take minutes, so compare the two counters over hours rather than minutes.
 
 ### TFC API Rate Limiter
 
