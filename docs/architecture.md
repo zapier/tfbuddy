@@ -67,11 +67,26 @@ nats consumer rm RUN_POLLING run_polling_pull_worker
 
 TFBuddy answers every webhook with `200 OK` and does the work later, so HTTP status codes don't show whether it is working. These metrics follow an event from the webhook to the final status on the merge request:
 
-| Question | Metric | Example SLI |
-|---|---|---|
-| Did TFBuddy queue the webhook? | `tfbuddy_gitlab_webhook_success`, `tfbuddy_gitlab_webhook_failed{reason}` | `sum(rate(tfbuddy_gitlab_webhook_success[1h])) / (sum(rate(tfbuddy_gitlab_webhook_success[1h])) + sum(rate(tfbuddy_gitlab_webhook_failed{reason=~"decode-error\|publish-error"}[1h])))` |
-| How long did it wait before a replica picked it up? | `tfbuddy_jetstream_message_wait_seconds{queue}`, a histogram of each message's first delivery | `histogram_quantile(0.99, sum by (le, queue) (rate(tfbuddy_jetstream_message_wait_seconds_bucket[1h])))` |
-| Did the run's final status reach the merge request? | `tfbuddy_tfc_runs_finished{provider,runType,status}` against `tfbuddy_tfc_runs_started` | `sum(increase(tfbuddy_tfc_runs_finished[6h])) / sum(increase(tfbuddy_tfc_runs_started[6h]))` |
+| Question | Metric |
+|---|---|
+| Did TFBuddy queue the webhook? | `tfbuddy_gitlab_webhook_success`, `tfbuddy_gitlab_webhook_failed{reason}` |
+| How long did it wait before a replica picked it up? | `tfbuddy_jetstream_message_wait_seconds{queue}`, a histogram of each message's first delivery |
+| Did the run's final status reach the merge request? | `tfbuddy_tfc_runs_finished{provider,runType,status}` against `tfbuddy_tfc_runs_started` |
+
+Example SLIs, in the same order:
+
+```promql
+# Share of webhooks queued
+sum(rate(tfbuddy_gitlab_webhook_success[1h]))
+  / (sum(rate(tfbuddy_gitlab_webhook_success[1h]))
+     + sum(rate(tfbuddy_gitlab_webhook_failed{reason=~"decode-error|publish-error"}[1h])))
+
+# p99 wait before a message is picked up, per queue
+histogram_quantile(0.99, sum by (le, queue) (rate(tfbuddy_jetstream_message_wait_seconds_bucket[1h])))
+
+# Share of started runs whose final status was reported
+sum(increase(tfbuddy_tfc_runs_finished[6h])) / sum(increase(tfbuddy_tfc_runs_started[6h]))
+```
 
 `tfbuddy_gitlab_webhook_failed` has one of four reasons: `invalid-token` and `invalid-event` for requests TFBuddy rejects, `decode-error` for a body it cannot read, and `publish-error` when the event could not be written to the `HOOKS` stream, for example while NATS is down. A run is counted in `tfbuddy_tfc_runs_finished` once, when the run event worker has handled its final status and acked the event. Runs take minutes, so compare the two counters over hours rather than minutes.
 
