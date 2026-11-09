@@ -1188,6 +1188,7 @@ func (t *TFCTrigger) triggerRunForWorkspace(ctx context.Context, cfgWS *TFCWorks
 	}
 
 	tfcRunsStarted.WithLabelValues(org, wsName, t.GetAction().String()).Inc()
+	runstream.RecordRunCreated(t.GetVcsProvider(), t.GetAction().String())
 	log.Debug().
 		Str("RunID", run.ID).
 		Str("Org", org).

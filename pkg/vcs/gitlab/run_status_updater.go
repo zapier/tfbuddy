@@ -96,5 +96,8 @@ func (p *RunStatusUpdater) eventStreamCallback(re runstream.RunEvent) bool {
 		log.Error().Err(err).Str("runID", re.GetRunID()).Msg("could not reconcile auto-merge state")
 		return false
 	}
+	if tfc_api.IsFinalRunStatus(run.Status) {
+		p.rs.RecordRunFinished("gitlab", re)
+	}
 	return true
 }

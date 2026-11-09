@@ -1,24 +1,34 @@
 package tfc_api
 
-import "github.com/hashicorp/go-tfe"
+import (
+	"slices"
+
+	"github.com/hashicorp/go-tfe"
+)
+
+// finalRunStatuses are the statuses a run does not leave. policy_soft_failed
+// is final for the plan-only runs that reach it; a run that can still be
+// applied goes to policy_override instead.
+// https://developer.hashicorp.com/terraform/cloud-docs/api-docs/run#run-states
+var finalRunStatuses = []tfe.RunStatus{
+	tfe.RunApplied,
+	tfe.RunPlannedAndFinished,
+	tfe.RunPlannedAndSaved,
+	tfe.RunDiscarded,
+	tfe.RunErrored,
+	tfe.RunCanceled,
+	tfe.RunPolicySoftFailed,
+}
 
 // IsFinalRunStatus reports whether a run in this status has finished and
-// will not change status again. policy_soft_failed is final for the plan-only
-// runs that reach it; a run that can still be applied goes to policy_override
-// instead.
-// https://developer.hashicorp.com/terraform/cloud-docs/api-docs/run#run-states
+// will not change status again.
 func IsFinalRunStatus(status tfe.RunStatus) bool {
-	switch status {
-	case tfe.RunApplied,
-		tfe.RunPlannedAndFinished,
-		tfe.RunPlannedAndSaved,
-		tfe.RunDiscarded,
-		tfe.RunErrored,
-		tfe.RunCanceled,
-		tfe.RunPolicySoftFailed:
-		return true
-	}
-	return false
+	return slices.Contains(finalRunStatuses, status)
+}
+
+// FinalRunStatuses returns every final run status.
+func FinalRunStatuses() []tfe.RunStatus {
+	return slices.Clone(finalRunStatuses)
 }
 
 // IsStaleRunEvent reports whether a run event reporting eventStatus is out of

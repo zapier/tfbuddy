@@ -145,6 +145,9 @@ func (s *Stream) SubscribeTFRunEvents(vcsProvider string, cb func(run RunEvent) 
 // sets the JetStream Duplicates window used in tandem with the Nats-Msg-Id
 // stamped by PublishTFRunEvent. Operators tune the window via the
 // TFBUDDY_JETSTREAM_DEDUP_WINDOW env var; tests pass an explicit value.
+// runEventsMaxAge is how long RUN_EVENTS keeps a message, acked or not.
+const runEventsMaxAge = 6 * time.Hour
+
 func configureTFRunEventsStream(js nats.JetStreamContext, dedupWindow time.Duration) {
 	sCfg := &nats.StreamConfig{
 		Name:        RunEventsStreamName,
@@ -152,7 +155,7 @@ func configureTFRunEventsStream(js nats.JetStreamContext, dedupWindow time.Durat
 		Subjects:    []string{fmt.Sprintf("%s.*", RunEventsStreamName)},
 		Retention:   nats.WorkQueuePolicy,
 		MaxMsgs:     10240,
-		MaxAge:      time.Hour * 6,
+		MaxAge:      runEventsMaxAge,
 		Replicas:    1,
 		Duplicates:  dedupWindow,
 	}
