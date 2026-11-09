@@ -185,17 +185,19 @@ func (h *GitlabHooksHandler) handler(c echo.Context) error {
 func (h *GitlabHooksHandler) publish(ctx context.Context, eventType, project, event string, publish func(context.Context) error) {
 	// The request's context ends with the response, and the retries outlive it.
 	ctx = context.WithoutCancel(ctx)
+	// Each outcome is logged before it is counted, so once the counter shows
+	// an outcome its log line has been written.
 	ok := hooks_stream.PublishWithRetry(func() error { return publish(ctx) }, h.publishRetry, func(err error, attempts int) {
 		switch {
 		case err != nil:
+			log.Error().Err(err).Int("attempts", attempts).
+				Msgf("could not publish %s; GitLab won't resend it, so resend it from the webhook's recent events", event)
 			// Recorded without the project so the series exist from startup
 			// (see init in metrics.go). The project is in the error log.
 			gitlabWebHookFailed.WithLabelValues(eventType, hookFailedPublish, "").Inc()
-			log.Error().Err(err).Int("attempts", attempts).
-				Msgf("could not publish %s; GitLab won't resend it, so resend it from the webhook's recent events", event)
 		case attempts > 1:
-			gitlabWebHookSuccess.With(webhookLabels(eventType, project, "processed-after-retry")).Inc()
 			log.Info().Int("attempts", attempts).Msgf("published %s after retrying", event)
+			gitlabWebHookSuccess.With(webhookLabels(eventType, project, "processed-after-retry")).Inc()
 		default:
 			gitlabWebHookSuccess.With(webhookLabels(eventType, project, "processed")).Inc()
 		}

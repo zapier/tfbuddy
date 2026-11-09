@@ -133,9 +133,11 @@ func (h *GithubHooksHandler) handleIssueCommentCreatedEvent(deliveryID string, e
 		return err
 	}, h.publishRetry, func(err error, attempts int) {
 		if err != nil {
-			githubWebHookFailed.With(lbls).Inc()
+			// Logged before it is counted, so once the counter shows the
+			// failure its log line has been written.
 			log.Error().Err(err).Str("deliveryID", deliveryID).Int("attempts", attempts).
 				Msg("could not publish GitHub issue comment event; GitHub won't redeliver it, so redeliver it from the webhook's recent deliveries")
+			githubWebHookFailed.With(lbls).Inc()
 			return
 		}
 		githubWebHookSuccess.With(lbls).Inc()

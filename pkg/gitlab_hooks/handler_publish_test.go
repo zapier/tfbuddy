@@ -1,6 +1,7 @@
 package gitlab_hooks
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -16,8 +17,10 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"github.com/sl1pm4t/gongs"
 	"github.com/stretchr/testify/require"
+	gogitlab "gitlab.com/gitlab-org/api/client-go"
 
 	"github.com/zapier/tfbuddy/pkg/hooks_stream"
+	"github.com/zapier/tfbuddy/pkg/vcs/gitlab"
 )
 
 func startTestNATS(t *testing.T) nats.JetStreamContext {
@@ -71,6 +74,10 @@ func postMREvent(t *testing.T, h *GitlabHooksHandler, project string) *httptest.
 func TestHandlerPublishesTheEventOnceNATSIsBack(t *testing.T) {
 	js := startTestNATS(t)
 	h := newTestMRHandler(js, hooks_stream.RetryPolicy{For: 10 * time.Second, InitialInterval: 50 * time.Millisecond, MaxInterval: 200 * time.Millisecond})
+	// The counters are package globals, so compare with their values before
+	// this event: go test -count=N runs the test again in one process.
+	retried := gitlabWebHookSuccess.With(webhookLabels("Merge Request Hook", "zapier/publish-retry", "processed-after-retry"))
+	before := counterValue(retried)
 
 	start := time.Now()
 	rec := postMREvent(t, h, "zapier/publish-retry")
@@ -89,7 +96,7 @@ func TestHandlerPublishesTheEventOnceNATSIsBack(t *testing.T) {
 		return err == nil && info.State.Msgs == 1
 	}, 10*time.Second, 50*time.Millisecond, "the event was dropped instead of published once the stream was back")
 	require.Eventually(t, func() bool {
-		return counterValue(gitlabWebHookSuccess.With(webhookLabels("Merge Request Hook", "zapier/publish-retry", "processed-after-retry"))) == 1
+		return counterValue(retried) == before+1
 	}, 5*time.Second, 50*time.Millisecond)
 }
 
@@ -98,13 +105,33 @@ func TestHandlerPublishesTheEventOnceNATSIsBack(t *testing.T) {
 func TestHandlerCountsAnEventThatWasNeverPublished(t *testing.T) {
 	js := startTestNATS(t)
 	h := newTestMRHandler(js, hooks_stream.RetryPolicy{For: 300 * time.Millisecond, InitialInterval: 20 * time.Millisecond, MaxInterval: 50 * time.Millisecond})
+	failed := gitlabWebHookFailed.With(webhookLabels("Merge Request Hook", "zapier/publish-failed", "publish-failed"))
+	failedBefore := counterValue(failed)
+	succeeded := map[string]float64{}
+	for _, reason := range []string{"processed", "processed-after-retry"} {
+		succeeded[reason] = counterValue(gitlabWebHookSuccess.With(webhookLabels("Merge Request Hook", "zapier/publish-failed", reason)))
+	}
 
 	rec := postMREvent(t, h, "zapier/publish-failed")
 	require.Equal(t, http.StatusOK, rec.Code)
 
-	failed := gitlabWebHookFailed.With(webhookLabels("Merge Request Hook", "zapier/publish-failed", "publish-failed"))
-	require.Eventually(t, func() bool { return counterValue(failed) == 1 }, 5*time.Second, 20*time.Millisecond)
-	for _, reason := range []string{"processed", "processed-after-retry"} {
-		require.Zero(t, counterValue(gitlabWebHookSuccess.With(webhookLabels("Merge Request Hook", "zapier/publish-failed", reason))), reason)
+	require.Eventually(t, func() bool { return counterValue(failed) == failedBefore+1 }, 5*time.Second, 20*time.Millisecond)
+	for reason, before := range succeeded {
+		require.Equal(t, before, counterValue(gitlabWebHookSuccess.With(webhookLabels("Merge Request Hook", "zapier/publish-failed", reason))), reason)
 	}
+}
+
+// Two comments in the same discussion are different events; a redelivery of
+// one comment is the same event.
+func TestNoteEventIDsTellCommentsInOneDiscussionApart(t *testing.T) {
+	note := func(id int) *NoteEventMsg {
+		ev := &gogitlab.MergeCommentEvent{}
+		ev.ObjectAttributes.ID = id
+		ev.ObjectAttributes.DiscussionID = "d1"
+		return &NoteEventMsg{Payload: &gitlab.GitlabMergeCommentEvent{MergeCommentEvent: ev}}
+	}
+	ctx := context.Background()
+
+	require.NotEqual(t, note(1).GetId(ctx), note(2).GetId(ctx))
+	require.Equal(t, note(1).GetId(ctx), note(1).GetId(ctx))
 }

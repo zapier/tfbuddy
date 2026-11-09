@@ -44,8 +44,12 @@ type NoteEventMsg struct {
 	Context    context.Context
 }
 
+// GetId is the event's Nats-Msg-Id, which the HOOKS stream uses to drop a
+// duplicate publish within its Duplicates window. It includes the note ID:
+// with the discussion ID alone, a second comment in the same thread inside
+// the window was dropped as a duplicate of the first.
 func (e *NoteEventMsg) GetId(ctx context.Context) string {
-	return e.Payload.GetDiscussionID()
+	return fmt.Sprintf("%s-%d", e.Payload.GetDiscussionID(), e.Payload.GetEventSequence())
 }
 
 func (e *NoteEventMsg) DecodeEventData(b []byte) error {
