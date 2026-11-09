@@ -105,3 +105,20 @@ func TestNoteEventIDsTellCommentsInOneDiscussionApart(t *testing.T) {
 	require.NotEqual(t, note(1).GetId(ctx), note(2).GetId(ctx))
 	require.Equal(t, note(1).GetId(ctx), note(1).GetId(ctx))
 }
+
+// Reopening an MR again at the same commit is a new event; a retry or a
+// second delivery of the same event is not.
+func TestMergeRequestEventIDsTellReopensApart(t *testing.T) {
+	reopen := func(updatedAt string) *MergeRequestEventMsg {
+		ev := &gogitlab.MergeEvent{}
+		ev.ObjectAttributes.ID = 7
+		ev.ObjectAttributes.Action = "reopen"
+		ev.ObjectAttributes.LastCommit.ID = "abc123"
+		ev.ObjectAttributes.UpdatedAt = updatedAt
+		return &MergeRequestEventMsg{Payload: ev}
+	}
+	ctx := context.Background()
+
+	require.NotEqual(t, reopen("2026-11-09 10:00:00 UTC").GetId(ctx), reopen("2026-11-09 10:03:00 UTC").GetId(ctx))
+	require.Equal(t, reopen("2026-11-09 10:00:00 UTC").GetId(ctx), reopen("2026-11-09 10:00:00 UTC").GetId(ctx))
+}
