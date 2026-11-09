@@ -39,7 +39,6 @@ type GithubHooksHandler struct {
 	js              nats.JetStreamContext
 	ghEvents        *githubevents.EventHandler
 	triggerCreation TriggerCreationFunc
-	workspaceStream tfc_trigger.WorkspacePublisher
 
 	publishRetry hooks_stream.RetryPolicy
 
@@ -48,7 +47,7 @@ type GithubHooksHandler struct {
 	commentStream *gongs.GenericStream[GithubIssueCommentEventMsg, *GithubIssueCommentEventMsg]
 }
 
-func NewGithubHooksHandler(cfg config.Config, vcs vcs.GitClient, tfc tfc_api.ApiClient, rs runstream.StreamClient, js nats.JetStreamContext, jsc jetstream.JetStream, workspaceStream tfc_trigger.WorkspacePublisher) *GithubHooksHandler {
+func NewGithubHooksHandler(cfg config.Config, vcs vcs.GitClient, tfc tfc_api.ApiClient, rs runstream.StreamClient, js nats.JetStreamContext, jsc jetstream.JetStream) *GithubHooksHandler {
 	prStream := gongs.NewGenericStream[PullRequestEventMsg](js, getGithubJetstreamName(), getGithubJetstreamSubject(PullRequestEventType))
 	commentStream := gongs.NewGenericStream[GithubIssueCommentEventMsg](js, getGithubJetstreamName(), getGithubJetstreamSubject(IssueCommentEvent))
 
@@ -61,7 +60,6 @@ func NewGithubHooksHandler(cfg config.Config, vcs vcs.GitClient, tfc tfc_api.Api
 		commentStream:   commentStream,
 		prStream:        prStream,
 		triggerCreation: tfc_trigger.NewTFCTrigger,
-		workspaceStream: workspaceStream,
 		publishRetry:    hooks_stream.DefaultRetryPolicy,
 	}
 

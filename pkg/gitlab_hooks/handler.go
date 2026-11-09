@@ -54,7 +54,6 @@ type GitlabHooksHandler struct {
 	gl              vcs.GitClient
 	runstream       runstream.StreamClient
 	triggerCreation TriggerCreationFunc
-	workspaceStream tfc_trigger.WorkspacePublisher
 
 	// hook streams and workers
 	hookSecretKey string
@@ -64,7 +63,7 @@ type GitlabHooksHandler struct {
 	hooksWorker   *GitlabEventWorker
 }
 
-func NewGitlabHooksHandler(cfg config.Config, gl vcs.GitClient, tfc tfc_api.ApiClient, rs runstream.StreamClient, js nats.JetStreamContext, jsc jetstream.JetStream, workspaceStream tfc_trigger.WorkspacePublisher) *GitlabHooksHandler {
+func NewGitlabHooksHandler(cfg config.Config, gl vcs.GitClient, tfc tfc_api.ApiClient, rs runstream.StreamClient, js nats.JetStreamContext, jsc jetstream.JetStream) *GitlabHooksHandler {
 	notesStream := gongs.NewGenericStream[NoteEventMsg](js, noteEventsStreamSubject(), hooks_stream.HooksStreamName)
 	mrStream := gongs.NewGenericStream[MergeRequestEventMsg](js, mrEventsStreamSubject(), hooks_stream.HooksStreamName)
 
@@ -74,7 +73,6 @@ func NewGitlabHooksHandler(cfg config.Config, gl vcs.GitClient, tfc tfc_api.ApiC
 		gl:              gl,
 		runstream:       rs,
 		triggerCreation: tfc_trigger.NewTFCTrigger,
-		workspaceStream: workspaceStream,
 		mrStream:        mrStream,
 		notesStream:     notesStream,
 		hookSecretKey:   cfg.GitlabHookSecretKey,

@@ -52,9 +52,6 @@ func (w *GitlabEventWorker) processMergeRequestEvent(msg *MergeRequestEventMsg) 
 	}
 
 	trigger := w.triggerCreation(w.cfg, w.gl, w.tfc, w.runstream, cfg)
-	if w.workspaceStream != nil {
-		trigger.SetWorkspaceStream(w.workspaceStream)
-	}
 	switch event.ObjectAttributes.Action {
 	case "open", "reopen":
 		if w.skipAutoPlan(ctx, projectName, event, trigger, labels) {

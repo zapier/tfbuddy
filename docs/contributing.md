@@ -108,7 +108,7 @@ If you're using minikube with Tilt we recommend following this [guide](https://g
 
 We use Earthly to simplify our CI/CD process with TF Buddy. This also simplifies testing changes locally before pushing them up to ensure your PR will pass all required checks. The best command to run is `earthly +unit-test` this will pull all the required dependencies (including any new ones that you have added). It will then run [go vet](https://pkg.go.dev/cmd/vet), and if those pass it will run `go test` with race detection enabled. You can also always run these commands directly `go test -race ./...` will run all tests in the repo with race detection enabled. Please ensure that `earthly +unit-test` is passing before opening a PR.
 
-Always run with `-race` when changing the trigger or TFC API code — those paths are concurrent (workspace fan-out, shared rate limiter):
+Always run with `-race` when changing the trigger or TFC API code — those paths are concurrent (one worker per hook queue, sharing the TFC rate limiter):
 
 ```console
 go test -race ./pkg/tfc_trigger/... ./pkg/tfc_api/...

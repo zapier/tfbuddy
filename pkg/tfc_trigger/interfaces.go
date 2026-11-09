@@ -19,7 +19,6 @@ type Trigger interface {
 	GetTriggerSource() TriggerSource
 	GetWorkspace() string
 	GetVcsProvider() string
-	SetWorkspaceStream(WorkspacePublisher)
 }
 type TriggerAction int
 type TriggerSource int

@@ -100,17 +100,6 @@ type TFCTrigger struct {
 	gl        vcs.GitClient
 	tfc       tfc_api.ApiClient
 	runstream runstream.StreamClient
-	// workspaceStream, when set, fans out one message per workspace instead
-	// of running them inline. Nil keeps the legacy synchronous behavior.
-	workspaceStream WorkspacePublisher
-}
-
-type WorkspacePublisher interface {
-	Publish(ctx context.Context, msg *WorkspaceTriggerMsg) error
-}
-
-func (t *TFCTrigger) SetWorkspaceStream(s WorkspacePublisher) {
-	t.workspaceStream = s
 }
 
 type TFCTriggerOptions struct {
@@ -124,8 +113,9 @@ type TFCTriggerOptions struct {
 	TriggerSource            TriggerSource
 	VcsProvider              string
 	// DeliveryID is the upstream webhook delivery ID (X-GitHub-Delivery /
-	// X-Gitlab-Event-UUID). Used as the JetStream dedup anchor so retriggers
-	// are not silently dropped within the dedup window.
+	// X-Gitlab-Event-UUID). It identifies the trigger for the workspace
+	// dispatch claim and the auto-merge apply generation, so a redelivery of
+	// the same webhook is recognised while a new push or comment is not.
 	DeliveryID string
 	// AutoMergeGeneration groups every workspace run dispatched by one apply command.
 	AutoMergeGeneration string
@@ -636,8 +626,8 @@ func (t *TFCTrigger) beginAutoMergeApply(workspaces []*TFCWorkspace) error {
 }
 
 // TriggerTFCEvents dispatches one run per touched workspace. The clone and
-// target-branch evaluation happen once per delivery so the fan-out path
-// doesn't redo MR-level work in every worker.
+// target-branch evaluation happen once per delivery, and every workspace is
+// then run from that one checkout.
 func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspaces, error) {
 	ctx, span := otel.Tracer(t.tracerName()).Start(ctx, "TriggerTFCEvents")
 	defer span.End()
@@ -690,11 +680,7 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 		return nil, fmt.Errorf("could not initialize apply generation: %w", err)
 	}
 
-	dispatch := t.runInline(mr, repo)
-	if t.workspaceStream != nil {
-		dispatch = t.enqueue
-	}
-	return t.dispatchWorkspaces(ctx, triggeredWorkspaces, blocked, dispatch), nil
+	return t.dispatchWorkspaces(ctx, triggeredWorkspaces, blocked, mr, repo), nil
 }
 
 // SkipTFCEvents discovers the same workspaces TriggerTFCEvents would trigger
@@ -770,10 +756,6 @@ func (t *TFCTrigger) postPendingStatusForAction(ctx context.Context, ws *TFCWork
 	}
 }
 
-// workspaceDispatchFn runs (inline) or enqueues (fan-out) a single workspace.
-// Returning an error puts the workspace into status.Errored verbatim.
-type workspaceDispatchFn func(ctx context.Context, ws *TFCWorkspace) error
-
 // postWorkspaceStatusForAll publishes the same terminal status for every
 // triggered workspace. It covers merge-request-wide failures, which happen
 // after the triggered set is known but before any workspace is dispatched:
@@ -835,7 +817,7 @@ func (t *TFCTrigger) postWorkspaceStatus(ctx context.Context, ws *TFCWorkspace, 
 	}
 }
 
-func (t *TFCTrigger) dispatchWorkspaces(ctx context.Context, workspaces []*TFCWorkspace, blocked map[string]struct{}, dispatch workspaceDispatchFn) *TriggeredTFCWorkspaces {
+func (t *TFCTrigger) dispatchWorkspaces(ctx context.Context, workspaces []*TFCWorkspace, blocked map[string]struct{}, mr vcs.DetailedMR, repo vcs.GitRepo) *TriggeredTFCWorkspaces {
 	status := &TriggeredTFCWorkspaces{
 		Errored:  make([]*ErroredWorkspace, 0),
 		Executed: make([]string, 0),
@@ -862,7 +844,9 @@ func (t *TFCTrigger) dispatchWorkspaces(ctx context.Context, workspaces []*TFCWo
 			})
 			continue
 		}
-		if err := dispatch(ctx, ws); err != nil {
+		if err := t.triggerRunForWorkspace(ctx, ws, mr, repo.GetLocalDirectory()); err != nil {
+			log.Error().Err(err).Str("ws", ws.Name).Msg("could not trigger Run for Workspace")
+			err = fmt.Errorf("could not trigger Run for Workspace. %w", err)
 			t.postWorkspaceStatus(ctx, ws, vcs.CommitStateFailed, err.Error())
 			status.Errored = append(status.Errored, &ErroredWorkspace{Name: ws.Name, Error: err.Error()})
 			continue
@@ -870,25 +854,6 @@ func (t *TFCTrigger) dispatchWorkspaces(ctx context.Context, workspaces []*TFCWo
 		status.Executed = append(status.Executed, ws.Name)
 	}
 	return status
-}
-
-func (t *TFCTrigger) runInline(mr vcs.DetailedMR, repo vcs.GitRepo) workspaceDispatchFn {
-	return func(ctx context.Context, ws *TFCWorkspace) error {
-		if err := t.triggerRunForWorkspace(ctx, ws, mr, repo.GetLocalDirectory()); err != nil {
-			log.Error().Err(err).Str("ws", ws.Name).Msg("could not trigger Run for Workspace")
-			return fmt.Errorf("could not trigger Run for Workspace. %w", err)
-		}
-		return nil
-	}
-}
-
-func (t *TFCTrigger) enqueue(ctx context.Context, ws *TFCWorkspace) error {
-	msg := &WorkspaceTriggerMsg{Opts: *t.cfg, Workspace: *ws}
-	if err := t.workspaceStream.Publish(ctx, msg); err != nil {
-		log.Error().Err(err).Str("ws", ws.Name).Msg("could not enqueue workspace trigger")
-		return fmt.Errorf("could not enqueue workspace trigger. %w", err)
-	}
-	return nil
 }
 
 func (t *TFCTrigger) TriggerCleanupEvent(ctx context.Context) error {
@@ -1197,7 +1162,8 @@ func (t *TFCTrigger) triggerRunForWorkspace(ctx context.Context, cfgWS *TFCWorks
 	if err != nil {
 		return fmt.Errorf("could not create MR discussion thread for TFC run status updates. %w", err)
 	}
-	// Keep these local — concurrent fan-out workers must not share state via t.cfg.
+	// Keep these local rather than on t.cfg: each workspace has its own
+	// discussion, and t.cfg is shared by every workspace of the trigger.
 	discussionID := disc.GetDiscussionID()
 	var rootNoteID int64
 	if len(disc.GetMRNotes()) > 0 {
