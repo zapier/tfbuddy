@@ -1,6 +1,16 @@
 package gitlab_hooks
 
-import "github.com/prometheus/client_golang/prometheus"
+import (
+	"github.com/prometheus/client_golang/prometheus"
+	gogitlab "gitlab.com/gitlab-org/api/client-go"
+)
+
+// Reasons tfbuddy_gitlab_webhook_failed records for an event TFBuddy accepted
+// but could not queue.
+const (
+	hookFailedDecode  = "decode-error"
+	hookFailedPublish = "publish-error"
+)
 
 var (
 	gitlabWebHookReceived = prometheus.NewCounter(prometheus.CounterOpts{
@@ -19,12 +29,30 @@ var (
 		},
 		commonLabels,
 	)
+	// gitlabWebHookFailed's reason is invalid-token, invalid-event,
+	// decode-error or publish-error. The handler answers GitLab with 200 OK
+	// either way, so this counter is the only sign that an event was lost.
+	// decode-error and publish-error leave the project empty, so their series
+	// can be created at zero on startup: rate() ignores the value a series
+	// starts with, and a series that first appeared at 1 would hide the
+	// first lost event.
 	gitlabWebHookFailed = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "tfbuddy_gitlab_webhook_failed",
-			Help: "Count of all GitLab WebHook that could not publish to stream",
+			Help: "Count of all GitLab WebHooks that were rejected or could not be published to the stream, by reason",
 		},
 		commonLabels,
+	)
+	// gitlabWebHookEnqueueAttempts counts the authorized merge request and
+	// note events TFBuddy tries to queue: the population decode-error and
+	// publish-error failures come from, without the rejected requests and
+	// ignored event types that tfbuddy_gitlab_webhook_received also counts.
+	gitlabWebHookEnqueueAttempts = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "tfbuddy_gitlab_webhook_enqueue_attempts",
+			Help: "Count of authorized GitLab merge request and note WebHooks TFBuddy tried to publish to the stream, by event type",
+		},
+		[]string{"eventType"},
 	)
 	gitlabWebHookIgnored = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -45,6 +73,13 @@ func init() {
 	r.MustRegister(gitlabWebHookReceived)
 	r.MustRegister(gitlabWebHookSuccess)
 	r.MustRegister(gitlabWebHookFailed)
+	r.MustRegister(gitlabWebHookEnqueueAttempts)
+	for _, eventType := range []gogitlab.EventType{gogitlab.EventTypeMergeRequest, gogitlab.EventTypeNote} {
+		gitlabWebHookEnqueueAttempts.WithLabelValues(string(eventType))
+		for _, reason := range []string{hookFailedDecode, hookFailedPublish} {
+			gitlabWebHookFailed.WithLabelValues(string(eventType), reason, "")
+		}
+	}
 	r.MustRegister(gitlabWebHookIgnored)
 
 	r.MustRegister(gitlabHookReadFromStream)

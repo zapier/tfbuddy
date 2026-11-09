@@ -14,6 +14,8 @@ import (
 	natstest "github.com/nats-io/nats-server/v2/test"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
 
 	"github.com/zapier/tfbuddy/pkg/utils"
@@ -402,4 +404,76 @@ func TestOptionsDefaults(t *testing.T) {
 	// A heartbeat no shorter than AckWait would let the message lapse.
 	o = Options{AckWait: time.Second, Heartbeat: 2 * time.Second}.withDefaults()
 	require.Equal(t, time.Second/3, o.Heartbeat)
+}
+
+func waitSamples(t *testing.T, queue string) (count uint64, sum float64) {
+	t.Helper()
+	m := &dto.Metric{}
+	require.NoError(t, messageWait.WithLabelValues(queue).(prometheus.Metric).Write(m))
+	return m.GetHistogram().GetSampleCount(), m.GetHistogram().GetSampleSum()
+}
+
+// The wait histogram is the queue-freshness SLI: time from publish to the
+// first pick-up. A redelivery must not add a second sample.
+func TestWaitIsObservedOnFirstDeliveryOnly(t *testing.T) {
+	srv, js := startJetStream(t)
+	countBefore, sumBefore := waitSamples(t, testDurable)
+
+	publish(t, js, 1)
+	time.Sleep(time.Second) // no consumer yet, so the message waits in the stream
+
+	var calls atomic.Int32
+	consume(t, replica(t, srv), Options{AckWait: time.Second, NakDelay: 100 * time.Millisecond}, func(*testMsg) error {
+		if calls.Add(1) == 1 {
+			return errors.New("transient")
+		}
+		return nil
+	})
+	require.Eventually(t, func() bool { return calls.Load() == 2 }, 3*time.Second, 20*time.Millisecond)
+	requireStreamEmpty(t, js)
+
+	count, sum := waitSamples(t, testDurable)
+	require.Equal(t, countBefore+1, count, "only the first delivery is observed")
+	require.GreaterOrEqual(t, sum-sumBefore, 1.0, "the wait covers the time before the consumer started")
+}
+
+func TestObserveWaitTreatsAFutureTimestampAsNoWait(t *testing.T) {
+	const queue = "clock_skew_test"
+	countBefore, sumBefore := waitSamples(t, queue)
+	now := time.Now()
+
+	observeWait(queue, now.Add(time.Minute), now)
+
+	count, sum := waitSamples(t, queue)
+	require.Equal(t, countBefore+1, count)
+	require.Equal(t, sumBefore, sum)
+}
+
+// rate() ignores the value a series starts with, so a queue's series must
+// exist at zero as soon as it starts consuming.
+func TestConsumeCreatesTheQueueSeries(t *testing.T) {
+	srv, _ := startJetStream(t)
+	const queue = "series_test_pull_worker"
+	q := testQueue
+	q.Durable = queue
+	q.LegacyPushDurable = ""
+	cc, err := Consume[testMsg](replica(t, srv), q, Options{}, func(*testMsg) error { return nil })
+	require.NoError(t, err)
+	t.Cleanup(cc.Stop)
+
+	families, err := prometheus.DefaultGatherer.Gather()
+	require.NoError(t, err)
+	found := map[string]int{}
+	for _, f := range families {
+		for _, m := range f.GetMetric() {
+			for _, l := range m.GetLabel() {
+				if l.GetName() == "queue" && l.GetValue() == queue {
+					found[f.GetName()]++
+				}
+			}
+		}
+	}
+	require.Equal(t, 1, found["tfbuddy_jetstream_message_wait_seconds"])
+	require.Equal(t, 1, found["tfbuddy_jetstream_messages_redelivered"])
+	require.Equal(t, 3, found["tfbuddy_jetstream_messages_settled"])
 }
