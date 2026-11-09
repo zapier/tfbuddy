@@ -20,7 +20,6 @@ type GitlabEventWorker struct {
 	gl              vcs.GitClient
 	runstream       runstream.StreamClient
 	triggerCreation TriggerCreationFunc
-	workspaceStream tfc_trigger.WorkspacePublisher
 }
 
 func NewGitlabEventWorker(h *GitlabHooksHandler, js jetstream.JetStream) *GitlabEventWorker {
@@ -30,7 +29,6 @@ func NewGitlabEventWorker(h *GitlabHooksHandler, js jetstream.JetStream) *Gitlab
 		gl:              h.gl,
 		runstream:       h.runstream,
 		triggerCreation: tfc_trigger.NewTFCTrigger,
-		workspaceStream: h.workspaceStream,
 	}
 
 	// One event can plan every workspace of a merge request, which takes

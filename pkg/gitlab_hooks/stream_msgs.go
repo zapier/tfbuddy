@@ -37,8 +37,8 @@ type NoteEventMsg struct {
 	GitlabHookEvent
 
 	Payload *gitlab.GitlabMergeCommentEvent `json:"payload"`
-	// DeliveryID anchors the workspace fan-out dedup key to the upstream
-	// webhook (X-Gitlab-Event-UUID or Idempotency-Key).
+	// DeliveryID identifies the upstream webhook delivery (X-Gitlab-Event-UUID
+	// or Idempotency-Key), so a redelivery is recognised as the same trigger.
 	DeliveryID string                 `json:"deliveryID"`
 	Carrier    propagation.MapCarrier `json:"Carrier"`
 	Context    context.Context
@@ -104,7 +104,8 @@ type MergeRequestEventMsg struct {
 	GitlabHookEvent
 
 	Payload *gogitlab.MergeEvent `json:"payload"`
-	// DeliveryID anchors the workspace fan-out dedup key to the upstream webhook.
+	// DeliveryID identifies the upstream webhook delivery, so a redelivery is
+	// recognised as the same trigger.
 	DeliveryID string                 `json:"deliveryID"`
 	Carrier    propagation.MapCarrier `json:"Carrier"`
 	Context    context.Context
