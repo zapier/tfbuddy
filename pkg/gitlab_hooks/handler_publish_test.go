@@ -13,8 +13,7 @@ import (
 	"github.com/labstack/echo/v4"
 	natstest "github.com/nats-io/nats-server/v2/test"
 	"github.com/nats-io/nats.go"
-	"github.com/prometheus/client_golang/prometheus"
-	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/sl1pm4t/gongs"
 	"github.com/stretchr/testify/require"
 	gogitlab "gitlab.com/gitlab-org/api/client-go"
@@ -37,14 +36,6 @@ func startTestNATS(t *testing.T) nats.JetStreamContext {
 	js, err := nc.JetStream()
 	require.NoError(t, err)
 	return js
-}
-
-func counterValue(c prometheus.Counter) float64 {
-	var m dto.Metric
-	if err := c.Write(&m); err != nil {
-		return -1
-	}
-	return m.GetCounter().GetValue()
 }
 
 // newTestMRHandler wires a handler whose MR events go to the HOOKS stream of
@@ -77,7 +68,7 @@ func TestHandlerPublishesTheEventOnceNATSIsBack(t *testing.T) {
 	// The counters are package globals, so compare with their values before
 	// this event: go test -count=N runs the test again in one process.
 	retried := gitlabWebHookSuccess.With(webhookLabels("Merge Request Hook", "zapier/publish-retry", "processed-after-retry"))
-	before := counterValue(retried)
+	before := testutil.ToFloat64(retried)
 
 	start := time.Now()
 	rec := postMREvent(t, h, "zapier/publish-retry")
@@ -96,29 +87,8 @@ func TestHandlerPublishesTheEventOnceNATSIsBack(t *testing.T) {
 		return err == nil && info.State.Msgs == 1
 	}, 10*time.Second, 50*time.Millisecond, "the event was dropped instead of published once the stream was back")
 	require.Eventually(t, func() bool {
-		return counterValue(retried) == before+1
+		return testutil.ToFloat64(retried) == before+1
 	}, 5*time.Second, 50*time.Millisecond)
-}
-
-// An event that can't be published at all is counted as failed, not as
-// processed.
-func TestHandlerCountsAnEventThatWasNeverPublished(t *testing.T) {
-	js := startTestNATS(t)
-	h := newTestMRHandler(js, hooks_stream.RetryPolicy{For: 300 * time.Millisecond, InitialInterval: 20 * time.Millisecond, MaxInterval: 50 * time.Millisecond})
-	failed := gitlabWebHookFailed.With(webhookLabels("Merge Request Hook", "zapier/publish-failed", "publish-failed"))
-	failedBefore := counterValue(failed)
-	succeeded := map[string]float64{}
-	for _, reason := range []string{"processed", "processed-after-retry"} {
-		succeeded[reason] = counterValue(gitlabWebHookSuccess.With(webhookLabels("Merge Request Hook", "zapier/publish-failed", reason)))
-	}
-
-	rec := postMREvent(t, h, "zapier/publish-failed")
-	require.Equal(t, http.StatusOK, rec.Code)
-
-	require.Eventually(t, func() bool { return counterValue(failed) == failedBefore+1 }, 5*time.Second, 20*time.Millisecond)
-	for reason, before := range succeeded {
-		require.Equal(t, before, counterValue(gitlabWebHookSuccess.With(webhookLabels("Merge Request Hook", "zapier/publish-failed", reason))), reason)
-	}
 }
 
 // Two comments in the same discussion are different events; a redelivery of

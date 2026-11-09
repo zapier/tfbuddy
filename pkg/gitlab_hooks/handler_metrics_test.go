@@ -2,14 +2,13 @@ package gitlab_hooks
 
 import (
 	"fmt"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/labstack/echo/v4"
-	natstest "github.com/nats-io/nats-server/v2/test"
 	"github.com/nats-io/nats.go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -22,28 +21,19 @@ import (
 
 const metricsTestProject = "zapier/metrics-test"
 
+// metricsTestRetry keeps the background retries of a failed publish short, so
+// the test sees the failure counted.
+var metricsTestRetry = hooks_stream.RetryPolicy{For: 300 * time.Millisecond, InitialInterval: 20 * time.Millisecond, MaxInterval: 50 * time.Millisecond}
+
 // newMetricsTestHandler returns a handler whose hook streams publish to an
 // in-process JetStream server. With withStream false the HOOKS stream does
 // not exist, so every publish fails the way it does while NATS is down.
 func newMetricsTestHandler(t *testing.T, withStream bool) *GitlabHooksHandler {
 	t.Helper()
-	opts := natstest.DefaultTestOptions
-	opts.Port = -1
-	opts.JetStream = true
-	opts.StoreDir = t.TempDir()
-	srv := natstest.RunServer(&opts)
-	t.Cleanup(srv.Shutdown)
-
-	addr, ok := srv.Addr().(*net.TCPAddr)
-	require.True(t, ok, "unexpected server address type %T", srv.Addr())
-	nc, err := nats.Connect(fmt.Sprintf("nats://127.0.0.1:%d", addr.Port))
-	require.NoError(t, err)
-	t.Cleanup(nc.Close)
-	js, err := nc.JetStream()
-	require.NoError(t, err)
+	js := startTestNATS(t)
 
 	if withStream {
-		_, err = js.AddStream(&nats.StreamConfig{
+		_, err := js.AddStream(&nats.StreamConfig{
 			Name:      hooks_stream.HooksStreamName,
 			Subjects:  []string{hooks_stream.HooksStreamName + ".>"},
 			Retention: nats.WorkQueuePolicy,
@@ -53,8 +43,9 @@ func newMetricsTestHandler(t *testing.T, withStream bool) *GitlabHooksHandler {
 	}
 
 	return &GitlabHooksHandler{
-		mrStream:    gongs.NewGenericStream[MergeRequestEventMsg](js, mrEventsStreamSubject(), hooks_stream.HooksStreamName),
-		notesStream: gongs.NewGenericStream[NoteEventMsg](js, noteEventsStreamSubject(), hooks_stream.HooksStreamName),
+		mrStream:     gongs.NewGenericStream[MergeRequestEventMsg](js, mrEventsStreamSubject(), hooks_stream.HooksStreamName),
+		notesStream:  gongs.NewGenericStream[NoteEventMsg](js, noteEventsStreamSubject(), hooks_stream.HooksStreamName),
+		publishRetry: metricsTestRetry,
 	}
 }
 
@@ -75,11 +66,22 @@ var (
 )
 
 // hookCounts reads the failed counter, which has no project, and the success
-// counter for project.
+// counters for project, whether or not the publish was retried.
 func hookCounts(eventType gogitlab.EventType, reason, project string) (failed, success float64) {
 	failed = testutil.ToFloat64(gitlabWebHookFailed.WithLabelValues(string(eventType), reason, ""))
-	success = testutil.ToFloat64(gitlabWebHookSuccess.WithLabelValues(string(eventType), "processed", project))
+	for _, ok := range []string{"processed", "processed-after-retry"} {
+		success += testutil.ToFloat64(gitlabWebHookSuccess.WithLabelValues(string(eventType), ok, project))
+	}
 	return failed, success
+}
+
+// waitForFailedPublish waits until the background retries of a failed publish
+// have given up and counted it, so they can't log into a later test.
+func waitForFailedPublish(t *testing.T, eventType gogitlab.EventType, before float64) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		return testutil.ToFloat64(gitlabWebHookFailed.WithLabelValues(string(eventType), hookFailedPublish, "")) == before+1
+	}, 5*time.Second, 20*time.Millisecond, "a failed publish must count as failed once its retries give up")
 }
 
 func TestHandlerCountsPublishFailures(t *testing.T) {
@@ -96,8 +98,8 @@ func TestHandlerCountsPublishFailures(t *testing.T) {
 
 			postHook(t, h, tc.eventType, tc.body)
 
-			failedAfter, successAfter := hookCounts(tc.eventType, hookFailedPublish, metricsTestProject)
-			require.Equal(t, failedBefore+1, failedAfter, "a failed publish must count as failed")
+			waitForFailedPublish(t, tc.eventType, failedBefore)
+			_, successAfter := hookCounts(tc.eventType, hookFailedPublish, metricsTestProject)
 			require.Equal(t, successBefore, successAfter, "a failed publish must not count as success")
 		})
 	}
@@ -196,10 +198,14 @@ func TestHandlerCountsEnqueueAttempts(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newMetricsTestHandler(t, tc.withStream)
 			before := enqueueAttempts()
+			failedBefore, _ := hookCounts(tc.eventType, hookFailedPublish, metricsTestProject)
 
 			postHook(t, h, tc.eventType, tc.body)
 
 			require.Equal(t, before+1, enqueueAttempts())
+			if !tc.withStream {
+				waitForFailedPublish(t, tc.eventType, failedBefore)
+			}
 		})
 	}
 }
