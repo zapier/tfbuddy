@@ -30,16 +30,25 @@ type Stream struct {
 // reads the run event and polling queues.
 func NewStream(js nats.JetStreamContext, jsc jetstream.JetStream, dedupWindow time.Duration) StreamClient {
 
-	configureTFRunEventsStream(js, dedupWindow)
-	configureTFRunPollingTaskStream(js)
-	kv, _ := configureTFRunMetadataKVStore(js)
-	pollingKV, _ := configureRunPollingKVStore(js)
-	autoMergeKV, _ := configureAutoMergeMetadataKVStore(js)
-	dispatchKV, err := configureWorkspaceDispatchKVStore(js)
+	// Each step waits for NATS if it is briefly unavailable, for example while
+	// a NATS server restarts during a rollout, and all of them share one
+	// window. Without the streams and the metadata, polling and auto-merge
+	// buckets TFBuddy can't work, so it exits if they still can't be set up.
+	deadline := newSetupDeadline()
+	mustSetUp(deadline, RunEventsStreamName+" stream", noValue(func() error { return configureTFRunEventsStream(js, dedupWindow) }))
+	mustSetUp(deadline, RunPollingStreamNameV0+" stream", noValue(func() error { return configureTFRunPollingTaskStream(js) }))
+	kv := mustSetUp(deadline, RunMetadataKvBucket+" bucket", func() (nats.KeyValue, error) { return configureTFRunMetadataKVStore(js) })
+	pollingKV := mustSetUp(deadline, RunPollingKvName+" bucket", func() (nats.KeyValue, error) { return configureRunPollingKVStore(js) })
+	autoMergeKV := mustSetUp(deadline, AutoMergeMetadataKvBucket+" bucket", func() (nats.KeyValue, error) { return configureAutoMergeMetadataKVStore(js) })
+	// The dispatch claims only guard against duplicate runs, so TFBuddy runs
+	// without them rather than not at all.
+	dispatchKV, err := setUpWithRetry(deadline, WorkspaceDispatchKvBucket+" bucket", func() (nats.KeyValue, error) { return configureWorkspaceDispatchKVStore(js) })
 	if err != nil {
 		log.Error().Err(err).Msg("could not configure workspace dispatch KV store; redelivered triggers may start duplicate runs")
 	}
-	completionKV, err := configureRunCompletionKVStore(js)
+	// The completion records only keep a run from being counted as finished
+	// twice, so TFBuddy runs without them too.
+	completionKV, err := setUpWithRetry(deadline, RunCompletionKvBucket+" bucket", func() (nats.KeyValue, error) { return configureRunCompletionKVStore(js) })
 	if err != nil {
 		log.Error().Err(err).Msg("could not configure run completion KV store; a redelivered final run event may be counted twice")
 	}

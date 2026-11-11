@@ -10,6 +10,15 @@ import (
 
 const HooksStreamName = "HOOKS"
 
+// hooksDuplicatesWindow is how long the HOOKS stream remembers a message ID
+// to drop a duplicate publish. It must outlast a whole PublishWithRetry: the
+// first attempt, DefaultRetryPolicy.For of retries, and the last attempt,
+// each attempt bounded by the JetStream publish timeout. Otherwise a retry of
+// an event whose first publish was stored but not acknowledged could be
+// stored a second time. The NATS default is 2 minutes, the same as the
+// retries alone.
+const hooksDuplicatesWindow = 5 * time.Minute
+
 type HooksStream struct {
 	nc *nats.Conn
 	js nats.JetStreamContext
@@ -41,6 +50,7 @@ func configureHooksStream(js nats.JetStreamContext) {
 		MaxMsgs:     10240,
 		MaxAge:      time.Hour * 1,
 		Replicas:    1,
+		Duplicates:  hooksDuplicatesWindow,
 	}
 
 	strInfo, err := js.StreamInfo(sCfg.Name)

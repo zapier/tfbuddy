@@ -57,6 +57,7 @@ type GitlabHooksHandler struct {
 
 	// hook streams and workers
 	hookSecretKey string
+	publishRetry  hooks_stream.RetryPolicy
 	notesStream   *gongs.GenericStream[NoteEventMsg, *NoteEventMsg]
 	mrStream      *gongs.GenericStream[MergeRequestEventMsg, *MergeRequestEventMsg]
 	hooksWorker   *GitlabEventWorker
@@ -75,6 +76,7 @@ func NewGitlabHooksHandler(cfg config.Config, gl vcs.GitClient, tfc tfc_api.ApiC
 		mrStream:        mrStream,
 		notesStream:     notesStream,
 		hookSecretKey:   cfg.GitlabHookSecretKey,
+		publishRetry:    hooks_stream.DefaultRetryPolicy,
 	}
 
 	h.hooksWorker = NewGitlabEventWorker(h, jsc)
@@ -107,10 +109,6 @@ func (h *GitlabHooksHandler) handler(c echo.Context) error {
 		return c.String(http.StatusBadRequest, "Invalid X-Gitlab-Event")
 	}
 
-	// err and failReason are set inside the cases below and read after the
-	// switch, so the cases must assign them, not declare their own.
-	var err error
-	var failReason string
 	var proj string
 	labels["eventType"] = string(eventType)
 	switch eventType {
@@ -119,10 +117,9 @@ func (h *GitlabHooksHandler) handler(c echo.Context) error {
 		ctx, span := otel.Tracer("GitlabHandler").Start(c.Request().Context(), "Gitlab - MergeRequestHook")
 		defer span.End()
 
-		var event *gogitlab.MergeEvent
-		event, err = getGitlabEventBody[gogitlab.MergeEvent](c)
+		event, err := getGitlabEventBody[gogitlab.MergeEvent](c)
 		if checkError(ctx, err, "could not decode merge request event") {
-			failReason = hookFailedDecode
+			gitlabWebHookFailed.WithLabelValues(labels["eventType"], hookFailedDecode, "").Inc()
 			break
 		}
 		log.Info().Str("project", event.Project.PathWithNamespace).Str("action", event.ObjectAttributes.Action).Int("mergeRequestID", event.ObjectAttributes.IID).Msg("processing GitLab Merge Request event")
@@ -140,50 +137,76 @@ func (h *GitlabHooksHandler) handler(c echo.Context) error {
 		}
 
 		proj = event.Project.PathWithNamespace
-		_, err = h.mrStream.Publish(ctx, msg)
-		if checkError(ctx, err, fmt.Sprintf("could not publish merge request event to stream for project: %s, merge request ID: %d", proj, event.ObjectAttributes.IID)) {
-			failReason = hookFailedPublish
-		}
+		h.publish(ctx, labels["eventType"], proj,
+			fmt.Sprintf("merge request event for project: %s, merge request ID: %d", proj, event.ObjectAttributes.IID),
+			func(ctx context.Context) error {
+				_, err := h.mrStream.Publish(ctx, msg)
+				return err
+			})
 
 	case gogitlab.EventTypeNote:
 		gitlabWebHookEnqueueAttempts.WithLabelValues(string(eventType)).Inc()
 		ctx, span := otel.Tracer("GitlabHandler").Start(c.Request().Context(), "Gitlab - EventTypeNote")
 		defer span.End()
 
-		var event *NoteEventMsg
-		event, err = getNoteEventBody(c)
+		event, err := getNoteEventBody(c)
 		if checkError(ctx, err, "could not decode Note/Comment event") {
-			failReason = hookFailedDecode
+			gitlabWebHookFailed.WithLabelValues(labels["eventType"], hookFailedDecode, "").Inc()
 			break
 		}
 		event.DeliveryID = gitlabDeliveryID(c.Request())
 		log.Info().Str("project", event.Payload.GetProject().GetPathWithNamespace()).Int("mergeRequestID", event.Payload.GetMR().GetInternalID()).Str("discussionID", event.Payload.GetDiscussionID()).Msg("processing GitLab Note/Comment event")
 
 		proj = event.Payload.GetProject().GetPathWithNamespace()
-		_, err = h.notesStream.Publish(ctx, event)
-		if checkError(ctx, err, fmt.Sprintf("could not publish note event to stream for project: %s, merge request ID: %d, discussion ID: %s", proj, event.Payload.GetMR().GetInternalID(), event.Payload.GetDiscussionID())) {
-			failReason = hookFailedPublish
-		}
+		h.publish(ctx, labels["eventType"], proj,
+			fmt.Sprintf("note event for project: %s, merge request ID: %d, discussion ID: %s", proj, event.Payload.GetMR().GetInternalID(), event.Payload.GetDiscussionID()),
+			func(ctx context.Context) error {
+				_, err := h.notesStream.Publish(ctx, event)
+				return err
+			})
 
 	default:
 		log.Info().Msgf("Ignoring Gitlab Event type: %s", eventType)
 		labels["reason"] = GitlabHookIgnoreReasonUnhandledEventType
 		labels["project"] = ""
 		gitlabWebHookIgnored.With(labels).Inc()
-		return c.String(http.StatusOK, "OK")
-	}
-	labels["project"] = proj
-
-	if err != nil {
-		// Recorded without the project so the series exist from startup
-		// (see init in metrics.go). The project is in the error log above.
-		gitlabWebHookFailed.WithLabelValues(labels["eventType"], failReason, "").Inc()
-	} else {
-		labels["reason"] = "processed"
-		gitlabWebHookSuccess.With(labels).Inc()
 	}
 
+	// Always answer 200: GitLab doesn't resend a failed delivery, and it
+	// disables a webhook after four failed deliveries in a row.
 	return c.String(http.StatusOK, "OK")
+}
+
+// publish sends a webhook event to the HOOKS stream and counts the outcome.
+// A publish that fails, for example while a NATS server restarts, is retried
+// in the background, because GitLab won't resend the delivery.
+func (h *GitlabHooksHandler) publish(ctx context.Context, eventType, project, event string, publish func(context.Context) error) {
+	// The request's context ends with the response, and the retries outlive it.
+	ctx = context.WithoutCancel(ctx)
+	// Each outcome is logged before it is counted, so once the counter shows
+	// an outcome its log line has been written.
+	ok := hooks_stream.PublishWithRetry(func() error { return publish(ctx) }, h.publishRetry, func(err error, attempts int) {
+		switch {
+		case err != nil:
+			log.Error().Err(err).Int("attempts", attempts).
+				Msgf("could not publish %s; GitLab won't resend it, so resend it from the webhook's recent events", event)
+			// Recorded without the project so the series exist from startup
+			// (see init in metrics.go). The project is in the error log.
+			gitlabWebHookFailed.WithLabelValues(eventType, hookFailedPublish, "").Inc()
+		case attempts > 1:
+			log.Info().Int("attempts", attempts).Msgf("published %s after retrying", event)
+			gitlabWebHookSuccess.With(webhookLabels(eventType, project, "processed-after-retry")).Inc()
+		default:
+			gitlabWebHookSuccess.With(webhookLabels(eventType, project, "processed")).Inc()
+		}
+	})
+	if !ok {
+		log.Warn().Msgf("could not publish %s; retrying in the background", event)
+	}
+}
+
+func webhookLabels(eventType, project, reason string) prometheus.Labels {
+	return prometheus.Labels{"eventType": eventType, "project": project, "reason": reason}
 }
 
 func getGitlabEventBody[T any](c echo.Context) (*T, error) {

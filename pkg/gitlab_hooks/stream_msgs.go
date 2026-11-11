@@ -44,8 +44,12 @@ type NoteEventMsg struct {
 	Context    context.Context
 }
 
+// GetId is the event's Nats-Msg-Id, which the HOOKS stream uses to drop a
+// duplicate publish within its Duplicates window. It includes the note ID:
+// with the discussion ID alone, a second comment in the same thread inside
+// the window was dropped as a duplicate of the first.
 func (e *NoteEventMsg) GetId(ctx context.Context) string {
-	return e.Payload.GetDiscussionID()
+	return fmt.Sprintf("%s-%d", e.Payload.GetDiscussionID(), e.Payload.GetEventSequence())
 }
 
 func (e *NoteEventMsg) DecodeEventData(b []byte) error {
@@ -111,8 +115,16 @@ type MergeRequestEventMsg struct {
 	Context    context.Context
 }
 
+// GetId is the event's Nats-Msg-Id, which the HOOKS stream uses to drop a
+// duplicate publish within its Duplicates window. It includes the MR's
+// updated_at, which changes with every state change: without it, reopening an
+// MR at the same commit again inside the window was dropped as a duplicate of
+// the earlier reopen, and the MR was not planned. Retries of one delivery
+// carry the same payload and so the same ID, and so does the same event
+// delivered through both a group and a project webhook.
 func (e *MergeRequestEventMsg) GetId(ctx context.Context) string {
-	return fmt.Sprintf("%d-%s-%s", e.Payload.ObjectAttributes.ID, e.Payload.ObjectAttributes.Action, e.Payload.ObjectAttributes.LastCommit.ID)
+	attrs := e.Payload.ObjectAttributes
+	return fmt.Sprintf("%d-%s-%s-%s", attrs.ID, attrs.Action, attrs.LastCommit.ID, attrs.UpdatedAt)
 }
 
 func (e *MergeRequestEventMsg) DecodeEventData(b []byte) error {
