@@ -1078,3 +1078,41 @@ func TestFallBackToManualMode_RetriesTheMark(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// An MR that fell back while its author was an Auto Mode author keeps the
+// fallback when the author is later removed from the config: its apply still
+// needs a person's approval, and with no Auto Mode config left to tell
+// automatic approvers apart, it is refused.
+func TestTFCEvents_FallbackOfARemovedAuthorNeedsAPerson(t *testing.T) {
+	withoutAuthor := strings.Replace(autoModeTargetConfig, "username: tags-bot", "username: other-bot", 1)
+	withoutAuthor = strings.Replace(withoutAuthor, "  classes:", "  automaticApprovers: [approver-bot]\n  classes:", 1)
+	for _, tt := range []struct {
+		name, config, wantErr string
+	}{
+		{name: "author removed", config: withoutAuthor, wantErr: "none of its approvals is from a person"},
+		{name: "Auto Mode config removed", config: "workspaces:\n  - name: service-tfbuddy\n", wantErr: "no longer has an Auto Mode config"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			ts := mocks.CreateTestSuite(ctrl, mocks.TestOverrides{ProjectConfig: autoModeWorkspaces()}, t)
+			ts.MockStreamClient.EXPECT().IsAutoModeManual(runstream.AutoModeMRRef{VcsProvider: "gitlab", Project: ts.MetaData.ProjectNameNS, MergeRequest: 101}).
+				Return(true, "a plan failed", nil)
+			expectMR(ctrl, ts, "tags-bot", tt.config, []string{autoModeTagsFile}, nil)
+			approvedBy(ctrl, ts, "approver-bot")
+			ts.MockGitClient.EXPECT().SetWorkspaceStatus(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+			// No CreateRunFromSource expectation: nothing may run.
+			ts.InitTestSuite()
+
+			tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
+				Action: tfc_trigger.ApplyAction, Branch: ts.MetaData.SourceBranch, CommitSHA: "abcd12233",
+				ProjectNameWithNamespace: ts.MetaData.ProjectNameNS, MergeRequestIID: 101,
+				TriggerSource: tfc_trigger.CommentTrigger, VcsProvider: "gitlab", AutoMergeSequence: 5,
+			})
+			_, err := tfc_trigger.NewTFCTrigger(autoModeAppConfig(), ts.MockGitClient, ts.MockApiClient, ts.MockStreamClient, tCfg).
+				TriggerTFCEvents(context.Background())
+			if !errors.Is(err, utils.ErrPermanent) || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("expected the apply to be refused with %q, got %v", tt.wantErr, err)
+			}
+		})
+	}
+}

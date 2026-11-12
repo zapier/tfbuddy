@@ -502,7 +502,10 @@ for example, may approve on a green `TFC/class` and, as a code owner of the
 class files, its approval alone can satisfy GitLab's approval rules. So for a
 fallen-back MR, TFBuddy refuses `tfc apply`, and says why, unless at least one
 current approval comes from a user who is neither listed under
-`automaticApprovers` nor an Auto Mode author:
+`automaticApprovers` nor an Auto Mode author. This holds even if the author is
+later removed from `authors`; if the default branch no longer has an
+`autoMode` section to tell automatic approvers apart, TFBuddy refuses the
+apply:
 
 ```yaml
 autoMode:
@@ -528,6 +531,10 @@ all of these hold, and otherwise says why on the MR:
    posted count. Anyone with Developer access can post a status with any
    name, so a `TFC/plan/*` or `TFC/class` status from anyone else is ignored,
    and one of those names that only someone else posted blocks the apply.
+   The head commit's class plans recorded in NATS must also have finished
+   and passed, with the class the apply would use: `TFC/class` is only what
+   TFBuddy last wrote to GitLab, and a write that failed, or a late one from
+   plans begun again since, can leave it green.
 4. The head commit's CI pipeline exists and every job in it has succeeded,
    whatever `TFBUDDY_REQUIRE_PIPELINE_SUCCESS` says. As for `tfc apply`, a
    `manual` or `skipped` job, and a job allowed to fail, does not block.

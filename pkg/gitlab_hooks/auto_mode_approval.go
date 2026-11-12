@@ -2,11 +2,13 @@ package gitlab_hooks
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
 
 	"github.com/rs/zerolog/log"
+	"github.com/zapier/tfbuddy/pkg/runstream"
 	"github.com/zapier/tfbuddy/pkg/tfc_trigger"
 	"github.com/zapier/tfbuddy/pkg/utils"
 	"github.com/zapier/tfbuddy/pkg/vcs"
@@ -62,7 +64,7 @@ func (w *GitlabEventWorker) processAutoModeApproval(ctx context.Context, msg *Me
 		return nil
 	}
 
-	if reason := w.autoModeApplyBlocker(ctx, mr, proj, headSHA, autoMode.RequiredJobs); reason != "" {
+	if reason := w.autoModeApplyBlocker(ctx, mr, proj, headSHA, class, autoMode.RequiredJobs); reason != "" {
 		log.Info().Str("project", proj).Int("mergeRequestID", mrIID).Str("reason", reason).
 			Msg("Auto Mode approval did not start an apply")
 		w.postAutoModeMessage(ctx, proj, mrIID, fmt.Sprintf(autoModeApplyBlockedMessage, reason))
@@ -104,10 +106,11 @@ func (w *GitlabEventWorker) processAutoModeApproval(ctx context.Context, msg *Me
 }
 
 // autoModeApplyBlocker returns why an approved Auto Mode merge request must not
-// apply yet, or "" when it may. requiredJobs are the CI jobs that must have
-// succeeded. Lock and divergence checks are not here: the apply path itself
-// runs them, failing closed for Auto Mode.
-func (w *GitlabEventWorker) autoModeApplyBlocker(ctx context.Context, mr vcs.DetailedMR, proj, headSHA string, requiredJobs []string) string {
+// apply yet, or "" when it may. class is the change class it would apply with,
+// and requiredJobs are the CI jobs that must have succeeded. Lock and
+// divergence checks are not here: the apply path itself runs them, failing
+// closed for Auto Mode.
+func (w *GitlabEventWorker) autoModeApplyBlocker(ctx context.Context, mr vcs.DetailedMR, proj, headSHA, class string, requiredJobs []string) string {
 	switch {
 	case mr.GetState() != "opened":
 		return "the MR is not open"
@@ -139,6 +142,9 @@ func (w *GitlabEventWorker) autoModeApplyBlocker(ctx context.Context, mr vcs.Det
 		return fmt.Sprintf("could not read TFBuddy's GitLab account: %v", err)
 	}
 	if reason := planStatusBlocker(statuses, tfbuddy); reason != "" {
+		return reason
+	}
+	if reason := w.classPlansBlocker(proj, mrIID, headSHA, class); reason != "" {
 		return reason
 	}
 
@@ -193,6 +199,28 @@ func (w *GitlabEventWorker) requiredJobsBlocker(ctx context.Context, proj string
 		return fmt.Sprintf("%s has no required job %s", vcs.DescribePipeline(pipeline), strings.Join(missing, ", "))
 	case len(notSucceeded) > 0:
 		return fmt.Sprintf("a required job in %s has not succeeded: %s", vcs.DescribePipeline(pipeline), strings.Join(notSucceeded, ", "))
+	}
+	return ""
+}
+
+// classPlansBlocker returns why the recorded class plans of the head commit do
+// not allow an Auto Mode apply with class, or "". TFC/class on GitLab is only
+// what TFBuddy last wrote there: a write that failed, or a late one from plans
+// that were begun again since, can leave it green. The recorded plans are the
+// result it reports, so the gate reads them too.
+func (w *GitlabEventWorker) classPlansBlocker(proj string, mrIID int, headSHA, class string) string {
+	state, err := w.runstream.GetClassPlans(tfc_trigger.ClassPlanRef(proj, mrIID, headSHA))
+	switch {
+	case errors.Is(err, runstream.ErrClassPlansNotFound):
+		return "the head commit has no recorded class plans"
+	case err != nil:
+		return fmt.Sprintf("could not read the head commit's class plans: %v", err)
+	case state.Class != class:
+		return fmt.Sprintf("the head commit was planned with class %s, not %s", state.Class, class)
+	case !state.Finished:
+		return "the head commit's class plans have not all finished"
+	case !state.Passed():
+		return fmt.Sprintf("the class plan for %s did not pass", strings.Join(state.FailedWorkspaces(), ", "))
 	}
 	return ""
 }

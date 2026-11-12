@@ -2,6 +2,7 @@ package gitlab_hooks
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -209,8 +210,21 @@ func (f *autoModeFixture) expectMR(author string) {
 	}, nil).AnyTimes()
 }
 
-// expectGates answers every gate the approval checks.
+// passedClassPlans are the recorded class plans of a head commit whose tags
+// class passed.
+func passedClassPlans() *runstream.ClassPlanState {
+	return &runstream.ClassPlanState{
+		VcsProvider: "gitlab", Project: gateProject, MergeRequest: gateMRIID, CommitSHA: gateCommitSHA,
+		Class: "tags", Finished: true, Reported: true,
+		Workspaces: map[string]*runstream.ClassPlanWorkspace{"svc-a": {RunID: "run-a", Outcome: runstream.ClassPlanPassed}},
+	}
+}
+
+// expectGates answers every gate the approval checks. The head commit's
+// recorded class plans passed, unless a test registered other ones first.
 func (f *autoModeFixture) expectGates(approved bool, buildStatus string) {
+	f.stream.EXPECT().GetClassPlans(runstream.ClassPlanRef{VcsProvider: "gitlab", Project: gateProject, MergeRequest: gateMRIID, CommitSHA: gateCommitSHA}).
+		Return(passedClassPlans(), nil).AnyTimes()
 	f.client.EXPECT().GetAuthenticatedUsername(gomock.Any()).Return(tfbuddyUsername, nil).AnyTimes()
 	approvals := mocks.NewMockMRApproved(f.ctrl)
 	approvals.EXPECT().IsApproved().Return(approved).AnyTimes()
@@ -327,6 +341,53 @@ func TestAutoModeApproval_DoesNotApply(t *testing.T) {
 			}
 
 			if _, err := f.worker.processMergeRequestEvent(mergeEventMsg(tt.action)); err != nil {
+				t.Fatal(err)
+			}
+			if applies := f.applies(); len(applies) != 0 {
+				t.Fatalf("expected no apply, but an apply trigger was built: %+v", applies[0])
+			}
+		})
+	}
+}
+
+// A green TFC/class is only what TFBuddy last wrote to GitLab: a failed write,
+// or a late one from plans begun again since, can leave it green. The gate
+// also needs the head's recorded class plans to have passed, with the class
+// the apply would use.
+func TestAutoModeApproval_RecordedClassPlansDecide(t *testing.T) {
+	unfinished := passedClassPlans()
+	unfinished.Finished = false
+	unfinished.Workspaces["svc-a"].Outcome = runstream.ClassPlanPending
+	failed := passedClassPlans()
+	failed.Workspaces["svc-a"].Outcome = runstream.ClassPlanFailed
+	otherClass := passedClassPlans()
+	otherClass.Class = "renovate-safe-plan"
+	for _, tt := range []struct {
+		name        string
+		state       *runstream.ClassPlanState
+		err         error
+		wantComment string
+	}{
+		{name: "no recorded plans", err: runstream.ErrClassPlansNotFound, wantComment: "no recorded class plans"},
+		{name: "unreadable plans", err: errors.New("nats: timeout"), wantComment: "could not read the head commit's class plans"},
+		{name: "plans still running", state: unfinished, wantComment: "have not all finished"},
+		{name: "a plan failed", state: failed, wantComment: "the class plan for svc-a did not pass"},
+		{name: "planned with another class", state: otherClass, wantComment: "planned with class renovate-safe-plan, not tags"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newAutoModeFixture(t, true)
+			f.expectMR("tags-bot")
+			f.stream.EXPECT().GetClassPlans(gomock.Any()).Return(tt.state, tt.err)
+			f.expectGates(true, "success")
+			f.client.EXPECT().CreateMergeRequestComment(gomock.Any(), gateMRIID, gateProject, gomock.Any()).
+				DoAndReturn(func(_ context.Context, _ int, _ string, msg string) error {
+					if !strings.Contains(msg, tt.wantComment) {
+						t.Errorf("comment = %q, want it to mention %q", msg, tt.wantComment)
+					}
+					return nil
+				})
+
+			if _, err := f.worker.processMergeRequestEvent(mergeEventMsg("approved")); err != nil {
 				t.Fatal(err)
 			}
 			if applies := f.applies(); len(applies) != 0 {

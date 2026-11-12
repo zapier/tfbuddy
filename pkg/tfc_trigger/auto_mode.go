@@ -373,11 +373,16 @@ func (t *TFCTrigger) resolveAutoMode(ctx context.Context, mr vcs.DetailedMR, tri
 	}
 	author := autoMode.Author(mr.GetAuthor().GetUsername())
 	if author == nil {
+		if t.GetAction() == ApplyAction {
+			// The author may have been removed from the config after the MR
+			// fell back; its apply still needs a person's approval.
+			return t.readFallbackOfUnlistedAuthor(autoMode)
+		}
 		return nil
 	}
 	t.autoModeConfig = autoMode
 	// Once an MR has fallen back to Manual Mode it stays there, whatever its
-	// target, commits, files and plans look like now.
+	// target, author list, commits, files and plans look like now.
 	manual, reason, err := t.runstream.IsAutoModeManual(t.autoModeRef())
 	if err != nil {
 		return fmt.Errorf("could not read whether the MR has fallen back to Manual Mode. %w", err)
@@ -442,6 +447,23 @@ func (t *TFCTrigger) resolveAutoMode(ctx context.Context, mr vcs.DetailedMR, tri
 	return nil
 }
 
+// readFallbackOfUnlistedAuthor marks the trigger as fallen back when the MR,
+// whose author autoMode does not list, has fallen back to Manual Mode anyway:
+// its author was listed when it fell back.
+func (t *TFCTrigger) readFallbackOfUnlistedAuthor(autoMode *AutoModeConfig) error {
+	manual, reason, err := t.runstream.IsAutoModeManual(t.autoModeRef())
+	if err != nil {
+		return fmt.Errorf("could not read whether the MR has fallen back to Manual Mode. %w", err)
+	}
+	if manual {
+		t.fellBack = true
+		t.autoModeConfig = autoMode
+		log.Info().Str("project", t.GetProjectNameWithNamespace()).Int("mergeRequestID", t.GetMergeRequestIID()).
+			Str("reason", reason).Msg("merge request fell back to Manual Mode while its author was an Auto Mode author")
+	}
+	return nil
+}
+
 // AutoModeClassForMR returns the change class that a plan or apply of mr in
 // project would run with right now, or ClassNone when it would run in Manual
 // Mode, and the Auto Mode config it decided with. It decides through the same code as TriggerTFCEvents, so an approval
@@ -493,6 +515,11 @@ func AutoModeClassForMR(ctx context.Context, appCfg config.Config, gl vcs.GitCli
 // an approval bot may have approved it while it was in Auto Mode, and as
 // a code owner of the class files its approval alone can satisfy GitLab.
 func (t *TFCTrigger) requirePersonApproval(ctx context.Context) error {
+	if t.autoModeConfig == nil {
+		// Without the config, an automatic approver cannot be told apart.
+		return utils.CreatePermanentError(errors.New("refusing `tfc apply`: this MR fell back from Auto Mode to Manual Mode, and the default branch no longer has an Auto Mode config " +
+			"to tell automatic approvers apart from people"))
+	}
 	approvals, err := t.gl.GetMergeRequestApprovals(ctx, t.GetMergeRequestIID(), t.GetProjectNameWithNamespace())
 	if err != nil {
 		return fmt.Errorf("could not read the MR's approvals to check for a person's: %w", err)
