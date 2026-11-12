@@ -35,13 +35,13 @@ type StreamClient interface {
 	SetAutoModeSummaryNote(ref AutoModeMRRef, noteID int64) error
 	// BeginClassPlans, RegisterClassPlanRun, RecordClassPlanResult and
 	// MarkClassPlansReported keep the outcome of each class plan of an Auto
-	// Mode commit, and whether TFC/class reports it yet. HasClassPlans reports
-	// whether a commit was planned in Auto Mode.
+	// Mode commit, and whether TFC/class reports it yet; GetClassPlans reads
+	// them.
 	BeginClassPlans(ref ClassPlanRef, class string, workspaces []string, trigger string) (bool, error)
-	RegisterClassPlanRun(ref ClassPlanRef, workspace, runID string) error
+	RegisterClassPlanRun(ref ClassPlanRef, workspace, runID, trigger string) error
 	RecordClassPlanResult(ref ClassPlanRef, workspace, runID string, passed bool, detail string) (*ClassPlanState, bool, error)
-	MarkClassPlansReported(ref ClassPlanRef) error
-	HasClassPlans(ref ClassPlanRef) (bool, error)
+	MarkClassPlansReported(ref ClassPlanRef, trigger string) error
+	GetClassPlans(ref ClassPlanRef) (*ClassPlanState, error)
 	NewTFRunPollingTask(meta RunMetadata, delay time.Duration) RunPollingTask
 	SubscribeTFRunPollingTasks(cb func(task RunPollingTask) bool) (closer func(), err error)
 	SubscribeTFRunEvents(queue string, cb func(run RunEvent) bool) (closer func(), err error)

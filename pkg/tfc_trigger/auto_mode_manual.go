@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/rs/zerolog/log"
 	"github.com/zapier/tfbuddy/internal/config"
 	"github.com/zapier/tfbuddy/pkg/runstream"
@@ -89,8 +91,10 @@ func (t *TFCTrigger) fallBackToManualMode(ctx context.Context, reason string, re
 // passes the Auto Mode gate (or an automatic approver's check), and unlike failed it
 // does not keep the pipeline red, so the Manual Mode MR can still merge. The
 // first caller to set the mark also comments on the MR and, with Replan,
-// asks for a plan of the head commit without a class. It returns
-// an error only when the mark could not be recorded; TFC/class then fails.
+// asks for a plan of the head commit without a class. It retries the mark a
+// few times, since some callers have no later event that would retry it, and
+// returns an error only when the mark could not be recorded; TFC/class then
+// fails.
 func FallBackToManualMode(ctx context.Context, d AutoModeDeps, fb ManualModeFallback) error {
 	ctx, span := otel.Tracer("TFC").Start(ctx, "FallBackToManualMode")
 	defer span.End()
@@ -98,7 +102,12 @@ func FallBackToManualMode(ctx context.Context, d AutoModeDeps, fb ManualModeFall
 	logger := log.With().Str("project", fb.Project).Int("mergeRequestID", fb.MergeRequestIID).
 		Str("commitSHA", fb.CommitSHA).Str("class", fb.Class).Str("reason", fb.Reason).Logger()
 
-	first, markErr := d.RS.MarkAutoModeManual(autoModeRef(fb.Project, fb.MergeRequestIID), fb.Reason)
+	var first bool
+	markErr := backoff.Retry(func() error {
+		var err error
+		first, err = d.RS.MarkAutoModeManual(autoModeRef(fb.Project, fb.MergeRequestIID), fb.Reason)
+		return err
+	}, backoff.WithContext(backoff.WithMaxRetries(fallbackMarkBackOff(), fallbackMarkRetries), ctx))
 	status := vcs.ClassStatus{
 		Project:         fb.Project,
 		CommitSHA:       fb.CommitSHA,
@@ -149,6 +158,18 @@ func FallBackToManualMode(ctx context.Context, d AutoModeDeps, fb ManualModeFall
 		}
 	}
 	return nil
+}
+
+// fallbackMarkRetries bounds the retries of a Manual Mode mark that NATS did
+// not record. Callers run inside webhook and run-event handlers that must
+// finish within their AckWait, so the retries stay within a few seconds.
+const fallbackMarkRetries = 3
+
+func fallbackMarkBackOff() *backoff.ExponentialBackOff {
+	b := backoff.NewExponentialBackOff()
+	b.InitialInterval = 250 * time.Millisecond
+	b.MaxInterval = time.Second
+	return b
 }
 
 // ManualModeClassDescription is the TFC/class description on every commit of

@@ -66,7 +66,7 @@ func (p *RunStatusUpdater) updateCommitStatusForRun(ctx context.Context, run *tf
 	case tfe.RunErrored:
 		// The run has errored. This is a final state.
 		p.updateStatus(ctx, gogitlab.Failed, rmd.GetAction(), rmd)
-		p.fallBackOnErroredAutoModeApply(ctx, rmd)
+		return p.fallBackOnErroredAutoModeApply(ctx, rmd)
 
 	case tfe.RunPlanning:
 		// The planning phase of a run is in progress.
@@ -95,8 +95,7 @@ func (p *RunStatusUpdater) updateCommitStatusForRun(ctx context.Context, run *tf
 		// run, and as policy_override on a run that would apply. TFBuddy never
 		// overrides a policy for Auto Mode: it discards the apply instead.
 		if rmd.GetChangeClass() != "" && rmd.GetAction() == runstream.ApplyAction {
-			p.discardSoftFailedAutoModeApply(ctx, run, rmd)
-			return nil
+			return p.discardSoftFailedAutoModeApply(ctx, run, rmd)
 		}
 		if run.Status == tfe.RunPolicyOverride {
 			// Manual Mode: a person decides in TFC whether to override.

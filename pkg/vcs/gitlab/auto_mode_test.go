@@ -56,6 +56,12 @@ func TestSetClassStatusPostsTFCClass(t *testing.T) {
 // classPlanRef is the class plans of the commit these tests plan.
 var classPlanRef = runstream.ClassPlanRef{VcsProvider: "gitlab", Project: testProject, MergeRequest: 101, CommitSHA: "abc123"}
 
+// currentClassPlans makes the report find that the class plans it reports
+// are still the commit's current ones, begun with no trigger.
+func currentClassPlans(rs *mocks.MockStreamClient) {
+	rs.EXPECT().GetClassPlans(classPlanRef).Return(&runstream.ClassPlanState{}, nil).AnyTimes()
+}
+
 func classPlanRun(ws, runID string) *runstream.TFRunMetadata {
 	return &runstream.TFRunMetadata{
 		Action: runstream.PlanAction, Workspace: ws, RunID: runID, CommitSHA: "abc123",
@@ -71,6 +77,7 @@ func TestUpdateClassStatusAfterLastPlan(t *testing.T) {
 	client := mocks.NewMockGitClient(ctrl)
 	rs := mocks.NewMockStreamClient(ctrl)
 	r := &RunStatusUpdater{cfg: config.C, client: client, rs: rs}
+	currentClassPlans(rs)
 
 	// A run that has not finished, a person's run and an apply run make no calls.
 	r.updateClassStatus(context.Background(), &tfe.Run{Status: tfe.RunPlanning}, classPlanRun("a", "run-a"))
@@ -106,7 +113,7 @@ func TestUpdateClassStatusAfterLastPlan(t *testing.T) {
 			}
 			return nil
 		})
-	rs.EXPECT().MarkClassPlansReported(classPlanRef).Return(nil)
+	rs.EXPECT().MarkClassPlansReported(classPlanRef, "").Return(nil)
 	if err := r.updateClassStatus(context.Background(), &tfe.Run{Status: tfe.RunPlannedAndFinished}, classPlanRun("b", "run-b")); err != nil {
 		t.Fatal(err)
 	}
@@ -187,6 +194,7 @@ func TestUpdateClassStatusReportsAFailedClass(t *testing.T) {
 	rs := mocks.NewMockStreamClient(ctrl)
 	r := &RunStatusUpdater{cfg: config.C, client: client, rs: rs}
 	mrRef := runstream.AutoModeMRRef{VcsProvider: "gitlab", Project: testProject, MergeRequest: 101}
+	currentClassPlans(rs)
 
 	finished := &runstream.ClassPlanState{
 		VcsProvider: "gitlab", Project: testProject, MergeRequest: 101, CommitSHA: "abc123", Class: "tags", Finished: true,
@@ -212,7 +220,7 @@ func TestUpdateClassStatusReportsAFailedClass(t *testing.T) {
 			return 66, nil
 		})
 	rs.EXPECT().SetAutoModeSummaryNote(mrRef, int64(66)).Return(nil)
-	rs.EXPECT().MarkClassPlansReported(classPlanRef).Return(nil)
+	rs.EXPECT().MarkClassPlansReported(classPlanRef, "").Return(nil)
 
 	if err := r.updateClassStatus(context.Background(), &tfe.Run{Status: tfe.RunPlannedAndFinished}, classPlanRun("b", "run-b")); err != nil {
 		t.Fatal(err)
@@ -226,6 +234,7 @@ func TestReportClassPlansFailsAManualModeMR(t *testing.T) {
 	client := mocks.NewMockGitClient(ctrl)
 	rs := mocks.NewMockStreamClient(ctrl)
 	mrRef := runstream.AutoModeMRRef{VcsProvider: "gitlab", Project: testProject, MergeRequest: 101}
+	currentClassPlans(rs)
 	state := &runstream.ClassPlanState{
 		VcsProvider: "gitlab", Project: testProject, MergeRequest: 101, CommitSHA: "abc123", Class: "tags", Finished: true,
 		Workspaces: map[string]*runstream.ClassPlanWorkspace{"a": {RunID: "run-a", Outcome: runstream.ClassPlanPassed}},
@@ -240,7 +249,7 @@ func TestReportClassPlansFailsAManualModeMR(t *testing.T) {
 	rs.EXPECT().GetAutoModeSummaryNote(mrRef).Return(int64(0), nil)
 	client.EXPECT().CreateMergeRequestCommentWithID(gomock.Any(), 101, testProject, gomock.Any()).Return(int64(1), nil)
 	rs.EXPECT().SetAutoModeSummaryNote(mrRef, int64(1)).Return(nil)
-	rs.EXPECT().MarkClassPlansReported(classPlanRef).Return(nil)
+	rs.EXPECT().MarkClassPlansReported(classPlanRef, "").Return(nil)
 
 	if err := tfc_trigger.ReportClassPlans(context.Background(), client, rs, state); err != nil {
 		t.Fatal(err)
@@ -255,6 +264,7 @@ func TestUpdateClassStatusReportsAgainAfterAFailedReport(t *testing.T) {
 	rs := mocks.NewMockStreamClient(ctrl)
 	r := &RunStatusUpdater{cfg: config.C, client: client, rs: rs}
 	mrRef := runstream.AutoModeMRRef{VcsProvider: "gitlab", Project: testProject, MergeRequest: 101}
+	currentClassPlans(rs)
 	state := func(reported bool) *runstream.ClassPlanState {
 		return &runstream.ClassPlanState{
 			VcsProvider: "gitlab", Project: testProject, MergeRequest: 101, CommitSHA: "abc123", Class: "tags",
@@ -277,7 +287,7 @@ func TestUpdateClassStatusReportsAgainAfterAFailedReport(t *testing.T) {
 		rs.EXPECT().GetAutoModeSummaryNote(mrRef).Return(int64(0), nil),
 		client.EXPECT().CreateMergeRequestCommentWithID(gomock.Any(), 101, testProject, gomock.Any()).Return(int64(3), nil),
 		rs.EXPECT().SetAutoModeSummaryNote(mrRef, int64(3)).Return(nil),
-		rs.EXPECT().MarkClassPlansReported(classPlanRef).Return(nil),
+		rs.EXPECT().MarkClassPlansReported(classPlanRef, "").Return(nil),
 		// Once reported, a later event reports nothing.
 		rs.EXPECT().RecordClassPlanResult(classPlanRef, "a", "run-a", true, "planned_and_finished").Return(state(true), false, nil),
 	)
@@ -450,5 +460,96 @@ func TestErroredAutoModeApplyFallsBackToManualMode(t *testing.T) {
 				t.Errorf("re-plan requests = %q, want %d", replanner.requests, want)
 			}
 		})
+	}
+}
+
+// When the MR's mode cannot be read, TFC/class fails closed, and the report is
+// not recorded, so that a retry can report the real result.
+func TestReportClassPlansRetriesAnUnreadableMode(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	client := mocks.NewMockGitClient(ctrl)
+	rs := mocks.NewMockStreamClient(ctrl)
+	currentClassPlans(rs)
+	state := &runstream.ClassPlanState{
+		VcsProvider: "gitlab", Project: testProject, MergeRequest: 101, CommitSHA: "abc123", Class: "tags", Finished: true,
+		Workspaces: map[string]*runstream.ClassPlanWorkspace{"a": {RunID: "run-a", Outcome: runstream.ClassPlanPassed}},
+	}
+	rs.EXPECT().IsAutoModeManual(gomock.Any()).Return(false, "", errors.New("nats: timeout"))
+	client.EXPECT().SetClassStatus(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, s vcs.ClassStatus) error {
+		if s.State != vcs.CommitStateFailed {
+			t.Errorf("TFC/class = %+v, want failed until the mode can be read", s)
+		}
+		return nil
+	})
+	// No summary and no MarkClassPlansReported.
+
+	if err := tfc_trigger.ReportClassPlans(context.Background(), client, rs, state); err == nil {
+		t.Fatal("a report that could not read the MR's mode must be retried")
+	}
+}
+
+// Plans that another trigger has begun again for the commit do not report:
+// the new plans report themselves.
+func TestReportClassPlansSkipsSupersededPlans(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	client := mocks.NewMockGitClient(ctrl)
+	rs := mocks.NewMockStreamClient(ctrl)
+	rs.EXPECT().GetClassPlans(classPlanRef).Return(&runstream.ClassPlanState{Trigger: "note:2"}, nil)
+	state := &runstream.ClassPlanState{
+		VcsProvider: "gitlab", Project: testProject, MergeRequest: 101, CommitSHA: "abc123", Class: "tags", Finished: true,
+		Trigger:    "delivery:1",
+		Workspaces: map[string]*runstream.ClassPlanWorkspace{"a": {RunID: "run-a", Outcome: runstream.ClassPlanPassed}},
+	}
+	// No status, summary or mark: any call fails the test.
+
+	if err := tfc_trigger.ReportClassPlans(context.Background(), client, rs, state); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A soft-failed Auto Mode apply whose fallback NATS cannot record is not
+// discarded yet: once discarded, its events are stale and no retry could
+// record the fallback. The error makes the event retry.
+func TestAutoModeSoftFailedApplyRecordsTheFallbackFirst(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	client := mocks.NewMockGitClient(ctrl)
+	rs := mocks.NewMockStreamClient(ctrl)
+	tfc := mocks.NewMockApiClient(ctrl)
+	r := &RunStatusUpdater{cfg: config.C, client: client, rs: rs, tfc: tfc, replanner: &fakeReplanner{}}
+	rmd := &runstream.TFRunMetadata{
+		Action: runstream.ApplyAction, Workspace: "a", RunID: "run-a", CommitSHA: "abc123", Organization: "zapier",
+		MergeRequestProjectNameWithNamespace: testProject, MergeRequestIID: 101, ChangeClass: "tags",
+	}
+	rs.EXPECT().MarkAutoModeManual(gomock.Any(), gomock.Any()).Return(false, errors.New("nats: timeout")).MinTimes(1)
+	client.EXPECT().SetClassStatus(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, s vcs.ClassStatus) error {
+		if s.State != vcs.CommitStateFailed {
+			t.Errorf("TFC/class = %+v, want failed while the fallback is not recorded", s)
+		}
+		return nil
+	})
+	// No DiscardRun, apply status or comment.
+
+	if err := r.updateCommitStatusForRun(context.Background(), &tfe.Run{ID: "run-a", Status: tfe.RunPolicyOverride}, rmd); err == nil {
+		t.Fatal("a soft-failed apply whose fallback was not recorded must be retried")
+	}
+}
+
+// An errored Auto Mode apply whose fallback NATS cannot record is retried, so
+// that the MR does not stay in Auto Mode.
+func TestErroredAutoModeApplyRetriesAnUnrecordedFallback(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	client := mocks.NewMockGitClient(ctrl)
+	rs := mocks.NewMockStreamClient(ctrl)
+	r := &RunStatusUpdater{cfg: config.C, client: client, rs: rs, replanner: &fakeReplanner{}}
+	rmd := &runstream.TFRunMetadata{
+		Action: runstream.ApplyAction, Workspace: "a", RunID: "run-a", CommitSHA: "abc123", Organization: "zapier",
+		MergeRequestProjectNameWithNamespace: testProject, MergeRequestIID: 101, ChangeClass: "tags",
+	}
+	client.EXPECT().SetWorkspaceStatus(gomock.Any(), gomock.Any()).Return(nil)
+	rs.EXPECT().MarkAutoModeManual(gomock.Any(), gomock.Any()).Return(false, errors.New("nats: timeout")).MinTimes(1)
+	client.EXPECT().SetClassStatus(gomock.Any(), gomock.Any()).Return(nil)
+
+	if err := r.updateCommitStatusForRun(context.Background(), &tfe.Run{ID: "run-a", Status: tfe.RunErrored}, rmd); err == nil {
+		t.Fatal("an errored apply whose fallback was not recorded must be retried")
 	}
 }

@@ -173,6 +173,10 @@ const (
 // plans for.
 var ErrClassPlansNotFound = errors.New("class plan state not found")
 
+// ErrClassPlansSuperseded is returned for a run of class plans that another
+// trigger has since begun again for the same commit. The run no longer counts.
+var ErrClassPlansSuperseded = errors.New("the class plans were begun again by another trigger")
+
 // ClassPlanOutcome is how one workspace's class plan ended.
 type ClassPlanOutcome string
 
@@ -324,28 +328,38 @@ func (s *Stream) BeginClassPlans(ref ClassPlanRef, class string, workspaces []st
 	return false, errors.New("class plan state update exceeded retry limit")
 }
 
-// HasClassPlans reports whether TFBuddy began class plans for ref's commit,
-// that is, whether the commit was planned in Auto Mode.
-func (s *Stream) HasClassPlans(ref ClassPlanRef) (bool, error) {
+// GetClassPlans returns the class plans of ref's commit, or
+// ErrClassPlansNotFound when TFBuddy never began any.
+func (s *Stream) GetClassPlans(ref ClassPlanRef) (*ClassPlanState, error) {
 	if s.classPlansKV == nil {
-		return false, errors.New("class plan store is not configured")
+		return nil, errors.New("class plan store is not configured")
 	}
-	_, err := s.classPlansKV.Get(classPlansKey(ref))
+	entry, err := s.classPlansKV.Get(classPlansKey(ref))
 	if errors.Is(err, nats.ErrKeyNotFound) {
-		return false, nil
+		return nil, ErrClassPlansNotFound
 	}
 	if err != nil {
-		return false, err
+		return nil, err
 	}
-	return true, nil
+	state := &ClassPlanState{}
+	if err := json.Unmarshal(entry.Value(), state); err != nil {
+		return nil, err
+	}
+	return state, nil
 }
 
 // RegisterClassPlanRun makes runID the plan run that counts for workspace.
-func (s *Stream) RegisterClassPlanRun(ref ClassPlanRef, workspace, runID string) error {
+// trigger is the one that dispatched the run: when another trigger has begun
+// the commit's class plans again since, the run does not count, and it
+// returns ErrClassPlansSuperseded.
+func (s *Stream) RegisterClassPlanRun(ref ClassPlanRef, workspace, runID, trigger string) error {
 	if runID == "" {
 		return errors.New("a class plan run needs a run ID")
 	}
 	_, _, err := s.updateClassPlans(ref, func(state *ClassPlanState) (bool, error) {
+		if state.Trigger != trigger {
+			return false, ErrClassPlansSuperseded
+		}
 		ws, ok := state.Workspaces[workspace]
 		if !ok {
 			return false, fmt.Errorf("workspace %s is not part of the class plans", workspace)
@@ -387,11 +401,12 @@ func (s *Stream) RecordClassPlanResult(ref ClassPlanRef, workspace, runID string
 }
 
 // MarkClassPlansReported records that TFC/class has been written for ref's
-// finished class plans, so that later events for the commit do not report
-// them again.
-func (s *Stream) MarkClassPlansReported(ref ClassPlanRef) error {
+// finished class plans, begun by trigger, so that later events for the commit
+// do not report them again. Plans another trigger has begun since are left
+// alone.
+func (s *Stream) MarkClassPlansReported(ref ClassPlanRef, trigger string) error {
 	_, _, err := s.updateClassPlans(ref, func(state *ClassPlanState) (bool, error) {
-		if state.Reported {
+		if state.Reported || state.Trigger != trigger {
 			return false, nil
 		}
 		state.Reported = true

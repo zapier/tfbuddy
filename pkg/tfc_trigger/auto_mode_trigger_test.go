@@ -83,8 +83,9 @@ func expectMR(ctrl *gomock.Controller, ts *mocks.TestSuite, author, targetConfig
 	ts.MockGitRepo.EXPECT().CheckoutCommit("abcd12233").Return(nil).AnyTimes()
 	ts.MockGitRepo.EXPECT().GetMergeBase("abcd12233", ts.MetaData.TargetBranch).Return(ts.MetaData.CommonSHA, nil).AnyTimes()
 	ts.MockStreamClient.EXPECT().BeginClassPlans(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(true, nil).AnyTimes()
-	ts.MockStreamClient.EXPECT().MarkClassPlansReported(gomock.Any()).Return(nil).AnyTimes()
-	ts.MockStreamClient.EXPECT().RegisterClassPlanRun(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	ts.MockStreamClient.EXPECT().MarkClassPlansReported(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	ts.MockStreamClient.EXPECT().RegisterClassPlanRun(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	ts.MockStreamClient.EXPECT().GetClassPlans(gomock.Any()).Return(nil, runstream.ErrClassPlansNotFound).AnyTimes()
 	ts.MockStreamClient.EXPECT().RecordClassPlanResult(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(nil, false, nil).AnyTimes()
 	ts.MockGitClient.EXPECT().GetRepoFile(gomock.Any(), ts.MetaData.ProjectNameNS, ".tfbuddy.yaml", ts.MetaData.TargetBranch).
@@ -223,7 +224,7 @@ func TestTFCEvents_AutoModePlanCarriesClass(t *testing.T) {
 	// The class plans begin before any run, and each run is registered.
 	gomock.InOrder(
 		ts.MockStreamClient.EXPECT().BeginClassPlans(ref, "tags", []string{"service-tfbuddy"}, "delivery:delivery-1").Return(true, nil),
-		ts.MockStreamClient.EXPECT().RegisterClassPlanRun(ref, "service-tfbuddy", "run-1").Return(nil),
+		ts.MockStreamClient.EXPECT().RegisterClassPlanRun(ref, "service-tfbuddy", "run-1", "delivery:delivery-1").Return(nil),
 	)
 	// Every workspace planned, so none is recorded as failed.
 	ts.MockStreamClient.EXPECT().RecordClassPlanResult(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
@@ -304,10 +305,12 @@ func TestTFCEvents_AutoModeNeedsTheDefaultBranch(t *testing.T) {
 	a := mocks.NewMockMRAuthor(ctrl)
 	a.EXPECT().GetUsername().Return("tags-bot").AnyTimes()
 	ts.MockGitMR.EXPECT().GetAuthor().Return(a).AnyTimes()
-	// The suite's MR targets main; the default branch is another one.
+	// The suite's MR targets main; the default branch is another one. Its
+	// config is read only to find a fallback recorded before a retarget.
 	defaultBranch(ctrl, ts.MockGitClient, "trunk")
-	ts.MockGitClient.EXPECT().GetRepoFile(gomock.Any(), ts.MetaData.ProjectNameNS, ".tfbuddy.yaml", ts.MetaData.TargetBranch).
+	ts.MockGitClient.EXPECT().GetRepoFile(gomock.Any(), ts.MetaData.ProjectNameNS, ".tfbuddy.yaml", "trunk").
 		Return([]byte(autoModeTargetConfig), nil).AnyTimes()
+	ts.MockStreamClient.EXPECT().IsAutoModeManual(gomock.Any()).Return(false, "", nil).AnyTimes()
 	ts.MockGitClient.EXPECT().GetMergeRequestModifiedFiles(gomock.Any(), ts.MetaData.MRIID, ts.MetaData.ProjectNameNS).
 		Return([]string{autoModeTagsFile}, nil).AnyTimes()
 	opts, rmd := capturePlanRun(ctrl, ts)
@@ -942,5 +945,136 @@ func TestTFCEvents_AutoModeApplyThatCannotStartFallsBack(t *testing.T) {
 	}
 	if len(comments) != 1 || !strings.Contains(comments[0], "now runs in Manual Mode because its apply of `service-tfbuddy` could not be started") {
 		t.Errorf("expected one Manual Mode comment, got %q", comments)
+	}
+}
+
+// An MR that fell back to Manual Mode stays there when it is retargeted to a
+// branch that has no Auto Mode: `tfc apply` still needs a person's approval.
+func TestTFCEvents_RetargetedFallenBackMRNeedsAPerson(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	ts := mocks.CreateTestSuite(ctrl, mocks.TestOverrides{ProjectConfig: autoModeWorkspaces()}, t)
+	a := mocks.NewMockMRAuthor(ctrl)
+	a.EXPECT().GetUsername().Return("tags-bot").AnyTimes()
+	ts.MockGitMR.EXPECT().GetAuthor().Return(a).AnyTimes()
+	defaultBranch(ctrl, ts.MockGitClient, "trunk")
+	withApprovers := strings.Replace(autoModeTargetConfig, "  classes:", "  automaticApprovers: [approver-bot]\n  classes:", 1)
+	ts.MockGitClient.EXPECT().GetRepoFile(gomock.Any(), ts.MetaData.ProjectNameNS, ".tfbuddy.yaml", "trunk").Return([]byte(withApprovers), nil).AnyTimes()
+	ts.MockStreamClient.EXPECT().IsAutoModeManual(gomock.Any()).Return(true, "a plan failed", nil)
+	approvedBy(ctrl, ts, "approver-bot")
+	ts.MockGitClient.EXPECT().SetWorkspaceStatus(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	// No CreateRunFromSource expectation: nothing may run.
+	ts.InitTestSuite()
+
+	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
+		Action: tfc_trigger.ApplyAction, Branch: ts.MetaData.SourceBranch, CommitSHA: "abcd12233",
+		ProjectNameWithNamespace: ts.MetaData.ProjectNameNS, MergeRequestIID: 101,
+		TriggerSource: tfc_trigger.CommentTrigger, VcsProvider: "gitlab", AutoMergeSequence: 5,
+	})
+	_, err := tfc_trigger.NewTFCTrigger(autoModeAppConfig(), ts.MockGitClient, ts.MockApiClient, ts.MockStreamClient, tCfg).
+		TriggerTFCEvents(context.Background())
+	if !errors.Is(err, utils.ErrPermanent) || !strings.Contains(err.Error(), "none of its approvals is from a person") {
+		t.Fatalf("expected the retargeted MR's apply to be refused, got %v", err)
+	}
+}
+
+// The class is decided from the MR's current changes, which are its head's.
+// A trigger for an older commit, such as a delayed push event, must not run
+// that commit with the head's class.
+func TestTFCEvents_AutoModeRefusesAnOldCommit(t *testing.T) {
+	for _, action := range []tfc_trigger.TriggerAction{tfc_trigger.PlanAction, tfc_trigger.ApplyAction} {
+		t.Run(action.String(), func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			ts := mocks.CreateTestSuite(ctrl, mocks.TestOverrides{ProjectConfig: autoModeWorkspaces()}, t)
+			ts.MockGitMR.EXPECT().GetHeadSHA().Return("ef567890a").AnyTimes()
+			expectMR(ctrl, ts, "tags-bot", autoModeTargetConfig, []string{autoModeTagsFile}, tagsBotCommits)
+			ts.MockGitClient.EXPECT().SetWorkspaceStatus(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+			// No CreateRunFromSource, AddTags or class expectation: nothing may
+			// run, lock or begin class plans.
+			ts.MockStreamClient.EXPECT().BeginClassPlans(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+			ts.InitTestSuite()
+
+			_, err := newAutoModeTrigger(autoModeAppConfig(), ts, action).TriggerTFCEvents(context.Background())
+			if !errors.Is(err, utils.ErrPermanent) || !strings.Contains(err.Error(), "the MR's head is now ef567890") {
+				t.Fatalf("expected the old commit to be refused, got %v", err)
+			}
+		})
+	}
+}
+
+// A redelivered MR event whose first delivery finished the class without
+// reporting it, because no workspace started, reports it: no run event will.
+// A report that fails again is retried. (Had the first delivery recorded its
+// fallback, the redelivery would plan in Manual Mode, which sets TFC/class
+// to skipped by itself.)
+func TestTFCEvents_RedeliveryReportsAnUnreportedClass(t *testing.T) {
+	for _, statusFails := range []bool{false, true} {
+		t.Run(fmt.Sprintf("status write fails %v", statusFails), func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			ts := mocks.CreateTestSuite(ctrl, mocks.TestOverrides{ProjectConfig: autoModeWorkspaces()}, t)
+			ref := runstream.ClassPlanRef{VcsProvider: "gitlab", Project: ts.MetaData.ProjectNameNS, MergeRequest: 101, CommitSHA: "abcd12233"}
+			finished := &runstream.ClassPlanState{
+				VcsProvider: "gitlab", Project: ref.Project, MergeRequest: 101, CommitSHA: "abcd12233", Class: "tags",
+				Finished: true, Trigger: "delivery:delivery-1",
+				Workspaces: map[string]*runstream.ClassPlanWorkspace{"service-tfbuddy": {Outcome: runstream.ClassPlanFailed, Detail: "did not plan: TFC is down"}},
+			}
+			ts.MockStreamClient.EXPECT().BeginClassPlans(ref, "tags", []string{"service-tfbuddy"}, "delivery:delivery-1").Return(false, nil)
+			ts.MockStreamClient.EXPECT().ClaimWorkspaceDispatch(gomock.Any()).Return(false, nil)
+			// Once to find the unreported class, once by the report itself.
+			ts.MockStreamClient.EXPECT().GetClassPlans(ref).Return(finished, nil).Times(2)
+			ts.MockStreamClient.EXPECT().IsAutoModeManual(gomock.Any()).Return(false, "", nil).AnyTimes()
+			var statusErr error
+			if statusFails {
+				statusErr = errors.New("502 Bad Gateway")
+			} else {
+				ts.MockStreamClient.EXPECT().GetAutoModeSummaryNote(ref.MR()).Return(int64(9), nil)
+				ts.MockGitClient.EXPECT().UpdateMergeRequestComment(gomock.Any(), 101, int64(9), ts.MetaData.ProjectNameNS, gomock.Any()).Return(nil)
+				ts.MockStreamClient.EXPECT().MarkClassPlansReported(ref, "delivery:delivery-1").Return(nil)
+			}
+			ts.MockGitClient.EXPECT().SetClassStatus(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, s vcs.ClassStatus) error {
+				if s.State != vcs.CommitStateFailed || !strings.Contains(s.Description, "service-tfbuddy did not pass") {
+					t.Errorf("TFC/class = %+v, want failed for the workspace that did not plan", s)
+				}
+				return statusErr
+			})
+			expectMR(ctrl, ts, "tags-bot", autoModeTargetConfig, []string{autoModeTagsFile}, tagsBotCommits)
+			ts.InitTestSuite()
+
+			_, err := newAutoModeTrigger(autoModeAppConfig(), ts, tfc_trigger.PlanAction).TriggerTFCEvents(context.Background())
+			if statusFails {
+				if err == nil || errors.Is(err, utils.ErrPermanent) {
+					t.Fatalf("a report that failed must be retried, got %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+// A Manual Mode mark NATS does not record at once is retried before the
+// fallback gives up: some callers have no later event to retry it.
+func TestFallBackToManualMode_RetriesTheMark(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	gl := mocks.NewMockGitClient(ctrl)
+	rs := mocks.NewMockStreamClient(ctrl)
+	gomock.InOrder(
+		rs.EXPECT().MarkAutoModeManual(gomock.Any(), "a plan failed").Return(false, errors.New("nats: timeout")),
+		rs.EXPECT().MarkAutoModeManual(gomock.Any(), "a plan failed").Return(true, nil),
+	)
+	gl.EXPECT().SetClassStatus(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, s vcs.ClassStatus) error {
+		if s.State != vcs.CommitStateSkipped {
+			t.Errorf("TFC/class = %+v, want skipped", s)
+		}
+		return nil
+	})
+	gl.EXPECT().CreateMergeRequestComment(gomock.Any(), 7, "zapier/x", gomock.Any()).Return(nil)
+
+	err := tfc_trigger.FallBackToManualMode(context.Background(), tfc_trigger.AutoModeDeps{GL: gl, RS: rs}, tfc_trigger.ManualModeFallback{
+		Project: "zapier/x", MergeRequestIID: 7, CommitSHA: "abc", Class: "tags", Reason: "a plan failed",
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }

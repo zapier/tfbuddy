@@ -388,14 +388,12 @@ func TestAutoModeApproval_ForeignStatusesDoNotApply(t *testing.T) {
 func TestManualModeReplanEvent(t *testing.T) {
 	for _, tt := range []struct {
 		name, state, head string
-		// headClassPlanned is whether the head, when it is not the commit
-		// asked for, was planned in Auto Mode before the fallback.
-		headClassPlanned bool
-		wantPlan         bool
+		wantPlan          bool
 	}{
 		{name: "the head commit is planned", state: "opened", head: gateCommitSHA, wantPlan: true},
-		{name: "an old commit whose head was planned in Manual Mode is not", state: "opened", head: "newer-sha"},
-		{name: "an old commit whose head was planned in Auto Mode plans the head", state: "opened", head: "newer-sha", headClassPlanned: true, wantPlan: true},
+		// Its push may have decided the mode before the fallback, even if it
+		// is still planning.
+		{name: "an old commit plans the head instead", state: "opened", head: "newer-sha", wantPlan: true},
 		{name: "a merged MR is not", state: "merged", head: gateCommitSHA},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -404,18 +402,18 @@ func TestManualModeReplanEvent(t *testing.T) {
 			f.mr.EXPECT().GetHeadSHA().Return(tt.head).AnyTimes()
 			f.mr.EXPECT().GetSourceBranch().Return("tags-bot/tags").AnyTimes()
 			f.client.EXPECT().GetMergeRequest(gomock.Any(), gateMRIID, gateProject).Return(f.mr, nil)
-			if tt.state == "opened" && tt.head != gateCommitSHA {
-				f.stream.EXPECT().HasClassPlans(runstream.ClassPlanRef{VcsProvider: "gitlab", Project: gateProject, MergeRequest: gateMRIID, CommitSHA: tt.head}).
-					Return(tt.headClassPlanned, nil)
-			}
 			if tt.wantPlan {
 				f.trigger.EXPECT().TriggerTFCEvents(gomock.Any()).Return(&tfc_trigger.TriggeredTFCWorkspaces{}, nil)
 			}
 
 			msg := manualModeReplanMsg(gateProject, gateMRIID, gateCommitSHA)
 			msg.Context = context.Background()
-			if !strings.Contains(msg.GetId(context.Background()), gateCommitSHA) {
-				t.Errorf("message ID %q must name the commit, so a duplicate request is dropped", msg.GetId(context.Background()))
+			if id := msg.GetId(context.Background()); !strings.Contains(id, gateCommitSHA) || !strings.Contains(id, gateProject) {
+				t.Errorf("message ID %q must name the project and commit, so only a duplicate request is dropped", id)
+			}
+			other := manualModeReplanMsg("zapier/other", gateMRIID, gateCommitSHA)
+			if other.GetId(context.Background()) == msg.GetId(context.Background()) {
+				t.Errorf("two projects' re-plans of the same IID and commit share the message ID %q", msg.GetId(context.Background()))
 			}
 			if _, err := f.worker.processMergeRequestEvent(msg); err != nil {
 				t.Fatal(err)

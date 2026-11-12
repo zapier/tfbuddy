@@ -792,6 +792,7 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 	}
 
 	classPlan := t.cfg.AutoMode && t.GetAction() == PlanAction && t.GetWorkspace() == ""
+	classPlansStarted := false
 	if classPlan {
 		// Every class workspace is pending until its run reports, so a plan
 		// that is still running keeps TFC/class pending, and one that never
@@ -805,6 +806,7 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 			return nil, fmt.Errorf("could not initialize the class plans: %w", err)
 		}
 		t.cfg.ClassPlan = true
+		classPlansStarted = started
 		if started {
 			t.postClassStatus(ctx, vcs.CommitStatePending, fmt.Sprintf("class %s: waiting for plans", t.cfg.ChangeClass))
 		}
@@ -832,9 +834,24 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 				log.Error().Err(err).Msg("could not fall back to Manual Mode")
 			}
 		}
+		if finished == nil && !classPlansStarted {
+			// A redelivery: its first delivery may have finished the class
+			// without reporting it, and no run event will come to report it.
+			// (A delivery that also recorded its fallback is planned in
+			// Manual Mode instead, which sets TFC/class to skipped.)
+			state, err := t.runstream.GetClassPlans(t.classPlanRef())
+			switch {
+			case errors.Is(err, runstream.ErrClassPlansNotFound):
+			case err != nil:
+				return status, fmt.Errorf("could not read the class plans: %w", err)
+			case state.Finished && !state.Reported:
+				finished = state
+			}
+		}
 		if finished != nil {
 			if err := ReportClassPlans(ctx, t.gl, t.runstream, finished); err != nil {
-				log.Error().Err(err).Msg("could not report the class plans")
+				// The redelivery reports the finished class.
+				return status, fmt.Errorf("could not report the class plans: %w", err)
 			}
 		}
 	}
@@ -1416,7 +1433,14 @@ func (t *TFCTrigger) publishRunToStream(ctx context.Context, run *tfe.Run, cfgWS
 	if t.cfg.ClassPlan && t.GetAction() == PlanAction {
 		// Before the metadata, so that the run's events, which wait for the
 		// metadata, always find the run registered.
-		if err := t.runstream.RegisterClassPlanRun(t.classPlanRef(), run.Workspace.Name, run.ID); err != nil {
+		err := t.runstream.RegisterClassPlanRun(t.classPlanRef(), run.Workspace.Name, run.ID, t.dispatchTrigger())
+		switch {
+		case errors.Is(err, runstream.ErrClassPlansSuperseded):
+			// Another trigger planned the commit again meanwhile; its own
+			// runs decide TFC/class.
+			log.Info().Str("RunID", run.ID).Str("WS", run.Workspace.Name).
+				Msg("class plans were begun again by another trigger; this run does not count")
+		case err != nil:
 			return fmt.Errorf("could not register the run for the class plans. %w", err)
 		}
 	}

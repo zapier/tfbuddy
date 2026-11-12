@@ -2,6 +2,7 @@ package tfc_trigger
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -62,16 +63,28 @@ func (t *TFCTrigger) recordUnplannedWorkspaces(status *TriggeredTFCWorkspaces) (
 // to Manual Mode in the meantime; for an MR that has, it is skipped with the
 // reason, so that it does not block the merge.
 //
-// It returns an error when TFC/class could not be written, or the report
-// could not be recorded, so that the caller can retry: until then the state
-// is finished but not reported, and the next event for the commit reports it
-// again. The summary comment is a notification, so a failure to post it is
-// only logged.
+// It returns an error when the MR's mode could not be read, TFC/class could
+// not be written, or the report could not be recorded, so that the caller
+// can retry: until then the state is finished but not reported, and the next
+// event for the commit reports it again. The summary comment is a
+// notification, so a failure to post it is only logged. Plans that another
+// trigger has begun again for the commit are not reported: the new plans
+// report themselves.
 func ReportClassPlans(ctx context.Context, gl vcs.GitClient, rs runstream.StreamClient, state *runstream.ClassPlanState) error {
 	ctx, span := otel.Tracer("TFC").Start(ctx, "ReportClassPlans")
 	defer span.End()
 
 	ref := state.Ref()
+	current, err := rs.GetClassPlans(ref)
+	if err != nil && !errors.Is(err, runstream.ErrClassPlansNotFound) {
+		span.RecordError(err)
+		return fmt.Errorf("could not read the class plans of commit %s: %w", ref.CommitSHA, err)
+	}
+	if current != nil && current.Trigger != state.Trigger {
+		log.Info().Str("project", ref.Project).Int("mergeRequestID", ref.MergeRequest).Str("commitSHA", ref.CommitSHA).
+			Msg("not reporting class plans that another trigger has begun again")
+		return nil
+	}
 	manual, reason, err := rs.IsAutoModeManual(ref.MR())
 	if err != nil {
 		log.Error().Err(err).Str("project", ref.Project).Int("mergeRequestID", ref.MergeRequest).
@@ -96,12 +109,17 @@ func ReportClassPlans(ctx context.Context, gl vcs.GitClient, rs runstream.Stream
 		status.State = vcs.CommitStateFailed
 		status.Description = fmt.Sprintf("class %s failed: the plan for %s did not pass", state.Class, strings.Join(state.FailedWorkspaces(), ", "))
 	}
-	if err := setClassStatus(ctx, gl, status); err != nil {
+	if serr := setClassStatus(ctx, gl, status); serr != nil {
+		span.RecordError(serr)
+		return fmt.Errorf("could not report the class plans of commit %s: %w", ref.CommitSHA, serr)
+	}
+	if err != nil {
+		// TFC/class fails closed until a retry can read the mode.
 		span.RecordError(err)
-		return fmt.Errorf("could not report the class plans of commit %s: %w", ref.CommitSHA, err)
+		return fmt.Errorf("could not read whether the MR fell back to Manual Mode: %w", err)
 	}
 	postClassSummary(ctx, gl, rs, ref, classSummary(state, result, reason))
-	if err := rs.MarkClassPlansReported(ref); err != nil {
+	if err := rs.MarkClassPlansReported(ref, state.Trigger); err != nil {
 		span.RecordError(err)
 		return fmt.Errorf("could not record that the class plans of commit %s were reported: %w", ref.CommitSHA, err)
 	}

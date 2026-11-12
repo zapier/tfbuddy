@@ -388,8 +388,10 @@ autoMode:
   only for a merge request that targets the default branch, so a merge request
   can neither add its own author nor widen a class. A merge request into any
   other branch is a Manual Mode MR, whatever that branch's `.tfbuddy.yaml`
-  says. The workspaces it plans still come from the source branch, as for any
-  MR.
+  says. An MR that fell back to Manual Mode (see below) and is then
+  retargeted to another branch stays fallen back, so TFBuddy reads the
+  default branch's `autoMode` for it to find the automatic approvers. The
+  workspaces it plans still come from the source branch, as for any MR.
 * A merge request runs in Auto Mode when its author, read from the GitLab API, is
   under `authors`. The note author and the commit author are never used.
 * Its change class is the first class whose `authors` include the MR author,
@@ -422,7 +424,10 @@ autoMode:
   `TFBUDDY_GITLAB_CLONE_DEPTH` is too shallow for a branch that moved on),
   TFBuddy creates no run and fails the workspace statuses. That commit's class
   fails, but the merge request does not fall back to Manual Mode for it: its
-  new head is planned by its own push.
+  new head is planned by its own push. The class is decided from the MR's
+  current changes, which are its head's, so TFBuddy also refuses an Auto Mode
+  plan or apply of a commit that is no longer the head, such as one a delayed
+  push event or comment asks for.
 * TFBuddy posts a `TFC/class` commit status on the head commit: pending while
   the plans run, and success once every affected workspace's plan has passed.
   When any plan errored, was canceled, failed a policy (soft failures
@@ -432,10 +437,12 @@ autoMode:
   each plan's outcome in NATS (the `AUTO_MODE_CLASS_PLANS` key-value bucket)
   with compare-and-swap, so when the last plans finish together exactly one of
   them sees every outcome and sets the result. When an outcome or `TFC/class`
-  cannot be written, the run event is handled again later, and a finished
-  class whose `TFC/class` was not written is reported by that retry. A
-  redelivered MR event keeps the plans its first delivery began. TFBuddy does
-  not yet read a Sentinel class-policy result.
+  cannot be written, or the MR's mode cannot be read, the event is handled
+  again later, and a finished class whose `TFC/class` was not written is
+  reported by that retry. A redelivered MR event keeps the plans its first
+  delivery began; a new trigger for the same commit, such as a `tfc plan`
+  comment, begins them again, and runs of the plans it replaced no longer
+  count. TFBuddy does not yet read a Sentinel class-policy result.
 * Once every plan has finished, TFBuddy posts one comment on the MR, and
   updates that same comment for later commits, with the class, the head SHA,
   each workspace's plan run ID and result, and, for an MR in Manual Mode, why.
@@ -465,7 +472,8 @@ Every fallback takes the same path:
    waits for `success` never approves the MR; unlike `failed`, it
    does not turn the pipeline red, so the Manual Mode MR can merge once it is
    applied. `TFC/class` is `failed` only when TFBuddy could not record the
-   fallback, or could not read it back.
+   fallback, after retrying for a few seconds, or could not read it back. A
+   fallback seen in a run event is then retried with the event.
 3. The first fallback posts a comment that says why.
 4. TFBuddy plans the head commit again without the class, so that a person
    reviews Manual Mode plans. The one exception is a fallback decided while
@@ -474,10 +482,10 @@ Every fallback takes the same path:
    TFBuddy publishes a merge request event of its own
    (`tfbuddy_manual_mode_replan`) to the hooks stream, and the merge request
    event worker plans the commit like a push, unless the MR is no longer open.
-   When the MR has moved on to a newer head, the push that moved it planned
-   that head: nothing more is planned if that push saw the fallback, and the
-   newer head is planned instead if it was planned in Auto Mode before the
-   fallback. If the request cannot be published, the comment asks for a
+   When the MR has moved on to a newer head, TFBuddy plans that head instead:
+   its push may have decided its mode before the fallback, even if it is
+   still planning. A head its push already planned in Manual Mode is then
+   planned twice. If the request cannot be published, the comment asks for a
    `tfc plan`.
 
 From then on no plan or apply of the merge request carries the class marker,
@@ -557,10 +565,13 @@ approval.
 TFBuddy never overrides a Sentinel policy for Auto Mode. When an Auto Mode
 apply soft-fails a policy (TFC reports a run that would apply as
 `policy_override`, and a plan-only run as `policy_soft_failed`; both are
-handled), TFBuddy discards the run in TFC at once, fails
-`TFC/apply/<workspace>`, puts the merge request in Manual Mode through the same
-fallback as above, re-plan included, and comments that the apply was discarded
-and why. If the discard fails, the comment says
+handled), TFBuddy puts the merge request in Manual Mode through the same
+fallback as above, re-plan included, then discards the run in TFC, fails
+`TFC/apply/<workspace>`, and comments that the apply was discarded and why.
+The fallback comes first because a discarded run sends no event that could
+retry it: if TFBuddy cannot record the fallback, it leaves the run waiting
+for an override, which applies nothing, and handles the event again later.
+If the discard fails, the comment says
 so: discard the run in TFC by hand, and do not override the policy. Other
 workspaces of the same apply are not affected, and the MR does not auto-merge,
 because that workspace never applied. A Manual Mode apply that soft-fails

@@ -77,7 +77,7 @@ func TestClassPlansFinishOnceWhenPlansEndTogether(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i, ws := range workspaces {
-		if err := stream.RegisterClassPlanRun(ref, ws, fmt.Sprintf("run-%d", i)); err != nil {
+		if err := stream.RegisterClassPlanRun(ref, ws, fmt.Sprintf("run-%d", i), "delivery:1"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -119,10 +119,10 @@ func TestClassPlansOutcomes(t *testing.T) {
 	if _, err := stream.BeginClassPlans(ref, "tags", []string{"a", "b", "c"}, "delivery:1"); err != nil {
 		t.Fatal(err)
 	}
-	if err := stream.RegisterClassPlanRun(ref, "a", "run-a"); err != nil {
+	if err := stream.RegisterClassPlanRun(ref, "a", "run-a", "delivery:1"); err != nil {
 		t.Fatal(err)
 	}
-	if err := stream.RegisterClassPlanRun(ref, "x", "run-x"); err == nil {
+	if err := stream.RegisterClassPlanRun(ref, "x", "run-x", "delivery:1"); err == nil {
 		t.Fatal("a workspace outside the class plans cannot register a run")
 	}
 
@@ -171,16 +171,16 @@ func TestClassPlansRedeliveryKeepsThePlans(t *testing.T) {
 	stream := newTestAutoMergeStream(t)
 	ref := ClassPlanRef{VcsProvider: "gitlab", Project: "zapier/example", MergeRequest: 42, CommitSHA: "ghi"}
 
-	if begun, err := stream.HasClassPlans(ref); err != nil || begun {
-		t.Fatalf("no class plans have begun, got %v, %v", begun, err)
+	if _, err := stream.GetClassPlans(ref); !errors.Is(err, ErrClassPlansNotFound) {
+		t.Fatalf("no class plans have begun, got %v", err)
 	}
 	if started, err := stream.BeginClassPlans(ref, "tags", []string{"a", "b"}, "delivery:1"); err != nil || !started {
 		t.Fatalf("expected the class plans to start, got %v, %v", started, err)
 	}
-	if begun, err := stream.HasClassPlans(ref); err != nil || !begun {
-		t.Fatalf("the class plans have begun, got %v, %v", begun, err)
+	if state, err := stream.GetClassPlans(ref); err != nil || state.Trigger != "delivery:1" || len(state.Workspaces) != 2 {
+		t.Fatalf("the class plans have begun, got %+v, %v", state, err)
 	}
-	if err := stream.RegisterClassPlanRun(ref, "a", "run-a"); err != nil {
+	if err := stream.RegisterClassPlanRun(ref, "a", "run-a", "delivery:1"); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := stream.RecordClassPlanResult(ref, "a", "run-a", true, "planned_and_finished"); err != nil {
@@ -191,7 +191,7 @@ func TestClassPlansRedeliveryKeepsThePlans(t *testing.T) {
 	if started, err := stream.BeginClassPlans(ref, "tags", []string{"a", "b"}, "delivery:1"); err != nil || started {
 		t.Fatalf("a redelivery must keep the class plans, got %v, %v", started, err)
 	}
-	if err := stream.RegisterClassPlanRun(ref, "b", "run-b"); err != nil {
+	if err := stream.RegisterClassPlanRun(ref, "b", "run-b", "delivery:1"); err != nil {
 		t.Fatal(err)
 	}
 	state, finished, err := stream.RecordClassPlanResult(ref, "b", "run-b", true, "planned_and_finished")
@@ -204,7 +204,7 @@ func TestClassPlansRedeliveryKeepsThePlans(t *testing.T) {
 	if finished || !state.Finished || state.Reported {
 		t.Fatalf("a replayed event must see the finished, unreported class, got %+v, %v", state, finished)
 	}
-	if err := stream.MarkClassPlansReported(ref); err != nil {
+	if err := stream.MarkClassPlansReported(ref, "delivery:1"); err != nil {
 		t.Fatal(err)
 	}
 	if state, _, _ = stream.RecordClassPlanResult(ref, "b", "run-b", true, "planned_and_finished"); !state.Reported {
@@ -217,6 +217,33 @@ func TestClassPlansRedeliveryKeepsThePlans(t *testing.T) {
 		if started, err := stream.BeginClassPlans(ref, "tags", []string{"a"}, ""); err != nil || !started {
 			t.Fatalf("plans without a trigger must start over, got %v, %v", started, err)
 		}
+	}
+}
+
+// Plans begun again by another trigger for the same commit are not touched by
+// the work of the plans they replaced: an old run does not register, and an
+// old report does not mark the new plans reported.
+func TestClassPlansOfAnotherTriggerAreIsolated(t *testing.T) {
+	stream := newTestAutoMergeStream(t)
+	ref := ClassPlanRef{VcsProvider: "gitlab", Project: "zapier/example", MergeRequest: 42, CommitSHA: "jkl"}
+	if _, err := stream.BeginClassPlans(ref, "tags", []string{"a"}, "delivery:1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stream.BeginClassPlans(ref, "tags", []string{"a"}, "note:2"); err != nil {
+		t.Fatal(err)
+	}
+	if err := stream.RegisterClassPlanRun(ref, "a", "run-old", "delivery:1"); !errors.Is(err, ErrClassPlansSuperseded) {
+		t.Fatalf("a run of the replaced plans must not register, got %v", err)
+	}
+	if err := stream.MarkClassPlansReported(ref, "delivery:1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := stream.RegisterClassPlanRun(ref, "a", "run-new", "note:2"); err != nil {
+		t.Fatal(err)
+	}
+	state, err := stream.GetClassPlans(ref)
+	if err != nil || state.Reported || state.Workspaces["a"].RunID != "run-new" {
+		t.Fatalf("expected the new plans untouched by the old ones, got %+v, %v", state, err)
 	}
 }
 

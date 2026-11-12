@@ -81,27 +81,41 @@ type AutoModeClass struct {
 // not the default branch, when the default branch has no .tfbuddy.yaml, or
 // when the file has no Auto Mode section.
 func LoadAutoModeConfig(ctx context.Context, gl vcs.GitClient, project, targetBranch string) (*AutoModeConfig, error) {
+	cfg, _, err := loadDefaultBranchAutoModeConfig(ctx, gl, project, targetBranch, false)
+	return cfg, err
+}
+
+// loadDefaultBranchAutoModeConfig reads the Auto Mode section of the
+// project's default branch, and reports whether targetBranch is that branch.
+// For any other target it reads nothing unless anyTarget is set: an MR into
+// another branch never runs in Auto Mode, but it may have fallen back to
+// Manual Mode before it was retargeted, and the fallback needs the config's
+// automatic approvers.
+func loadDefaultBranchAutoModeConfig(ctx context.Context, gl vcs.GitClient, project, targetBranch string, anyTarget bool) (*AutoModeConfig, bool, error) {
 	ctx, span := otel.Tracer("TFC").Start(ctx, "LoadAutoModeConfig")
 	defer span.End()
 
 	if targetBranch == "" {
-		return nil, utils.CreatePermanentError(errors.New("cannot read the Auto Mode config without a target branch"))
+		return nil, false, utils.CreatePermanentError(errors.New("cannot read the Auto Mode config without a target branch"))
 	}
 	settings, err := gl.GetProjectSettings(ctx, project)
 	if err != nil {
-		return nil, fmt.Errorf("could not read the project's default branch: %w", err)
+		return nil, false, fmt.Errorf("could not read the project's default branch: %w", err)
 	}
 	if settings == nil {
-		return nil, utils.CreatePermanentError(errors.New("could not read the project's default branch: no project settings"))
+		return nil, false, utils.CreatePermanentError(errors.New("could not read the project's default branch: no project settings"))
 	}
 	defaultBranch := settings.GetDefaultBranch()
-	if defaultBranch == "" || targetBranch != defaultBranch {
+	targetsDefault := defaultBranch != "" && targetBranch == defaultBranch
+	if !targetsDefault {
 		// Only the default branch is protected the way Auto Mode needs: an MR
 		// into any other branch is a Manual Mode MR, whatever that branch's
 		// .tfbuddy.yaml says.
 		log.Debug().Str("project", project).Str("targetBranch", targetBranch).Str("defaultBranch", defaultBranch).
 			Msg("merge request does not target the default branch, so it has no Auto Mode")
-		return nil, nil
+		if !anyTarget || defaultBranch == "" {
+			return nil, false, nil
+		}
 	}
 	b, err := gl.GetRepoFile(ctx, project, ProjectConfigFilename, defaultBranch)
 	if err != nil {
@@ -110,11 +124,12 @@ func LoadAutoModeConfig(ctx context.Context, gl vcs.GitClient, project, targetBr
 		// normal flow and nothing applies without a `tfc apply`.
 		if errors.Is(err, utils.ErrPermanent) {
 			log.Debug().Err(err).Str("branch", defaultBranch).Msg("no Auto Mode config on the default branch")
-			return nil, nil
+			return nil, targetsDefault, nil
 		}
-		return nil, fmt.Errorf("could not read %s from %s: %w", ProjectConfigFilename, defaultBranch, err)
+		return nil, false, fmt.Errorf("could not read %s from %s: %w", ProjectConfigFilename, defaultBranch, err)
 	}
-	return parseAutoModeConfig(b)
+	cfg, err := parseAutoModeConfig(b)
+	return cfg, targetsDefault, err
 }
 
 func parseAutoModeConfig(b []byte) (*AutoModeConfig, error) {
@@ -349,7 +364,10 @@ func (t *TFCTrigger) resolveAutoMode(ctx context.Context, mr vcs.DetailedMR, tri
 	ctx, span := otel.Tracer(t.tracerName()).Start(ctx, "resolveAutoMode")
 	defer span.End()
 
-	autoMode, err := LoadAutoModeConfig(ctx, t.gl, t.GetProjectNameWithNamespace(), mr.GetTargetBranch())
+	// The default branch's config is read whatever the target, so that a
+	// fallen-back MR retargeted to another branch still needs a person's
+	// approval for `tfc apply`.
+	autoMode, targetsDefault, err := loadDefaultBranchAutoModeConfig(ctx, t.gl, t.GetProjectNameWithNamespace(), mr.GetTargetBranch(), true)
 	if err != nil {
 		return err
 	}
@@ -359,7 +377,7 @@ func (t *TFCTrigger) resolveAutoMode(ctx context.Context, mr vcs.DetailedMR, tri
 	}
 	t.autoModeConfig = autoMode
 	// Once an MR has fallen back to Manual Mode it stays there, whatever its
-	// commits, files and plans look like now.
+	// target, commits, files and plans look like now.
 	manual, reason, err := t.runstream.IsAutoModeManual(t.autoModeRef())
 	if err != nil {
 		return fmt.Errorf("could not read whether the MR has fallen back to Manual Mode. %w", err)
@@ -374,6 +392,16 @@ func (t *TFCTrigger) resolveAutoMode(ctx context.Context, mr vcs.DetailedMR, tri
 			t.postClassStatus(ctx, vcs.CommitStateSkipped, ManualModeClassDescription(reason))
 		}
 		return nil
+	}
+	if !targetsDefault {
+		return nil
+	}
+	// The class is decided from the MR's current files and commits, which
+	// describe its head. A trigger for an older commit, such as a delayed
+	// push event or comment, must not run that commit with the head's class.
+	if head := mr.GetHeadSHA(); !strings.EqualFold(head, t.GetCommitSHA()) {
+		return utils.CreatePermanentError(fmt.Errorf("refusing an Auto Mode %s of commit %s: the MR's head is now %s, and the class is decided from the head's changes",
+			t.GetAction(), shortSHA(t.GetCommitSHA()), shortSHA(head)))
 	}
 	files, err := t.gl.GetMergeRequestModifiedFiles(ctx, t.GetMergeRequestIID(), t.GetProjectNameWithNamespace())
 	if err != nil {
