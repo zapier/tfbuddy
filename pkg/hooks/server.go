@@ -98,7 +98,7 @@ func StartServer(cfg config.Config) {
 	defer ghep.Close()
 
 	// Gitlab Run Events Processor
-	grsp := gitlab.NewRunStatusProcessor(cfg, gl, rs, tfc)
+	grsp := gitlab.NewRunStatusProcessor(cfg, gl, rs, tfc, gitlabGroupHandler)
 	defer grsp.Close()
 
 	if err := e.Start(":8080"); err != nil {

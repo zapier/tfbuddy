@@ -36,6 +36,14 @@ func (w *GitlabEventWorker) processMergeRequestEvent(msg *MergeRequestEventMsg) 
 		return projectName, nil
 	}
 
+	// TFBuddy's own events build their own triggers.
+	switch event.ObjectAttributes.Action {
+	case autoModeApprovalAction:
+		return projectName, w.processAutoModeApproval(ctx, msg)
+	case manualModeReplanAction:
+		return projectName, w.processManualModeReplan(ctx, msg)
+	}
+
 	cfg, err := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
 		Action:                   tfc_trigger.PlanAction,
 		Branch:                   event.ObjectAttributes.SourceBranch,
@@ -51,7 +59,7 @@ func (w *GitlabEventWorker) processMergeRequestEvent(msg *MergeRequestEventMsg) 
 		return projectName, err
 	}
 
-	trigger := w.triggerCreation(w.cfg, w.gl, w.tfc, w.runstream, cfg)
+	trigger := w.newTrigger(cfg)
 	switch event.ObjectAttributes.Action {
 	case "open", "reopen":
 		if w.skipAutoPlan(ctx, projectName, event, trigger, labels) {

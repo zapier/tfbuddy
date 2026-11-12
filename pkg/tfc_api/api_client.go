@@ -58,6 +58,9 @@ type ApiClient interface {
 	RemoveTagsByQuery(ctx context.Context, workspace string, query string) error
 	RemoveTagsByName(ctx context.Context, workspace string, names []string) error
 	GetTagsByQuery(ctx context.Context, workspace string, query string) ([]string, error)
+	// DiscardRun discards a run that is waiting for a decision, such as a
+	// policy override, so that nothing applies.
+	DiscardRun(ctx context.Context, runID string, comment string) error
 }
 
 type TFCClient struct {
@@ -116,6 +119,14 @@ func (t *TFCClient) GetRun(ctx context.Context, id string) (*tfe.Run, error) {
 	}
 
 	return run, nil
+}
+
+// DiscardRun discards runID with comment, which TFC shows on the run.
+func (t *TFCClient) DiscardRun(ctx context.Context, runID string, comment string) error {
+	ctx, span := otel.Tracer("TFC").Start(ctx, "DiscardRun", trace.WithAttributes(attribute.String("run_id", runID)))
+	defer span.End()
+
+	return t.Client.Runs.Discard(ctx, runID, tfe.RunDiscardOptions{Comment: &comment})
 }
 
 func (t *TFCClient) GetPlanOutput(id string) ([]byte, error) {

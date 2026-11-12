@@ -77,6 +77,7 @@ func (s stubJobStatus) GetName() string       { return s.name }
 func (s stubJobStatus) GetStatus() string     { return "" }
 func (s stubJobStatus) GetPipelineID() int    { return 0 }
 func (s stubJobStatus) GetAllowFailure() bool { return false }
+func (s stubJobStatus) GetAuthor() string     { return "" }
 
 func TestIsTFBuddyCommitStatus(t *testing.T) {
 	tests := []struct {

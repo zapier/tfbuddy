@@ -60,8 +60,16 @@ func (gm *GithubPR) GetTargetBranch() string {
 func (gm *GithubPR) GetState() string {
 	return gm.PullRequest.GetState()
 }
+func (gm *GithubPR) GetHeadSHA() string {
+	return gm.PullRequest.GetHead().GetSHA()
+}
 func (gm *GithubPR) IsApproved() bool {
 	return *gm.MergeableState != "blocked"
+}
+
+// GetApprovers is not read for GitHub, which has no Auto Mode.
+func (gm *GithubPR) GetApprovers() []string {
+	return nil
 }
 
 // ----------------------------------------------------------------------------
@@ -105,4 +113,9 @@ type PRApproved struct {
 
 func (p *PRApproved) IsApproved() bool {
 	return p.approvalStatus
+}
+
+// GetApprovers is not read for GitHub, which has no Auto Mode.
+func (p *PRApproved) GetApprovers() []string {
+	return nil
 }

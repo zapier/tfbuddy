@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
@@ -26,22 +27,56 @@ type GitlabClient struct {
 	token     string
 	tokenUser string
 	cfg       config.Config
+
+	// currentUser caches the token's account, which does not change while
+	// TFBuddy runs. Only a successful read is cached, so a failed one is
+	// retried on the next call.
+	currentUserMu sync.Mutex
+	currentUser   *gogitlab.User
 }
 
 func (c *GitlabClient) SupportsAggregateAutoMerge() bool {
 	return true
 }
 
-func (c *GitlabClient) GetAuthenticatedAccountName(ctx context.Context) (string, error) {
+// authenticatedUser returns the account TFBuddy's token belongs to.
+func (c *GitlabClient) authenticatedUser(ctx context.Context) (*gogitlab.User, error) {
+	c.currentUserMu.Lock()
+	defer c.currentUserMu.Unlock()
+	if c.currentUser != nil {
+		return c.currentUser, nil
+	}
 	user, err := backoff.RetryWithData(func() (*gogitlab.User, error) {
 		user, resp, err := c.client.Users.CurrentUser(gogitlab.WithContext(ctx))
 		return user, permanentError(resp, err)
 	}, createBackOffWithRetries(ctx))
 	if err != nil {
+		return nil, err
+	}
+	if user == nil || user.Username == "" {
+		return nil, errors.New("GitLab returned no username for TFBuddy's token")
+	}
+	c.currentUser = user
+	return user, nil
+}
+
+func (c *GitlabClient) GetAuthenticatedAccountName(ctx context.Context) (string, error) {
+	user, err := c.authenticatedUser(ctx)
+	if err != nil {
 		return "", err
 	}
 	if user.Name != "" {
 		return user.Name, nil
+	}
+	return user.Username, nil
+}
+
+// GetAuthenticatedUsername returns the username of TFBuddy's GitLab account,
+// which GitLab records as the author of every commit status TFBuddy posts.
+func (c *GitlabClient) GetAuthenticatedUsername(ctx context.Context) (string, error) {
+	user, err := c.authenticatedUser(ctx)
+	if err != nil {
+		return "", err
 	}
 	return user.Username, nil
 }
@@ -653,6 +688,9 @@ func (gm *GitlabMR) GetTargetBranch() string {
 func (gm *GitlabMR) GetState() string {
 	return gm.MergeRequest.State
 }
+func (gm *GitlabMR) GetHeadSHA() string {
+	return gm.MergeRequest.SHA
+}
 
 type GitlabMRAuthor struct {
 	*gogitlab.BasicUser
@@ -688,6 +726,15 @@ type GitlabMRApproval struct {
 
 func (gm *GitlabMRApproval) IsApproved() bool {
 	return gm.Approved
+}
+func (gm *GitlabMRApproval) GetApprovers() []string {
+	var approvers []string
+	for _, a := range gm.ApprovedBy {
+		if a != nil && a.User != nil && a.User.Username != "" {
+			approvers = append(approvers, a.User.Username)
+		}
+	}
+	return approvers
 }
 func (g *GitlabClient) GetMergeRequestApprovals(ctx context.Context, mrIID int, project string) (vcs.MRApproved, error) {
 	_, span := otel.Tracer("TFC").Start(ctx, "GetMergeRequestApprovals")
@@ -764,6 +811,9 @@ type GitlabProjectSettings struct {
 func (gP *GitlabProjectSettings) OnlyAllowMergeIfPipelineSucceeds() bool {
 	return gP.Project.OnlyAllowMergeIfPipelineSucceeds
 }
+func (gP *GitlabProjectSettings) GetDefaultBranch() string {
+	return gP.Project.DefaultBranch
+}
 
 func (g *GitlabClient) GetProjectSettings(ctx context.Context, project string) (vcs.ProjectSettings, error) {
 	_, span := otel.Tracer("TFC").Start(ctx, "GetProjectSettings")
@@ -793,6 +843,9 @@ func (gS *GitlabCommitJobStatus) GetPipelineID() int {
 }
 func (gS *GitlabCommitJobStatus) GetAllowFailure() bool {
 	return gS.AllowFailure
+}
+func (gS *GitlabCommitJobStatus) GetAuthor() string {
+	return gS.Author.Username
 }
 
 // GetCommitJobStatuses returns the latest status per job name for a commit,

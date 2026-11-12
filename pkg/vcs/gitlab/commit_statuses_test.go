@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestGetCommitJobStatusesPaginates guards against the gate failing open: a
@@ -146,4 +147,118 @@ func TestTransportErrorsSurfaceAsErrors(t *testing.T) {
 			t.Fatalf("expected an error for an unreachable host, got %d pipelines and err=nil", len(pipelines))
 		}
 	})
+}
+
+// The author of each status is what tells TFBuddy's own TFC/* statuses apart
+// from ones anyone else posts with the same name.
+func TestGetCommitJobStatusesReadsAuthor(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]map[string]any{
+			{"id": 1, "name": "TFC/plan/a", "status": "success", "pipeline_id": 900, "author": map[string]any{"username": "tfbuddy"}},
+			{"id": 2, "name": "TFC/class", "status": "success", "pipeline_id": 900, "author": map[string]any{"username": "a-developer"}},
+		})
+	}))
+	defer srv.Close()
+
+	statuses, err := newTestClient(t, srv.URL).GetCommitJobStatuses(context.Background(), testProject, "abc123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(statuses) != 2 || statuses[0].GetAuthor() != "tfbuddy" || statuses[1].GetAuthor() != "a-developer" {
+		t.Fatalf("unexpected authors: %v", statuses)
+	}
+}
+
+// TFBuddy's account is read once and then cached; a failed read is not.
+func TestGetAuthenticatedUsernameIsCached(t *testing.T) {
+	calls := 0
+	fail := true
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if fail {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"id": 7, "username": "tfbuddy", "name": "TFBuddy Bot"})
+	}))
+	defer srv.Close()
+
+	client := newTestClient(t, srv.URL)
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	if _, err := client.GetAuthenticatedUsername(ctx); err == nil {
+		t.Fatal("expected an error while GitLab refuses the read")
+	}
+	fail = false
+	calls = 0
+	for range 3 {
+		got, err := client.GetAuthenticatedUsername(context.Background())
+		if err != nil || got != "tfbuddy" {
+			t.Fatalf("GetAuthenticatedUsername() = %q, %v, want tfbuddy", got, err)
+		}
+	}
+	if name, err := client.GetAuthenticatedAccountName(context.Background()); err != nil || name != "TFBuddy Bot" {
+		t.Fatalf("GetAuthenticatedAccountName() = %q, %v, want the display name", name, err)
+	}
+	if calls != 1 {
+		t.Errorf("expected one read of the current user once it succeeded, got %d requests", calls)
+	}
+}
+
+func TestGetMergeRequestApprovalsReadsApprovers(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"approved": true,
+			"approved_by": []map[string]any{
+				{"user": map[string]any{"username": "appsec-bot"}},
+				{"user": map[string]any{"username": "alice"}},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	approvals, err := newTestClient(t, srv.URL).GetMergeRequestApprovals(context.Background(), 101, testProject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := approvals.GetApprovers(); len(got) != 2 || got[0] != "appsec-bot" || got[1] != "alice" {
+		t.Errorf("GetApprovers() = %q, want both approvers", got)
+	}
+}
+
+// The required-jobs gate reads the pipeline's CI jobs, across pages, and only
+// their latest runs.
+func TestGetPipelineJobsPaginates(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.RawPath
+		if path == "" {
+			path = r.URL.Path
+		}
+		if !strings.HasSuffix(path, "/pipelines/900/jobs") {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if r.URL.Query().Get("include_retried") != "false" {
+			t.Errorf("include_retried = %q, want false", r.URL.Query().Get("include_retried"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("page") == "2" {
+			json.NewEncoder(w).Encode([]map[string]any{{"id": 2, "name": "aa:code-review", "status": "manual"}})
+			return
+		}
+		w.Header().Set("X-Next-Page", "2")
+		json.NewEncoder(w).Encode([]map[string]any{{"id": 1, "name": "lint", "status": "success"}})
+	}))
+	defer srv.Close()
+
+	jobs, err := newTestClient(t, srv.URL).GetPipelineJobs(context.Background(), testProject, 900)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs) != 2 || jobs[1].GetName() != "aa:code-review" || jobs[1].GetStatus() != "manual" || jobs[0].GetID() != 1 {
+		t.Fatalf("unexpected jobs %+v", jobs)
+	}
 }
