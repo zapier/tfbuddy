@@ -86,7 +86,7 @@ func (t *TFCTrigger) fallBackToManualMode(ctx context.Context, reason string, re
 // fail the MR again and again.
 //
 // TFC/class becomes skipped on the commit, with the reason: skipped never
-// passes the Auto Mode gate (or AppSec's approval check), and unlike failed it
+// passes the Auto Mode gate (or an automatic approver's check), and unlike failed it
 // does not keep the pipeline red, so the Manual Mode MR can still merge. The
 // first caller to set the mark also comments on the MR and, with Replan,
 // asks for a plan of the head commit without a class. It returns

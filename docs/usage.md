@@ -358,26 +358,30 @@ autoMode:
     # The git author and committer emails its commits carry.
     commitEmails: [tags-bot@example.com]
   - username: renovate-bot
-    # Renovate's own commits, plus the commits Async Agent's renovate-fix job
-    # pushes to fix module inputs after a bump.
+    # Renovate's own commits, plus the commits of a fix job that pushes to
+    # Renovate's MRs to fix module inputs after a bump.
     commitEmails: [bot@renovateapp.com, renovate-fix-bot@example.com]
-  # Users whose approval is automatic, such as AppSec's approval bot. See
+  # Users whose approval is automatic, such as an approval bot. See
   # "Falling back to Manual Mode".
-  automaticApprovers: [appsec-bot]
+  automaticApprovers: [approver-bot]
   # CI jobs that must have succeeded before an approval applies the MR, such
-  # as the Async Agent review.
-  requiredJobs: ["<Async Agent review job>"]
+  # as an AI review job.
+  requiredJobs: ["<AI review job>"]
+  # More directories, at any depth, that no Auto Mode MR may change, on top of
+  # `.gitlab/` and `.gitlab-ci.yml`: for example, the directory that holds an
+  # AI review's prompts.
+  protectedDirs: [.ai-review]
   classes:
   - name: tags
     authors: [tags-bot]
     paths: ["services/*/*/*/tags.auto.tfvars.json"]
     # TFC workspace names. A class without workspaces matches no MR.
-    workspaces: ["services-*"]
+    workspaces: ["app-*"]
   - name: renovate-safe-plan
     authors: [renovate-bot]
     # Only Terraform files: the Sentinel class policy cannot see anything else.
     paths: ["services/**/*.tf", "services/**/.terraform.lock.hcl", "workspaces/**/*.tf", "workspaces/**/.terraform.lock.hcl"]
-    workspaces: ["services-*", "workspaces-services-*"]
+    workspaces: ["app-*", "workspaces-app-*"]
 ```
 
 * TFBuddy reads `autoMode` only from the project's **default** branch, and
@@ -400,10 +404,11 @@ autoMode:
   declared by whoever makes the commit, so this check is evidence, not proof:
   anyone who can push to the branch can claim them.
 * Whatever the classes say, a merge request that changes any file under a
-  `.async-agent/` or `.gitlab/` directory, or any file named `.gitlab-ci.yml`,
-  at any depth, is a Manual Mode MR. Those files decide what CI runs, including
-  the Async Agent review that Auto Mode relies on. Names match
-  case-insensitively.
+  `.gitlab/` directory or a directory listed in `protectedDirs`, or any file
+  named `.gitlab-ci.yml`, at any depth, is a Manual Mode MR. Those files decide
+  what CI runs, including the review jobs that Auto Mode relies on, so list
+  the directories that configure those reviews in `protectedDirs`. Names
+  match case-insensitively.
 * Every plan and apply run of an Auto Mode merge request has a run message that
   TFBuddy builds from fixed fields only, without the MR title:
   `MR [!123] [tfbuddy-class=tags] sha=<head SHA> author=tags-bot`.
@@ -452,8 +457,8 @@ Every fallback takes the same path:
    It does not use a label, which anyone with Developer access can edit.
 2. `TFC/class` becomes `skipped`, with the description `Manual Mode: <reason>`,
    on the commit that fell back, and every later plan of the MR does the
-   same. `skipped` never passes the Auto Mode gate, and AppSec's approval check
-   accepts only `success`, so it never approves the MR; unlike `failed`, it
+   same. `skipped` never passes the Auto Mode gate, and an approval bot that
+   waits for `success` never approves the MR; unlike `failed`, it
    does not turn the pipeline red, so the Manual Mode MR can merge once it is
    applied. `TFC/class` is `failed` only when TFBuddy could not record the
    fallback, or could not read it back.
@@ -477,8 +482,8 @@ request keeps it, so reopening it does not bring Auto Mode back. If the record
 cannot be read, TFBuddy runs nothing for the merge request rather than guess
 its mode.
 
-Automation may have approved the MR before it fell back: AppSec's approval
-bot, for example, approves on a green `TFC/class` and, as a code owner of the
+Automation may have approved the MR before it fell back: an approval bot,
+for example, may approve on a green `TFC/class` and, as a code owner of the
 class files, its approval alone can satisfy GitLab's approval rules. So for a
 fallen-back MR, TFBuddy refuses `tfc apply`, and says why, unless at least one
 current approval comes from a user who is neither listed under
@@ -486,7 +491,7 @@ current approval comes from a user who is neither listed under
 
 ```yaml
 autoMode:
-  automaticApprovers: [appsec-bot]
+  automaticApprovers: [approver-bot]
 ```
 
 Known limits: a transient TFC error on a class plan or an Auto Mode apply puts
@@ -516,12 +521,12 @@ all of these hold, and otherwise says why on the MR:
    the jobs from GitLab's pipeline jobs API, which lists only jobs the pipeline
    ran from its CI config, so a commit status posted with a job's name cannot
    stand in for one. A job in a child pipeline is not seen, and so blocks. With
-   no `requiredJobs`, nothing beyond step 4 is required; terraform-services
-   should list its Async Agent review job:
+   no `requiredJobs`, nothing beyond step 4 is required, so list the review
+   jobs an automatic approver relies on, such as an AI review job:
 
    ```yaml
    autoMode:
-     requiredJobs: ["<Async Agent review job>"]
+     requiredJobs: ["<AI review job>"]
    ```
 6. Auto-merge is on and every affected workspace has `autoMerge: true`, because
    Auto Mode must merge what it applies.

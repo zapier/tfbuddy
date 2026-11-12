@@ -134,8 +134,8 @@ func (w *GitlabEventWorker) autoModeApplyBlocker(ctx context.Context, mr vcs.Det
 		return reason
 	}
 
-	// Unlike `tfc apply`, Auto Mode always needs a green pipeline: the Async Agent
-	// review runs in it, and no person is checking it instead.
+	// Unlike `tfc apply`, Auto Mode always needs a green pipeline: the review
+	// jobs run in it, and no person is checking it instead.
 	pipeline, err := w.ciPipelineForCommit(ctx, proj, headSHA)
 	if err != nil {
 		return fmt.Sprintf("could not read the head commit's pipelines: %v", err)

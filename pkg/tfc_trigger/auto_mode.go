@@ -35,7 +35,7 @@ var classNameRegex = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 type AutoModeConfig struct {
 	Authors []*AutoModeAuthor `yaml:"authors"`
 	Classes []*AutoModeClass  `yaml:"classes"`
-	// AutomaticApprovers are the users, such as AppSec's approval bot, whose
+	// AutomaticApprovers are the users, such as an approval bot, whose
 	// approval is automatic. For an MR that fell back to Manual Mode, neither
 	// their approval nor an Auto Mode author's counts: `tfc apply` needs one
 	// from anyone else.
@@ -43,8 +43,13 @@ type AutoModeConfig struct {
 	// RequiredJobs are CI jobs that must be in the head commit's pipeline,
 	// and whose latest run must have succeeded, before an approval applies
 	// an Auto Mode MR. A manual, skipped or allowed-to-fail job does not
-	// count as succeeded. terraform-services lists its Async Agent review job.
+	// count as succeeded. List the review jobs an automatic approver relies on.
 	RequiredJobs []string `yaml:"requiredJobs"`
+	// ProtectedDirs are more directory names that no Auto Mode merge request
+	// may change, at any depth, on top of the built-in `.gitlab` directory and
+	// `.gitlab-ci.yml` files. List the directories that configure the review
+	// jobs Auto Mode relies on, such as an AI review's prompt directory.
+	ProtectedDirs []string `yaml:"protectedDirs"`
 }
 
 // AutoModeAuthor is a GitLab user whose merge requests run in Auto Mode.
@@ -144,6 +149,11 @@ func (c *AutoModeConfig) validate() error {
 			return fmt.Errorf("requiredJobs[%d] is empty", i)
 		}
 	}
+	for i, d := range c.ProtectedDirs {
+		if name := strings.Trim(d, "/"); name == "" || name == "." || name == ".." || strings.Contains(name, "/") {
+			return fmt.Errorf("protectedDirs[%d] %q must be a single directory name", i, d)
+		}
+	}
 	names := map[string]bool{}
 	for i, class := range c.Classes {
 		if class == nil {
@@ -201,21 +211,27 @@ func (c *AutoModeConfig) Author(username string) *AutoModeAuthor {
 
 // autoModeDeniedDirs are directories, at any depth, that no Auto Mode merge
 // request may change, whatever .tfbuddy.yaml says: they decide what CI runs,
-// including the Async Agent review that Auto Mode relies on, and how it
-// behaves.
-var autoModeDeniedDirs = []string{".async-agent", ".gitlab"}
+// including the review jobs Auto Mode relies on. `protectedDirs` in
+// .tfbuddy.yaml adds more.
+var autoModeDeniedDirs = []string{".gitlab"}
 
 // autoModeDeniedFile is the file name, at any depth, that no Auto Mode merge
 // request may change, for the same reason.
 const autoModeDeniedFile = ".gitlab-ci.yml"
 
 // AutoModeDeniedPath reports whether file is one that always puts a merge
-// request in Manual Mode. It matches names case-insensitively, so a checkout
-// on a case-insensitive file system cannot turn it into a denied path.
-func AutoModeDeniedPath(file string) bool {
+// request in Manual Mode: under a built-in denied directory or one of
+// protectedDirs, or named `.gitlab-ci.yml`. It matches names
+// case-insensitively, so a checkout on a case-insensitive file system cannot
+// turn it into a denied path.
+func AutoModeDeniedPath(file string, protectedDirs []string) bool {
+	denied := func(part string) bool {
+		match := func(d string) bool { return strings.EqualFold(strings.Trim(d, "/"), part) }
+		return slices.ContainsFunc(autoModeDeniedDirs, match) || slices.ContainsFunc(protectedDirs, match)
+	}
 	parts := strings.Split(path.Clean(strings.TrimPrefix(file, "/")), "/")
 	for i, part := range parts {
-		if slices.ContainsFunc(autoModeDeniedDirs, func(d string) bool { return strings.EqualFold(d, part) }) {
+		if denied(part) {
 			return true
 		}
 		if i == len(parts)-1 && strings.EqualFold(part, autoModeDeniedFile) {
@@ -242,8 +258,8 @@ func (c *AutoModeConfig) ClassFor(author *AutoModeAuthor, changedFiles []string,
 	if why := author.notMadeBy(commits); why != "" {
 		return ClassNone, why
 	}
-	if i := slices.IndexFunc(changedFiles, AutoModeDeniedPath); i >= 0 {
-		return ClassNone, fmt.Sprintf("it changes `%s`, and Auto Mode never applies a change to CI or Async Agent config", changedFiles[i])
+	if i := slices.IndexFunc(changedFiles, func(f string) bool { return AutoModeDeniedPath(f, c.ProtectedDirs) }); i >= 0 {
+		return ClassNone, fmt.Sprintf("it changes `%s`, and Auto Mode never applies a change to CI or review config", changedFiles[i])
 	}
 	for _, class := range c.Classes {
 		if slices.ContainsFunc(class.Authors, func(a string) bool { return strings.EqualFold(a, author.Username) }) &&
@@ -446,7 +462,7 @@ func AutoModeClassForMR(ctx context.Context, appCfg config.Config, gl vcs.GitCli
 
 // requirePersonApproval refuses the apply of an MR that fell back to Manual
 // Mode unless one of its current approvals is a person's. Automation such as
-// AppSec's approval bot may have approved it while it was in Auto Mode, and as
+// an approval bot may have approved it while it was in Auto Mode, and as
 // a code owner of the class files its approval alone can satisfy GitLab.
 func (t *TFCTrigger) requirePersonApproval(ctx context.Context) error {
 	approvals, err := t.gl.GetMergeRequestApprovals(ctx, t.GetMergeRequestIID(), t.GetProjectNameWithNamespace())

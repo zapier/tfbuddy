@@ -184,11 +184,12 @@ func TestAutoModeClassFor(t *testing.T) {
 	}
 }
 
-// Whatever a class's paths say, a change to CI or Async Agent config puts the
+// Whatever a class's paths say, a change to CI or review config puts the
 // merge request in Manual Mode.
 func TestAutoModeClassFor_DeniedPaths(t *testing.T) {
 	cfg, err := parseAutoModeConfig([]byte(`autoMode:
   authors: [{username: tags-bot, commitEmails: [tags-bot@example.com]}]
+  protectedDirs: [.ai-review]
   classes: [{name: tags, authors: [tags-bot], paths: ["**"], workspaces: ["**"]}]`))
 	if err != nil {
 		t.Fatal(err)
@@ -205,14 +206,14 @@ func TestAutoModeClassFor_DeniedPaths(t *testing.T) {
 		"services/api/.gitlab-ci.yml",
 		".gitlab/ci/plan.yml",
 		"services/api/.gitlab/CODEOWNERS",
-		".async-agent/config.yaml",
-		"services/api/.async-agent/rules.md",
+		".ai-review/config.yaml",
+		"services/api/.ai-review/rules.md",
 		".GitLab-CI.yml",
-		".Async-Agent/config.yaml",
+		".AI-Review/config.yaml",
 		"/.gitlab-ci.yml",
 	} {
 		t.Run(denied, func(t *testing.T) {
-			if !AutoModeDeniedPath(denied) {
+			if !AutoModeDeniedPath(denied, cfg.ProtectedDirs) {
 				t.Errorf("%s should be a denied path", denied)
 			}
 			got, reason := cfg.ClassFor(author, []string{tagsFile, denied}, commitsBy("tags-bot@example.com"), ws)
@@ -222,10 +223,33 @@ func TestAutoModeClassFor_DeniedPaths(t *testing.T) {
 		})
 	}
 
-	for _, allowed := range []string{"services/api/gitlab-ci.yml", "services/my.gitlab/main.tf", "docs/.gitlab-ci.yml.md", "async-agent/x"} {
-		if AutoModeDeniedPath(allowed) {
+	for _, allowed := range []string{"services/api/gitlab-ci.yml", "services/my.gitlab/main.tf", "docs/.gitlab-ci.yml.md", "ai-review/x"} {
+		if AutoModeDeniedPath(allowed, cfg.ProtectedDirs) {
 			t.Errorf("%s should not be a denied path", allowed)
 		}
+	}
+
+	// A protected directory is denied only when .tfbuddy.yaml lists it; the
+	// built-in ones always are.
+	if AutoModeDeniedPath(".ai-review/config.yaml", nil) {
+		t.Error(".ai-review should not be denied without protectedDirs")
+	}
+	if !AutoModeDeniedPath(".gitlab/ci/plan.yml", nil) {
+		t.Error(".gitlab should be denied without protectedDirs")
+	}
+}
+
+// protectedDirs takes plain directory names only.
+func TestAutoModeConfig_ProtectedDirsValidation(t *testing.T) {
+	for _, bad := range []string{`""`, `"/"`, `"."`, `".."`, `"a/b"`} {
+		_, err := parseAutoModeConfig([]byte("autoMode:\n  protectedDirs: [" + bad + "]"))
+		if err == nil {
+			t.Errorf("protectedDirs [%s] should be rejected", bad)
+		}
+	}
+	cfg, err := parseAutoModeConfig([]byte("autoMode:\n  protectedDirs: [.ai-review/, review]"))
+	if err != nil || len(cfg.ProtectedDirs) != 2 {
+		t.Fatalf("protectedDirs [.ai-review/, review] should parse, got %v, %v", cfg, err)
 	}
 }
 
@@ -322,7 +346,7 @@ func TestRunMessage(t *testing.T) {
 func TestAutoModePersonApprover(t *testing.T) {
 	cfg, err := parseAutoModeConfig([]byte(`autoMode:
   authors: [{username: tags-bot, commitEmails: [tags-bot@example.com]}]
-  automaticApprovers: [appsec-bot]
+  automaticApprovers: [approver-bot]
   classes: [{name: tags, authors: [tags-bot], paths: ["**"], workspaces: ["**"]}]`))
 	if err != nil {
 		t.Fatal(err)
@@ -332,8 +356,8 @@ func TestAutoModePersonApprover(t *testing.T) {
 		want      string
 	}{
 		{approvers: nil, want: ""},
-		{approvers: []string{"appsec-bot", "Tags-Bot", "APPSEC-BOT"}, want: ""},
-		{approvers: []string{"appsec-bot", "alice"}, want: "alice"},
+		{approvers: []string{"approver-bot", "Tags-Bot", "APPROVER-BOT"}, want: ""},
+		{approvers: []string{"approver-bot", "alice"}, want: "alice"},
 	} {
 		if got := cfg.PersonApprover(tt.approvers); got != tt.want {
 			t.Errorf("PersonApprover(%q) = %q, want %q", tt.approvers, got, tt.want)

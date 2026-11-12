@@ -213,7 +213,7 @@ func TestGetMergeRequestApprovalsReadsApprovers(t *testing.T) {
 		json.NewEncoder(w).Encode(map[string]any{
 			"approved": true,
 			"approved_by": []map[string]any{
-				{"user": map[string]any{"username": "appsec-bot"}},
+				{"user": map[string]any{"username": "approver-bot"}},
 				{"user": map[string]any{"username": "alice"}},
 			},
 		})
@@ -224,7 +224,7 @@ func TestGetMergeRequestApprovalsReadsApprovers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := approvals.GetApprovers(); len(got) != 2 || got[0] != "appsec-bot" || got[1] != "alice" {
+	if got := approvals.GetApprovers(); len(got) != 2 || got[0] != "approver-bot" || got[1] != "alice" {
 		t.Errorf("GetApprovers() = %q, want both approvers", got)
 	}
 }

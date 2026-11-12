@@ -789,20 +789,20 @@ func approvedBy(ctrl *gomock.Controller, ts *mocks.TestSuite, usernames ...strin
 	ts.MockGitClient.EXPECT().GetMergeRequestApprovals(gomock.Any(), 101, ts.MetaData.ProjectNameNS).Return(approvals, nil).AnyTimes()
 }
 
-// AppSec's bot may have approved an MR before it fell back to Manual Mode, and
+// An approval bot may have approved an MR before it fell back to Manual Mode, and
 // as a code owner of the class files its approval alone can satisfy GitLab.
 // A `tfc apply` of a fallen-back MR needs a person's approval.
 func TestTFCEvents_FallenBackApplyNeedsAPerson(t *testing.T) {
-	withApprovers := strings.Replace(autoModeTargetConfig, "  classes:", "  automaticApprovers: [appsec-bot]\n  classes:", 1)
+	withApprovers := strings.Replace(autoModeTargetConfig, "  classes:", "  automaticApprovers: [approver-bot]\n  classes:", 1)
 	for _, tt := range []struct {
 		name      string
 		approvers []string
 		wantRun   bool
 	}{
-		{name: "only the automatic approver", approvers: []string{"appsec-bot"}},
-		{name: "the automatic approver and the Auto Mode author", approvers: []string{"AppSec-Bot", "tags-bot"}},
+		{name: "only the automatic approver", approvers: []string{"approver-bot"}},
+		{name: "the automatic approver and the Auto Mode author", approvers: []string{"Approver-Bot", "tags-bot"}},
 		{name: "no approvals", approvers: nil},
-		{name: "a person too", approvers: []string{"appsec-bot", "alice"}, wantRun: true},
+		{name: "a person too", approvers: []string{"approver-bot", "alice"}, wantRun: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
