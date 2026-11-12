@@ -55,8 +55,10 @@ func (h *GitlabHooksHandler) RequestManualModeReplan(ctx context.Context, projec
 
 // processManualModeReplan plans the head commit of an MR that fell back to
 // Manual Mode. The MR is already marked as Manual Mode, so its plans carry no
-// class marker. It does nothing when the commit is no longer the MR's head:
-// the push that moved it plans the new head, in Manual Mode too.
+// class marker. When the commit is no longer the MR's head, the push that
+// moved it planned the new head: in Manual Mode if it saw the fallback, and
+// then nothing more is planned, but with the class if it decided the mode
+// before the fallback, and then the new head is planned again instead.
 func (w *GitlabEventWorker) processManualModeReplan(ctx context.Context, msg *MergeRequestEventMsg) error {
 	ctx, span := otel.Tracer("GitlabHandler").Start(ctx, "processManualModeReplan")
 	defer span.End()
@@ -75,8 +77,18 @@ func (w *GitlabEventWorker) processManualModeReplan(ctx context.Context, msg *Me
 		return nil
 	}
 	if head := mr.GetHeadSHA(); !strings.EqualFold(head, sha) {
-		logger.Info().Str("headSHA", head).Msg("not planning an old commit again; the new head is planned by its own push")
-		return nil
+		classPlanned, err := w.runstream.HasClassPlans(tfc_trigger.ClassPlanRef(proj, mrIID, head))
+		if err != nil {
+			return fmt.Errorf("could not read whether the MR's head was planned in Auto Mode: %w", err)
+		}
+		if !classPlanned {
+			logger.Info().Str("headSHA", head).Msg("not planning an old commit again; its push planned the new head in Manual Mode")
+			return nil
+		}
+		// Its plans carry the class marker, and its TFC/class may have passed
+		// before the MR fell back.
+		logger.Info().Str("headSHA", head).Msg("the new head was planned in Auto Mode before the fallback; planning it again")
+		sha = head
 	}
 	cfg, err := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
 		Action:                   tfc_trigger.PlanAction,

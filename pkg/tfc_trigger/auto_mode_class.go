@@ -61,7 +61,13 @@ func (t *TFCTrigger) recordUnplannedWorkspaces(status *TriggeredTFCWorkspaces) (
 // TFC/class passes only when every plan passed and the MR has not fallen back
 // to Manual Mode in the meantime; for an MR that has, it is skipped with the
 // reason, so that it does not block the merge.
-func ReportClassPlans(ctx context.Context, gl vcs.GitClient, rs runstream.StreamClient, state *runstream.ClassPlanState) {
+//
+// It returns an error when TFC/class could not be written, or the report
+// could not be recorded, so that the caller can retry: until then the state
+// is finished but not reported, and the next event for the commit reports it
+// again. The summary comment is a notification, so a failure to post it is
+// only logged.
+func ReportClassPlans(ctx context.Context, gl vcs.GitClient, rs runstream.StreamClient, state *runstream.ClassPlanState) error {
 	ctx, span := otel.Tracer("TFC").Start(ctx, "ReportClassPlans")
 	defer span.End()
 
@@ -90,8 +96,16 @@ func ReportClassPlans(ctx context.Context, gl vcs.GitClient, rs runstream.Stream
 		status.State = vcs.CommitStateFailed
 		status.Description = fmt.Sprintf("class %s failed: the plan for %s did not pass", state.Class, strings.Join(state.FailedWorkspaces(), ", "))
 	}
-	postClassStatus(ctx, gl, status)
+	if err := setClassStatus(ctx, gl, status); err != nil {
+		span.RecordError(err)
+		return fmt.Errorf("could not report the class plans of commit %s: %w", ref.CommitSHA, err)
+	}
 	postClassSummary(ctx, gl, rs, ref, classSummary(state, result, reason))
+	if err := rs.MarkClassPlansReported(ref); err != nil {
+		span.RecordError(err)
+		return fmt.Errorf("could not record that the class plans of commit %s were reported: %w", ref.CommitSHA, err)
+	}
+	return nil
 }
 
 // classSummary is the body of the class plan comment. result is what TFC/class

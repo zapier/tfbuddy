@@ -220,6 +220,15 @@ type ClassPlanState struct {
 	// Finished is set by the one update that gave the last workspace its
 	// outcome.
 	Finished bool `json:"finished"`
+	// Reported is set once TFC/class has been written for the finished
+	// plans. A finished state that is not reported is reported again by the
+	// next event for its commit, such as the redelivery of the event whose
+	// report failed.
+	Reported bool `json:"reported,omitempty"`
+	// Trigger is the webhook delivery or comment that began these plans. A
+	// redelivery of the same trigger keeps them, since its workspace dispatch
+	// claims start no new run.
+	Trigger string `json:"trigger,omitempty"`
 }
 
 // Ref returns the reference of the commit s belongs to.
@@ -264,28 +273,71 @@ func (s *ClassPlanState) allFinished() bool {
 
 // BeginClassPlans starts the class plans of ref's commit over: every one of
 // workspaces is pending, and runs registered for an earlier plan of the
-// commit no longer count.
-func (s *Stream) BeginClassPlans(ref ClassPlanRef, class string, workspaces []string) error {
+// commit no longer count. trigger identifies the webhook delivery or comment
+// that plans the commit. When the state already belongs to that trigger, this
+// is a redelivery: its workspace dispatch claims start no new run, so the
+// state, with the runs and outcomes it already has, is kept, and started is
+// false. An empty trigger always starts over, because without one no claim is
+// taken and every workspace is dispatched again.
+func (s *Stream) BeginClassPlans(ref ClassPlanRef, class string, workspaces []string, trigger string) (started bool, err error) {
 	if s.classPlansKV == nil {
-		return errors.New("class plan store is not configured")
+		return false, errors.New("class plan store is not configured")
 	}
 	if len(workspaces) == 0 {
-		return errors.New("class plans need at least one workspace")
+		return false, errors.New("class plans need at least one workspace")
 	}
 	state := &ClassPlanState{
 		VcsProvider: ref.VcsProvider, Project: ref.Project, MergeRequest: ref.MergeRequest, CommitSHA: ref.CommitSHA,
 		Class:      class,
 		Workspaces: make(map[string]*ClassPlanWorkspace, len(workspaces)),
+		Trigger:    trigger,
 	}
 	for _, ws := range workspaces {
 		state.Workspaces[ws] = &ClassPlanWorkspace{}
 	}
 	data, err := json.Marshal(state)
 	if err != nil {
-		return err
+		return false, err
 	}
-	_, err = s.classPlansKV.Put(classPlansKey(ref), data)
-	return err
+	key := classPlansKey(ref)
+	for range autoModeCASRetries {
+		entry, err := s.classPlansKV.Get(key)
+		switch {
+		case errors.Is(err, nats.ErrKeyNotFound):
+			_, err = s.classPlansKV.Create(key, data)
+		case err != nil:
+			return false, err
+		default:
+			existing := &ClassPlanState{}
+			if jerr := json.Unmarshal(entry.Value(), existing); jerr == nil && trigger != "" && existing.Trigger == trigger {
+				return false, nil
+			}
+			_, err = s.classPlansKV.Update(key, data, entry.Revision())
+		}
+		if err == nil {
+			return true, nil
+		}
+		if !errors.Is(err, nats.ErrKeyExists) {
+			return false, err
+		}
+	}
+	return false, errors.New("class plan state update exceeded retry limit")
+}
+
+// HasClassPlans reports whether TFBuddy began class plans for ref's commit,
+// that is, whether the commit was planned in Auto Mode.
+func (s *Stream) HasClassPlans(ref ClassPlanRef) (bool, error) {
+	if s.classPlansKV == nil {
+		return false, errors.New("class plan store is not configured")
+	}
+	_, err := s.classPlansKV.Get(classPlansKey(ref))
+	if errors.Is(err, nats.ErrKeyNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // RegisterClassPlanRun makes runID the plan run that counts for workspace.
@@ -332,6 +384,20 @@ func (s *Stream) RecordClassPlanResult(ref ClassPlanRef, workspace, runID string
 		ws.Detail = detail
 		return true, nil
 	})
+}
+
+// MarkClassPlansReported records that TFC/class has been written for ref's
+// finished class plans, so that later events for the commit do not report
+// them again.
+func (s *Stream) MarkClassPlansReported(ref ClassPlanRef) error {
+	_, _, err := s.updateClassPlans(ref, func(state *ClassPlanState) (bool, error) {
+		if state.Reported {
+			return false, nil
+		}
+		state.Reported = true
+		return true, nil
+	})
+	return err
 }
 
 // updateClassPlans applies mutate to ref's state with compare-and-swap. It

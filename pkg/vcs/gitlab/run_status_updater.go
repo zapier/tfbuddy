@@ -99,10 +99,17 @@ func (p *RunStatusUpdater) eventStreamCallback(re runstream.RunEvent) bool {
 		return true
 	}
 	err = p.updateCommitStatusForRun(ctx, run, re.GetMetadata())
-	p.updateClassStatus(ctx, run, re.GetMetadata())
+	classErr := p.updateClassStatus(ctx, run, re.GetMetadata())
 	if err != nil {
 		span.RecordError(err)
 		log.Error().Err(err).Str("runID", re.GetRunID()).Msg("could not reconcile auto-merge state")
+		return false
+	}
+	if classErr != nil {
+		// Handled again later, so that a plan's outcome is not lost while
+		// NATS or GitLab is briefly unavailable.
+		span.RecordError(classErr)
+		log.Error().Err(classErr).Str("runID", re.GetRunID()).Msg("could not reconcile the class status")
 		return false
 	}
 	if tfc_api.IsFinalRunStatus(run.Status) {

@@ -160,13 +160,19 @@ func ManualModeClassDescription(reason string) string {
 // postClassStatus publishes a TFC/class status. Like a workspace status, it is
 // a notification: a failure is logged and changes nothing else.
 func postClassStatus(ctx context.Context, gl vcs.GitClient, status vcs.ClassStatus) {
+	if err := setClassStatus(ctx, gl, status); err != nil {
+		log.Error().Err(err).Str("project", status.Project).Int("mergeRequestID", status.MergeRequestIID).
+			Msg("could not set class commit status")
+	}
+}
+
+// setClassStatus publishes a TFC/class status within statusWriteBudget, unless
+// the caller set a deadline of its own.
+func setClassStatus(ctx context.Context, gl vcs.GitClient, status vcs.ClassStatus) error {
 	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, statusWriteBudget)
 		defer cancel()
 	}
-	if err := gl.SetClassStatus(ctx, status); err != nil {
-		log.Error().Err(err).Str("project", status.Project).Int("mergeRequestID", status.MergeRequestIID).
-			Msg("could not set class commit status")
-	}
+	return gl.SetClassStatus(ctx, status)
 }

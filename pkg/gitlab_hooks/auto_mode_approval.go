@@ -44,6 +44,14 @@ func (w *GitlabEventWorker) processAutoModeApproval(ctx context.Context, msg *Me
 	if err != nil {
 		return fmt.Errorf("could not read MergeRequest data from VCS API: %w", err)
 	}
+	// A delayed event can name a commit the MR has since moved past. Its
+	// statuses and pipeline are not the head's, and the head's own approval
+	// sends its own event, so this one starts nothing and says nothing.
+	if head := mr.GetHeadSHA(); !strings.EqualFold(head, headSHA) {
+		log.Info().Str("project", proj).Int("mergeRequestID", mrIID).Str("commitSHA", headSHA).Str("headSHA", head).
+			Msg("ignoring an approval of a commit that is no longer the MR's head")
+		return nil
+	}
 	class, autoMode, err := tfc_trigger.AutoModeClassForMR(ctx, w.cfg, w.gl, w.runstream, w.replanner, proj, mr)
 	if err != nil {
 		return err

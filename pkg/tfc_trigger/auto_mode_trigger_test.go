@@ -82,7 +82,8 @@ func expectMR(ctrl *gomock.Controller, ts *mocks.TestSuite, author, targetConfig
 	// a Manual Mode run never checks out a commit.
 	ts.MockGitRepo.EXPECT().CheckoutCommit("abcd12233").Return(nil).AnyTimes()
 	ts.MockGitRepo.EXPECT().GetMergeBase("abcd12233", ts.MetaData.TargetBranch).Return(ts.MetaData.CommonSHA, nil).AnyTimes()
-	ts.MockStreamClient.EXPECT().BeginClassPlans(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	ts.MockStreamClient.EXPECT().BeginClassPlans(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(true, nil).AnyTimes()
+	ts.MockStreamClient.EXPECT().MarkClassPlansReported(gomock.Any()).Return(nil).AnyTimes()
 	ts.MockStreamClient.EXPECT().RegisterClassPlanRun(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	ts.MockStreamClient.EXPECT().RecordClassPlanResult(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(nil, false, nil).AnyTimes()
@@ -221,7 +222,7 @@ func TestTFCEvents_AutoModePlanCarriesClass(t *testing.T) {
 	ref := runstream.ClassPlanRef{VcsProvider: "gitlab", Project: ts.MetaData.ProjectNameNS, MergeRequest: 101, CommitSHA: "abcd12233"}
 	// The class plans begin before any run, and each run is registered.
 	gomock.InOrder(
-		ts.MockStreamClient.EXPECT().BeginClassPlans(ref, "tags", []string{"service-tfbuddy"}).Return(nil),
+		ts.MockStreamClient.EXPECT().BeginClassPlans(ref, "tags", []string{"service-tfbuddy"}, "delivery:delivery-1").Return(true, nil),
 		ts.MockStreamClient.EXPECT().RegisterClassPlanRun(ref, "service-tfbuddy", "run-1").Return(nil),
 	)
 	// Every workspace planned, so none is recorded as failed.
@@ -853,5 +854,93 @@ func TestTFCEvents_FallenBackApplyNeedsAPerson(t *testing.T) {
 				t.Errorf("run message = %q, want a Manual Mode apply", message)
 			}
 		})
+	}
+}
+
+// A redelivered MR event dispatches no run again: its workspace dispatch claims
+// are taken. It keeps the class plans its first delivery began, and leaves
+// TFC/class alone, so the runs that delivery started still decide the class.
+func TestTFCEvents_RedeliveredClassPlanKeepsThePlans(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	ts := mocks.CreateTestSuite(ctrl, mocks.TestOverrides{ProjectConfig: autoModeWorkspaces()}, t)
+	ref := runstream.ClassPlanRef{VcsProvider: "gitlab", Project: ts.MetaData.ProjectNameNS, MergeRequest: 101, CommitSHA: "abcd12233"}
+	ts.MockStreamClient.EXPECT().BeginClassPlans(ref, "tags", []string{"service-tfbuddy"}, "delivery:delivery-1").Return(false, nil)
+	ts.MockStreamClient.EXPECT().ClaimWorkspaceDispatch(gomock.Any()).Return(false, nil)
+	// The workspace was dispatched by the first delivery, so nothing is
+	// recorded for it, and no status is posted.
+	ts.MockStreamClient.EXPECT().RecordClassPlanResult(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+	ts.MockGitClient.EXPECT().SetClassStatus(gomock.Any(), gomock.Any()).Times(0)
+	expectMR(ctrl, ts, "tags-bot", autoModeTargetConfig, []string{autoModeTagsFile}, tagsBotCommits)
+	ts.InitTestSuite()
+
+	triggered, err := newAutoModeTrigger(autoModeAppConfig(), ts, tfc_trigger.PlanAction).TriggerTFCEvents(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(triggered.Errored) != 0 || !slices.Equal(triggered.Executed, []string{"service-tfbuddy"}) {
+		t.Fatalf("expected the workspace to count as dispatched, got %+v", triggered)
+	}
+}
+
+// An approval checked for one commit never applies another: when the MR's head
+// has moved on by the time the apply reads it, nothing runs.
+func TestTFCEvents_AutoModeApprovalRefusesAStaleCommit(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	ts := mocks.CreateTestSuite(ctrl, mocks.TestOverrides{ProjectConfig: autoModeWorkspaces()}, t)
+	ts.MockGitMR.EXPECT().GetHeadSHA().Return("ef567890a").AnyTimes()
+	expectMR(ctrl, ts, "tags-bot", autoModeTargetConfig, []string{autoModeTagsFile}, tagsBotCommits)
+	// No CreateRunFromSource, AddTags or status expectation: nothing may run,
+	// lock or report.
+	ts.MockGitClient.EXPECT().SetWorkspaceStatus(gomock.Any(), gomock.Any()).Times(0)
+	ts.InitTestSuite()
+
+	tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
+		Action: tfc_trigger.ApplyAction, Branch: ts.MetaData.SourceBranch, CommitSHA: "abcd12233",
+		ProjectNameWithNamespace: ts.MetaData.ProjectNameNS, MergeRequestIID: 101,
+		TriggerSource: tfc_trigger.MergeRequestEventTrigger, VcsProvider: "gitlab", DeliveryID: "delivery-1", AutoModeApproval: true,
+	})
+	_, err := tfc_trigger.NewTFCTrigger(autoModeAppConfig(), ts.MockGitClient, ts.MockApiClient, ts.MockStreamClient, tCfg).
+		TriggerTFCEvents(context.Background())
+	if !errors.Is(err, utils.ErrPermanent) || !strings.Contains(err.Error(), "the MR's head is now ef567890") {
+		t.Fatalf("expected the stale approval's apply to be refused, got %v", err)
+	}
+}
+
+// An Auto Mode apply that TFBuddy cannot start for a workspace sends no run
+// event, so the trigger itself falls back: a retry must be a Manual Mode
+// apply, which needs a person's approval.
+func TestTFCEvents_AutoModeApplyThatCannotStartFallsBack(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	ts := mocks.CreateTestSuite(ctrl, mocks.TestOverrides{ProjectConfig: autoModeWorkspaces()}, t)
+	mrRef := runstream.AutoModeMRRef{VcsProvider: "gitlab", Project: ts.MetaData.ProjectNameNS, MergeRequest: 101}
+	ts.MockStreamClient.EXPECT().MarkAutoModeManual(mrRef, "its apply of `service-tfbuddy` could not be started").Return(true, nil)
+	expectMR(ctrl, ts, "tags-bot", autoModeTargetConfig, []string{autoModeTagsFile}, tagsBotCommits)
+	ts.MockGitClient.EXPECT().CreateMergeRequestDiscussion(gomock.Any(), ts.MetaData.MRIID, ts.MetaData.ProjectNameNS, gomock.Any()).
+		Return(ts.MockGitDisc, nil)
+	ts.MockApiClient.EXPECT().CreateRunFromSource(gomock.Any(), gomock.Any()).Return(nil, errors.New("TFC is down"))
+	expectManualModeClass(t, ts, "its apply of `service-tfbuddy` could not be started")
+	var comments []string
+	ts.MockGitClient.EXPECT().CreateMergeRequestComment(gomock.Any(), 101, ts.MetaData.ProjectNameNS, gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ int, _, msg string) error {
+			comments = append(comments, msg)
+			return nil
+		}).AnyTimes()
+	ts.InitTestSuite()
+
+	replanner := &fakeReplanner{}
+	trigger := newAutoModeTrigger(autoModeAppConfig(), ts, tfc_trigger.ApplyAction)
+	trigger.SetManualModeReplanner(replanner)
+	triggered, err := trigger.TriggerTFCEvents(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(triggered.Errored) != 1 {
+		t.Fatalf("expected the apply to fail to start, got %+v", triggered)
+	}
+	if !slices.Equal(replanner.requests, []string{"zapier/tfbuddy!101@abcd12233"}) {
+		t.Errorf("re-plan requests = %q, want one for the commit", replanner.requests)
+	}
+	if len(comments) != 1 || !strings.Contains(comments[0], "now runs in Manual Mode because its apply of `service-tfbuddy` could not be started") {
+		t.Errorf("expected one Manual Mode comment, got %q", comments)
 	}
 }

@@ -336,6 +336,23 @@ func TestAutoModeApproval_DoesNotApply(t *testing.T) {
 	}
 }
 
+// A delayed approval event for a commit the MR has moved past starts nothing,
+// and says nothing: the head's approval sends its own event.
+func TestAutoModeApproval_StaleEventDoesNotApply(t *testing.T) {
+	f := newAutoModeFixture(t, true)
+	f.mr.EXPECT().GetHeadSHA().Return("newer-sha").AnyTimes()
+	f.expectMR("tags-bot")
+	// No approval, status, pipeline or comment expectation: the event is
+	// dropped before any gate.
+
+	if _, err := f.worker.processMergeRequestEvent(mergeEventMsg("approved")); err != nil {
+		t.Fatal(err)
+	}
+	if applies := f.applies(); len(applies) != 0 {
+		t.Fatalf("expected no apply, but an apply trigger was built: %+v", applies[0])
+	}
+}
+
 // Green TFC/* statuses that someone other than TFBuddy posted do not start an
 // apply.
 func TestAutoModeApproval_ForeignStatusesDoNotApply(t *testing.T) {
@@ -371,10 +388,14 @@ func TestAutoModeApproval_ForeignStatusesDoNotApply(t *testing.T) {
 func TestManualModeReplanEvent(t *testing.T) {
 	for _, tt := range []struct {
 		name, state, head string
-		wantPlan          bool
+		// headClassPlanned is whether the head, when it is not the commit
+		// asked for, was planned in Auto Mode before the fallback.
+		headClassPlanned bool
+		wantPlan         bool
 	}{
 		{name: "the head commit is planned", state: "opened", head: gateCommitSHA, wantPlan: true},
-		{name: "an old commit is not", state: "opened", head: "newer-sha"},
+		{name: "an old commit whose head was planned in Manual Mode is not", state: "opened", head: "newer-sha"},
+		{name: "an old commit whose head was planned in Auto Mode plans the head", state: "opened", head: "newer-sha", headClassPlanned: true, wantPlan: true},
 		{name: "a merged MR is not", state: "merged", head: gateCommitSHA},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -383,6 +404,10 @@ func TestManualModeReplanEvent(t *testing.T) {
 			f.mr.EXPECT().GetHeadSHA().Return(tt.head).AnyTimes()
 			f.mr.EXPECT().GetSourceBranch().Return("tags-bot/tags").AnyTimes()
 			f.client.EXPECT().GetMergeRequest(gomock.Any(), gateMRIID, gateProject).Return(f.mr, nil)
+			if tt.state == "opened" && tt.head != gateCommitSHA {
+				f.stream.EXPECT().HasClassPlans(runstream.ClassPlanRef{VcsProvider: "gitlab", Project: gateProject, MergeRequest: gateMRIID, CommitSHA: tt.head}).
+					Return(tt.headClassPlanned, nil)
+			}
 			if tt.wantPlan {
 				f.trigger.EXPECT().TriggerTFCEvents(gomock.Any()).Return(&tfc_trigger.TriggeredTFCWorkspaces{}, nil)
 			}
@@ -402,7 +427,7 @@ func TestManualModeReplanEvent(t *testing.T) {
 				return
 			}
 			opts := f.created[0]
-			if opts.Action != tfc_trigger.PlanAction || opts.CommitSHA != gateCommitSHA || opts.Branch != "tags-bot/tags" ||
+			if opts.Action != tfc_trigger.PlanAction || opts.CommitSHA != tt.head || opts.Branch != "tags-bot/tags" ||
 				opts.DeliveryID != "tfbuddy-manual-mode-replan/"+gateCommitSHA || opts.AutoModeApproval {
 				t.Errorf("unexpected plan options %+v", opts)
 			}

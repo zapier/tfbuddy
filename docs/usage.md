@@ -431,8 +431,11 @@ autoMode:
   TFBuddy records
   each plan's outcome in NATS (the `AUTO_MODE_CLASS_PLANS` key-value bucket)
   with compare-and-swap, so when the last plans finish together exactly one of
-  them sees every outcome and sets the result. TFBuddy does not yet read a
-  Sentinel class-policy result.
+  them sees every outcome and sets the result. When an outcome or `TFC/class`
+  cannot be written, the run event is handled again later, and a finished
+  class whose `TFC/class` was not written is reported by that retry. A
+  redelivered MR event keeps the plans its first delivery began. TFBuddy does
+  not yet read a Sentinel class-policy result.
 * Once every plan has finished, TFBuddy posts one comment on the MR, and
   updates that same comment for later commits, with the class, the head SHA,
   each workspace's plan run ID and result, and, for an MR in Manual Mode, why.
@@ -446,9 +449,10 @@ Manual Mode until it merges. It falls back when:
   the class paths or is a denied path, or a workspace is outside the class;
 * a class check fails: a plan with the class marker does not pass, or a
   workspace does not plan;
-* an Auto Mode apply soft-fails a policy (see below), or errors. TFBuddy does
-  not tell a failed class policy from any other error, so any errored Auto
-  Mode apply falls back.
+* an Auto Mode apply soft-fails a policy (see below), errors, or cannot be
+  started for a workspace, for example because another MR holds its lock.
+  TFBuddy does not tell a failed class policy from any other error, so any
+  errored Auto Mode apply falls back.
 
 Every fallback takes the same path:
 
@@ -469,9 +473,12 @@ Every fallback takes the same path:
    Manual Mode plan. The plan never runs in the callback that saw the failure:
    TFBuddy publishes a merge request event of its own
    (`tfbuddy_manual_mode_replan`) to the hooks stream, and the merge request
-   event worker plans the commit like a push, unless the MR has moved on to a
-   newer head or is no longer open. If the request cannot be published, the
-   comment asks for a `tfc plan`.
+   event worker plans the commit like a push, unless the MR is no longer open.
+   When the MR has moved on to a newer head, the push that moved it planned
+   that head: nothing more is planned if that push saw the fallback, and the
+   newer head is planned instead if it was planned in Auto Mode before the
+   fallback. If the request cannot be published, the comment asks for a
+   `tfc plan`.
 
 From then on no plan or apply of the merge request carries the class marker,
 whatever later pushes, force-pushes or comments change, so the hard-mandatory
@@ -494,7 +501,8 @@ autoMode:
   automaticApprovers: [approver-bot]
 ```
 
-Known limits: a transient TFC error on a class plan or an Auto Mode apply puts
+Known limits: a transient TFC error on a class plan or an Auto Mode apply, or
+a lock another MR or automation holds when an Auto Mode apply starts, puts
 the MR in Manual Mode for good; a commit that is not in TFBuddy's clone fails
 its runs without a fallback; and an MR whose changes trigger no workspace is
 not judged, so it gets no fallback either.
@@ -531,6 +539,10 @@ all of these hold, and otherwise says why on the MR:
 6. Auto-merge is on and every affected workspace has `autoMerge: true`, because
    Auto Mode must merge what it applies.
 
+An `approved` event for a commit that is no longer the MR's head starts
+nothing and posts nothing: the head's own approval sends its own event. The
+apply reads the head again, and runs nothing if it has moved on.
+
 The apply then decides the MR's mode again, through the same code as a plan,
 and runs nothing if the MR no longer runs in Auto Mode: an approval never
 starts a Manual Mode apply. The lock check then refuses workspaces another MR
@@ -538,8 +550,9 @@ or automation holds, and the divergence check refuses workspaces whose paths
 changed on the target branch.
 For Auto Mode, a divergence check that cannot run blocks every workspace instead
 of posting a warning; for a plan, that is a failed class check. An Auto Mode
-apply that errors falls back to Manual Mode, so a retry is a Manual Mode
-`tfc apply`, which needs a person's approval.
+apply that errors, or that TFBuddy cannot start for a workspace, falls back to
+Manual Mode, so a retry is a Manual Mode `tfc apply`, which needs a person's
+approval.
 
 TFBuddy never overrides a Sentinel policy for Auto Mode. When an Auto Mode
 apply soft-fails a policy (TFC reports a run that would apply as

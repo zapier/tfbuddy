@@ -73,7 +73,7 @@ func TestClassPlansFinishOnceWhenPlansEndTogether(t *testing.T) {
 	for i := range workspaces {
 		workspaces[i] = fmt.Sprintf("ws-%02d", i)
 	}
-	if err := stream.BeginClassPlans(ref, "tags", workspaces); err != nil {
+	if _, err := stream.BeginClassPlans(ref, "tags", workspaces, "delivery:1"); err != nil {
 		t.Fatal(err)
 	}
 	for i, ws := range workspaces {
@@ -116,7 +116,7 @@ func TestClassPlansOutcomes(t *testing.T) {
 	if _, _, err := stream.RecordClassPlanResult(ref, "a", "run-a", true, "planned_and_finished"); !errors.Is(err, ErrClassPlansNotFound) {
 		t.Fatalf("expected ErrClassPlansNotFound for a commit with no class plans, got %v", err)
 	}
-	if err := stream.BeginClassPlans(ref, "tags", []string{"a", "b", "c"}); err != nil {
+	if _, err := stream.BeginClassPlans(ref, "tags", []string{"a", "b", "c"}, "delivery:1"); err != nil {
 		t.Fatal(err)
 	}
 	if err := stream.RegisterClassPlanRun(ref, "a", "run-a"); err != nil {
@@ -151,9 +151,9 @@ func TestClassPlansOutcomes(t *testing.T) {
 		t.Fatalf("a failed workspace must stay failed, got %+v", state.Workspaces["b"])
 	}
 
-	// Planning the commit again starts over.
-	if err := stream.BeginClassPlans(ref, "tags", []string{"a"}); err != nil {
-		t.Fatal(err)
+	// Planning the commit again, for another trigger, starts over.
+	if started, err := stream.BeginClassPlans(ref, "tags", []string{"a"}, "note:7"); err != nil || !started {
+		t.Fatalf("a new trigger must start the class plans over, got %v, %v", started, err)
 	}
 	if _, _, err := stream.RecordClassPlanResult(ref, "a", "run-a", true, "planned_and_finished"); err != nil {
 		t.Fatal(err)
@@ -161,6 +161,62 @@ func TestClassPlansOutcomes(t *testing.T) {
 	state, _, _ = stream.RecordClassPlanResult(ref, "a", "run-a", true, "planned_and_finished")
 	if state.Workspaces["a"].Outcome != ClassPlanPending {
 		t.Fatalf("a run registered before the commit was planned again must not count, got %+v", state.Workspaces["a"])
+	}
+}
+
+// A redelivered webhook dispatches no run again, because its workspace
+// dispatch claims are taken: the plans it began must keep their runs and
+// outcomes, or the runs' results would never count.
+func TestClassPlansRedeliveryKeepsThePlans(t *testing.T) {
+	stream := newTestAutoMergeStream(t)
+	ref := ClassPlanRef{VcsProvider: "gitlab", Project: "zapier/example", MergeRequest: 42, CommitSHA: "ghi"}
+
+	if begun, err := stream.HasClassPlans(ref); err != nil || begun {
+		t.Fatalf("no class plans have begun, got %v, %v", begun, err)
+	}
+	if started, err := stream.BeginClassPlans(ref, "tags", []string{"a", "b"}, "delivery:1"); err != nil || !started {
+		t.Fatalf("expected the class plans to start, got %v, %v", started, err)
+	}
+	if begun, err := stream.HasClassPlans(ref); err != nil || !begun {
+		t.Fatalf("the class plans have begun, got %v, %v", begun, err)
+	}
+	if err := stream.RegisterClassPlanRun(ref, "a", "run-a"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := stream.RecordClassPlanResult(ref, "a", "run-a", true, "planned_and_finished"); err != nil {
+		t.Fatal(err)
+	}
+
+	// The redelivery keeps a's run and outcome, so b's run finishes the class.
+	if started, err := stream.BeginClassPlans(ref, "tags", []string{"a", "b"}, "delivery:1"); err != nil || started {
+		t.Fatalf("a redelivery must keep the class plans, got %v, %v", started, err)
+	}
+	if err := stream.RegisterClassPlanRun(ref, "b", "run-b"); err != nil {
+		t.Fatal(err)
+	}
+	state, finished, err := stream.RecordClassPlanResult(ref, "b", "run-b", true, "planned_and_finished")
+	if err != nil || !finished || !state.Passed() || state.Reported {
+		t.Fatalf("expected b to finish a passed, unreported class, got %+v, %v, %v", state, finished, err)
+	}
+
+	// Until the report is recorded, every later event sees it unreported.
+	state, finished, _ = stream.RecordClassPlanResult(ref, "b", "run-b", true, "planned_and_finished")
+	if finished || !state.Finished || state.Reported {
+		t.Fatalf("a replayed event must see the finished, unreported class, got %+v, %v", state, finished)
+	}
+	if err := stream.MarkClassPlansReported(ref); err != nil {
+		t.Fatal(err)
+	}
+	if state, _, _ = stream.RecordClassPlanResult(ref, "b", "run-b", true, "planned_and_finished"); !state.Reported {
+		t.Fatalf("expected the class to be reported, got %+v", state)
+	}
+
+	// Without a trigger there are no claims, so every workspace runs again
+	// and the plans start over.
+	for range 2 {
+		if started, err := stream.BeginClassPlans(ref, "tags", []string{"a"}, ""); err != nil || !started {
+			t.Fatalf("plans without a trigger must start over, got %v, %v", started, err)
+		}
 	}
 }
 

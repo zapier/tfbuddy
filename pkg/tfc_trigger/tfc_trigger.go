@@ -697,6 +697,12 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 	if err != nil {
 		return nil, fmt.Errorf("could not read MergeRequest data from VCS API: %w", err)
 	}
+	if t.cfg.AutoModeApproval && !strings.EqualFold(mr.GetHeadSHA(), t.GetCommitSHA()) {
+		// The MR moved on after its approval was checked. The approval and
+		// the gates were for another commit, so nothing runs.
+		return nil, utils.CreatePermanentError(fmt.Errorf("refusing the apply an approval started: it is for commit %s, but the MR's head is now %s",
+			shortSHA(t.GetCommitSHA()), shortSHA(mr.GetHeadSHA())))
+	}
 	triggeredWorkspaces, affectedWorkspaces, err := t.getTriggeredWorkspacesForRequest(ctx, mr, false)
 	if err != nil {
 		return nil, fmt.Errorf("could not read triggered workspaces. %w", err)
@@ -789,17 +795,34 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 	if classPlan {
 		// Every class workspace is pending until its run reports, so a plan
 		// that is still running keeps TFC/class pending, and one that never
-		// starts fails it below.
-		if err := t.runstream.BeginClassPlans(t.classPlanRef(), t.cfg.ChangeClass, t.cfg.ClassWorkspaces); err != nil {
+		// starts fails it below. A redelivery of this trigger keeps the
+		// plans it began: its dispatch claims start no new run, so the runs
+		// registered so far are the ones that count.
+		started, err := t.runstream.BeginClassPlans(t.classPlanRef(), t.cfg.ChangeClass, t.cfg.ClassWorkspaces, t.dispatchTrigger())
+		if err != nil {
 			t.postWorkspaceStatusForAll(ctx, triggeredWorkspaces, vcs.CommitStateFailed,
 				fmt.Sprintf("could not initialize the class plans: %v", err))
 			return nil, fmt.Errorf("could not initialize the class plans: %w", err)
 		}
 		t.cfg.ClassPlan = true
-		t.postClassStatus(ctx, vcs.CommitStatePending, fmt.Sprintf("class %s: waiting for plans", t.cfg.ChangeClass))
+		if started {
+			t.postClassStatus(ctx, vcs.CommitStatePending, fmt.Sprintf("class %s: waiting for plans", t.cfg.ChangeClass))
+		}
 	}
 
 	status := t.dispatchWorkspaces(ctx, triggeredWorkspaces, blocked, mr, repo)
+	if t.cfg.AutoMode && t.GetAction() == ApplyAction && len(status.Errored) > 0 {
+		// A workspace whose apply never started sends no run event, so no
+		// run event can put the MR in Manual Mode for it. Without this, a
+		// retry would be another Auto Mode apply.
+		names := make([]string, 0, len(status.Errored))
+		for _, ws := range status.Errored {
+			names = append(names, "`"+ws.Name+"`")
+		}
+		if err := t.fallBackToManualMode(ctx, fmt.Sprintf("its apply of %s could not be started", strings.Join(names, ", ")), true); err != nil {
+			log.Error().Err(err).Msg("could not fall back to Manual Mode")
+		}
+	}
 	if classPlan {
 		// A workspace that did not plan never counts as a clean one, and no
 		// run event will arrive for it to fail the class later.
@@ -810,7 +833,9 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 			}
 		}
 		if finished != nil {
-			ReportClassPlans(ctx, t.gl, t.runstream, finished)
+			if err := ReportClassPlans(ctx, t.gl, t.runstream, finished); err != nil {
+				log.Error().Err(err).Msg("could not report the class plans")
+			}
 		}
 	}
 	return status, nil

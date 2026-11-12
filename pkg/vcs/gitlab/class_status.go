@@ -34,14 +34,20 @@ var terminalPlanStatuses = map[tfe.RunStatus]bool{
 // the result. This proof of concept does not read a Sentinel class-policy
 // result, because that policy does not exist yet; once it does, its result is
 // what should decide TFC/class.
-func (p *RunStatusUpdater) updateClassStatus(ctx context.Context, run *tfe.Run, rmd runstream.RunMetadata) {
+//
+// It returns an error when the outcome, the fallback or the report could not
+// be recorded, so that the event is handled again: no later event is sure to
+// come for the commit. A finished aggregate whose report did not land is
+// reported again by the redelivery.
+func (p *RunStatusUpdater) updateClassStatus(ctx context.Context, run *tfe.Run, rmd runstream.RunMetadata) error {
 	class := rmd.GetChangeClass()
 	if class == "" || rmd.GetAction() != runstream.PlanAction || !terminalPlanStatuses[run.Status] {
-		return
+		return nil
 	}
 	ctx, span := otel.Tracer("TFC").Start(ctx, "updateClassStatus")
 	defer span.End()
 
+	var errs []error
 	passed := run.Status == tfe.RunPlannedAndFinished
 	ref := tfc_trigger.ClassPlanRef(rmd.GetMRProjectNameWithNamespace(), rmd.GetMRInternalID(), rmd.GetCommitSHA())
 	state, finished, err := p.rs.RecordClassPlanResult(ref, rmd.GetWorkspace(), rmd.GetRunID(), passed, string(run.Status))
@@ -56,22 +62,34 @@ func (p *RunStatusUpdater) updateClassStatus(ctx context.Context, run *tfe.Run, 
 		span.RecordError(err)
 		log.Error().Err(err).Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).
 			Msg("could not record the plan's outcome for the class status")
+		errs = append(errs, fmt.Errorf("could not record the plan's outcome for the class status: %w", err))
 	}
 	if !passed {
 		// Any plan with the class marker that does not pass is a failed class
 		// check: the MR runs in Manual Mode from now on, and its head is
 		// planned again without the class.
-		p.fallBackToManualMode(ctx, rmd, fmt.Sprintf("the plan for %s did not pass (%s)", rmd.GetWorkspace(), run.Status))
+		if err := p.fallBackToManualMode(ctx, rmd, fmt.Sprintf("the plan for %s did not pass (%s)", rmd.GetWorkspace(), run.Status)); err != nil {
+			errs = append(errs, err)
+		}
 	}
-	if finished {
-		tfc_trigger.ReportClassPlans(ctx, p.client, p.rs, state)
+	// A finished aggregate that is not reported yet is one whose report
+	// failed: this event, most likely its redelivery, reports it again.
+	if finished || (err == nil && state != nil && state.Finished && !state.Reported) {
+		if err := tfc_trigger.ReportClassPlans(ctx, p.client, p.rs, state); err != nil {
+			span.RecordError(err)
+			log.Error().Err(err).Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).
+				Msg("could not report the class plans")
+			errs = append(errs, err)
+		}
 	}
+	return errors.Join(errs...)
 }
 
 // fallBackToManualMode puts rmd's MR in Manual Mode until it merges; see
-// tfc_trigger.FallBackToManualMode.
-func (p *RunStatusUpdater) fallBackToManualMode(ctx context.Context, rmd runstream.RunMetadata, reason string) {
-	if err := tfc_trigger.FallBackToManualMode(ctx, tfc_trigger.AutoModeDeps{
+// tfc_trigger.FallBackToManualMode. It logs and returns the error when the
+// fallback could not be recorded.
+func (p *RunStatusUpdater) fallBackToManualMode(ctx context.Context, rmd runstream.RunMetadata, reason string) error {
+	err := tfc_trigger.FallBackToManualMode(ctx, tfc_trigger.AutoModeDeps{
 		AppCfg:    p.cfg,
 		GL:        p.client,
 		TFC:       p.tfc,
@@ -86,8 +104,10 @@ func (p *RunStatusUpdater) fallBackToManualMode(ctx context.Context, rmd runstre
 		// Every run-event fallback is a failed run of an Auto Mode MR, whose
 		// plans carry the class marker: plan the head again without it.
 		Replan: true,
-	}); err != nil {
+	})
+	if err != nil {
 		log.Error().Err(err).Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).
 			Msg("could not fall back to Manual Mode")
 	}
+	return err
 }

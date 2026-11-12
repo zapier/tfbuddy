@@ -71,17 +71,18 @@ func (mr *MockStreamClientMockRecorder) BeginAutoMergeApply(ref, workspaces any)
 }
 
 // BeginClassPlans mocks base method.
-func (m *MockStreamClient) BeginClassPlans(ref runstream.ClassPlanRef, class string, workspaces []string) error {
+func (m *MockStreamClient) BeginClassPlans(ref runstream.ClassPlanRef, class string, workspaces []string, trigger string) (bool, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "BeginClassPlans", ref, class, workspaces)
-	ret0, _ := ret[0].(error)
-	return ret0
+	ret := m.ctrl.Call(m, "BeginClassPlans", ref, class, workspaces, trigger)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // BeginClassPlans indicates an expected call of BeginClassPlans.
-func (mr *MockStreamClientMockRecorder) BeginClassPlans(ref, class, workspaces any) *gomock.Call {
+func (mr *MockStreamClientMockRecorder) BeginClassPlans(ref, class, workspaces, trigger any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BeginClassPlans", reflect.TypeOf((*MockStreamClient)(nil).BeginClassPlans), ref, class, workspaces)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BeginClassPlans", reflect.TypeOf((*MockStreamClient)(nil).BeginClassPlans), ref, class, workspaces, trigger)
 }
 
 // ClaimWorkspaceDispatch mocks base method.
@@ -173,6 +174,21 @@ func (mr *MockStreamClientMockRecorder) GetRunMeta(runID any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRunMeta", reflect.TypeOf((*MockStreamClient)(nil).GetRunMeta), runID)
 }
 
+// HasClassPlans mocks base method.
+func (m *MockStreamClient) HasClassPlans(ref runstream.ClassPlanRef) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "HasClassPlans", ref)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// HasClassPlans indicates an expected call of HasClassPlans.
+func (mr *MockStreamClientMockRecorder) HasClassPlans(ref any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HasClassPlans", reflect.TypeOf((*MockStreamClient)(nil).HasClassPlans), ref)
+}
+
 // HealthCheck mocks base method.
 func (m *MockStreamClient) HealthCheck() error {
 	m.ctrl.T.Helper()
@@ -216,6 +232,20 @@ func (m *MockStreamClient) MarkAutoModeManual(ref runstream.AutoModeMRRef, reaso
 func (mr *MockStreamClientMockRecorder) MarkAutoModeManual(ref, reason any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkAutoModeManual", reflect.TypeOf((*MockStreamClient)(nil).MarkAutoModeManual), ref, reason)
+}
+
+// MarkClassPlansReported mocks base method.
+func (m *MockStreamClient) MarkClassPlansReported(ref runstream.ClassPlanRef) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "MarkClassPlansReported", ref)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// MarkClassPlansReported indicates an expected call of MarkClassPlansReported.
+func (mr *MockStreamClientMockRecorder) MarkClassPlansReported(ref any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkClassPlansReported", reflect.TypeOf((*MockStreamClient)(nil).MarkClassPlansReported), ref)
 }
 
 // NewTFRunPollingTask mocks base method.
