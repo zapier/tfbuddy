@@ -245,6 +245,23 @@ func TestClassPlansOfAnotherTriggerAreIsolated(t *testing.T) {
 	if err != nil || state.Reported || state.Workspaces["a"].RunID != "run-new" {
 		t.Fatalf("expected the new plans untouched by the old ones, got %+v, %v", state, err)
 	}
+
+	// A late redelivery of the replaced trigger keeps the newer plans.
+	if started, err := stream.BeginClassPlans(ref, "tags", []string{"a"}, "delivery:1"); err != nil || started {
+		t.Fatalf("a late redelivery of a replaced trigger must keep the newer plans, got %v, %v", started, err)
+	}
+	if state, _ := stream.GetClassPlans(ref); state.Trigger != "note:2" || state.Workspaces["a"].RunID != "run-new" {
+		t.Fatalf("expected the newer plans to stand, got %+v", state)
+	}
+	// Only the latest replaced triggers are remembered.
+	for i := range maxSupersededTriggers + 5 {
+		if _, err := stream.BeginClassPlans(ref, "tags", []string{"a"}, fmt.Sprintf("note:%d", 100+i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if state, _ := stream.GetClassPlans(ref); len(state.SupersededTriggers) != maxSupersededTriggers {
+		t.Fatalf("expected %d remembered triggers, got %d", maxSupersededTriggers, len(state.SupersededTriggers))
+	}
 }
 
 func TestAutoModeSummaryNote(t *testing.T) {

@@ -233,7 +233,14 @@ type ClassPlanState struct {
 	// redelivery of the same trigger keeps them, since its workspace dispatch
 	// claims start no new run.
 	Trigger string `json:"trigger,omitempty"`
+	// SupersededTriggers are the latest triggers whose plans of the commit
+	// these replaced. A late redelivery of one of them keeps these plans.
+	SupersededTriggers []string `json:"superseded_triggers,omitempty"`
 }
+
+// maxSupersededTriggers bounds ClassPlanState.SupersededTriggers. A commit is
+// rarely planned again more than a few times.
+const maxSupersededTriggers = 20
 
 // Ref returns the reference of the commit s belongs to.
 func (s *ClassPlanState) Ref() ClassPlanRef {
@@ -281,8 +288,10 @@ func (s *ClassPlanState) allFinished() bool {
 // that plans the commit. When the state already belongs to that trigger, this
 // is a redelivery: its workspace dispatch claims start no new run, so the
 // state, with the runs and outcomes it already has, is kept, and started is
-// false. An empty trigger always starts over, because without one no claim is
-// taken and every workspace is dispatched again.
+// false. The same holds for a late redelivery of a trigger whose plans another
+// trigger has replaced since: the newer plans stand. An empty trigger always
+// starts over, because without one no claim is taken and every workspace is
+// dispatched again.
 func (s *Stream) BeginClassPlans(ref ClassPlanRef, class string, workspaces []string, trigger string) (started bool, err error) {
 	if s.classPlansKV == nil {
 		return false, errors.New("class plan store is not configured")
@@ -290,31 +299,44 @@ func (s *Stream) BeginClassPlans(ref ClassPlanRef, class string, workspaces []st
 	if len(workspaces) == 0 {
 		return false, errors.New("class plans need at least one workspace")
 	}
-	state := &ClassPlanState{
-		VcsProvider: ref.VcsProvider, Project: ref.Project, MergeRequest: ref.MergeRequest, CommitSHA: ref.CommitSHA,
-		Class:      class,
-		Workspaces: make(map[string]*ClassPlanWorkspace, len(workspaces)),
-		Trigger:    trigger,
-	}
-	for _, ws := range workspaces {
-		state.Workspaces[ws] = &ClassPlanWorkspace{}
-	}
-	data, err := json.Marshal(state)
-	if err != nil {
-		return false, err
-	}
 	key := classPlansKey(ref)
 	for range autoModeCASRetries {
+		state := &ClassPlanState{
+			VcsProvider: ref.VcsProvider, Project: ref.Project, MergeRequest: ref.MergeRequest, CommitSHA: ref.CommitSHA,
+			Class:      class,
+			Workspaces: make(map[string]*ClassPlanWorkspace, len(workspaces)),
+			Trigger:    trigger,
+		}
+		for _, ws := range workspaces {
+			state.Workspaces[ws] = &ClassPlanWorkspace{}
+		}
 		entry, err := s.classPlansKV.Get(key)
 		switch {
 		case errors.Is(err, nats.ErrKeyNotFound):
+			data, merr := json.Marshal(state)
+			if merr != nil {
+				return false, merr
+			}
 			_, err = s.classPlansKV.Create(key, data)
 		case err != nil:
 			return false, err
 		default:
 			existing := &ClassPlanState{}
-			if jerr := json.Unmarshal(entry.Value(), existing); jerr == nil && trigger != "" && existing.Trigger == trigger {
-				return false, nil
+			if jerr := json.Unmarshal(entry.Value(), existing); jerr == nil {
+				if trigger != "" && (existing.Trigger == trigger || slices.Contains(existing.SupersededTriggers, trigger)) {
+					return false, nil
+				}
+				state.SupersededTriggers = existing.SupersededTriggers
+				if existing.Trigger != "" {
+					state.SupersededTriggers = append(state.SupersededTriggers, existing.Trigger)
+				}
+				if n := len(state.SupersededTriggers); n > maxSupersededTriggers {
+					state.SupersededTriggers = state.SupersededTriggers[n-maxSupersededTriggers:]
+				}
+			}
+			data, merr := json.Marshal(state)
+			if merr != nil {
+				return false, merr
 			}
 			_, err = s.classPlansKV.Update(key, data, entry.Revision())
 		}
