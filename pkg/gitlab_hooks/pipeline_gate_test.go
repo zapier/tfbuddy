@@ -28,12 +28,14 @@ type fakePipeline struct {
 	source string
 	status string
 	webURL string
+	ref    string
 }
 
 func (f fakePipeline) GetID() int        { return f.id }
 func (f fakePipeline) GetSource() string { return f.source }
 func (f fakePipeline) GetStatus() string { return f.status }
 func (f fakePipeline) GetWebURL() string { return f.webURL }
+func (f fakePipeline) GetRef() string    { return f.ref }
 
 type fakeJobStatus struct {
 	name         string

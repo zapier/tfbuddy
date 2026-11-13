@@ -78,8 +78,8 @@ func expectMR(ctrl *gomock.Controller, ts *mocks.TestSuite, author, targetConfig
 	// already marked, unless a test registered other answers first.
 	ts.MockStreamClient.EXPECT().IsAutoModeManual(gomock.Any()).Return(false, "", nil).AnyTimes()
 	ts.MockStreamClient.EXPECT().MarkAutoModeManual(gomock.Any(), gomock.Any()).Return(false, nil).AnyTimes()
-	// An Auto Mode run checks out the commit it is for and diverges from it;
-	// a Manual Mode run never checks out a commit.
+	// An Auto Mode run, and a run of an Auto Mode author's fallen-back MR,
+	// checks out the commit it is for and diverges from it.
 	ts.MockGitRepo.EXPECT().CheckoutCommit("abcd12233").Return(nil).AnyTimes()
 	ts.MockGitRepo.EXPECT().GetMergeBase("abcd12233", ts.MetaData.TargetBranch).Return(ts.MetaData.CommonSHA, nil).AnyTimes()
 	ts.MockStreamClient.EXPECT().BeginClassPlans(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(true, nil).AnyTimes()
@@ -956,6 +956,7 @@ func TestTFCEvents_RetargetedFallenBackMRNeedsAPerson(t *testing.T) {
 	a := mocks.NewMockMRAuthor(ctrl)
 	a.EXPECT().GetUsername().Return("tags-bot").AnyTimes()
 	ts.MockGitMR.EXPECT().GetAuthor().Return(a).AnyTimes()
+	ts.MockGitMR.EXPECT().GetHeadSHA().Return("abcd12233").AnyTimes()
 	defaultBranch(ctrl, ts.MockGitClient, "trunk")
 	withApprovers := strings.Replace(autoModeTargetConfig, "  classes:", "  automaticApprovers: [approver-bot]\n  classes:", 1)
 	ts.MockGitClient.EXPECT().GetRepoFile(gomock.Any(), ts.MetaData.ProjectNameNS, ".tfbuddy.yaml", "trunk").Return([]byte(withApprovers), nil).AnyTimes()
@@ -1112,6 +1113,65 @@ func TestTFCEvents_FallbackOfARemovedAuthorNeedsAPerson(t *testing.T) {
 				TriggerTFCEvents(context.Background())
 			if !errors.Is(err, utils.ErrPermanent) || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Fatalf("expected the apply to be refused with %q, got %v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
+// An Auto Mode author's fallen-back MR is still pushed to by automation, so
+// its Manual Mode apply runs exactly the commit a person approved, not the
+// source branch's tip, and refuses a commit that is no longer the head.
+func TestTFCEvents_FallenBackApplyRunsTheExactCommit(t *testing.T) {
+	for _, tt := range []struct {
+		name, head string
+		wantRun    bool
+	}{
+		{name: "the head commit", head: "abcd12233", wantRun: true},
+		{name: "an older commit", head: "ef567890a"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			ts := mocks.CreateTestSuite(ctrl, mocks.TestOverrides{ProjectConfig: autoModeWorkspaces()}, t)
+			ts.MockGitMR.EXPECT().GetHeadSHA().Return(tt.head).AnyTimes()
+			ts.MockStreamClient.EXPECT().IsAutoModeManual(gomock.Any()).Return(true, "a plan failed", nil)
+			checkedOut := false
+			if tt.wantRun {
+				ts.MockGitRepo.EXPECT().CheckoutCommit("abcd12233").DoAndReturn(func(string) error {
+					checkedOut = true
+					return nil
+				})
+				ts.MockApiClient.EXPECT().CreateRunFromSource(gomock.Any(), gomock.Any()).
+					DoAndReturn(func(_ context.Context, o *tfc_api.ApiRunOptions) (*tfe.Run, error) {
+						if !checkedOut {
+							t.Error("the apply was created before the approved commit was checked out")
+						}
+						return &tfe.Run{
+							ID:                   "run-1",
+							Workspace:            &tfe.Workspace{Name: "service-tfbuddy", Organization: &tfe.Organization{Name: "zapier-test"}},
+							ConfigurationVersion: &tfe.ConfigurationVersion{},
+						}, nil
+					})
+			}
+			expectMR(ctrl, ts, "tags-bot", autoModeTargetConfig, []string{autoModeTagsFile}, tagsBotCommits)
+			approvedBy(ctrl, ts, "alice")
+			ts.MockGitClient.EXPECT().SetWorkspaceStatus(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+			ts.InitTestSuite()
+
+			tCfg, _ := tfc_trigger.NewTFCTriggerConfig(&tfc_trigger.TFCTriggerOptions{
+				Action: tfc_trigger.ApplyAction, Branch: ts.MetaData.SourceBranch, CommitSHA: "abcd12233",
+				ProjectNameWithNamespace: ts.MetaData.ProjectNameNS, MergeRequestIID: 101,
+				TriggerSource: tfc_trigger.CommentTrigger, VcsProvider: "gitlab", AutoMergeSequence: 5,
+			})
+			triggered, err := tfc_trigger.NewTFCTrigger(autoModeAppConfig(), ts.MockGitClient, ts.MockApiClient, ts.MockStreamClient, tCfg).
+				TriggerTFCEvents(context.Background())
+			if !tt.wantRun {
+				if !errors.Is(err, utils.ErrPermanent) || !strings.Contains(err.Error(), "the MR's head is now ef567890") {
+					t.Fatalf("expected the older commit to be refused, got %v", err)
+				}
+				return
+			}
+			if err != nil || len(triggered.Errored) != 0 {
+				t.Fatalf("expected the apply to run, got %v, %+v", err, triggered)
 			}
 		})
 	}

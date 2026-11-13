@@ -118,6 +118,9 @@ type CommitStatus interface {
 
 type ProjectPipeline interface {
 	GetSource() string
+	// GetRef returns the ref the pipeline ran for: a branch, or a merge
+	// request's refs/merge-requests/<iid>/... ref.
+	GetRef() string
 	GetID() int
 	GetStatus() string
 	// GetWebURL returns the pipeline's browser URL, which may be empty.

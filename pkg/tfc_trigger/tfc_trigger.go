@@ -479,10 +479,10 @@ func (t *TFCTrigger) getModifiedWorkspacesOnTargetBranch(ctx context.Context, mr
 		return modifiedWSMap, fmt.Errorf("could not fetch target branch %s. %w", mr.GetTargetBranch(), err)
 	}
 	// find merge base. This is the common commit between the source branch and the target branch. This is usually the commit a branch was forked from.
-	// An Auto Mode run checks out the commit its run message names, which may
-	// be behind the source branch's tip, so it diverges from that commit.
+	// A run that runsExactCommit checks out its commit, which may be behind
+	// the source branch's tip, so it diverges from that commit.
 	source := mr.GetSourceBranch()
-	if t.cfg.AutoMode {
+	if t.runsExactCommit() {
 		source = t.GetCommitSHA()
 	}
 	commonSHA, err := repo.GetMergeBase(source, mr.GetTargetBranch())
@@ -584,17 +584,26 @@ func (t *TFCTrigger) getTriggeredWorkspacesForRequest(ctx context.Context, mr vc
 // does not contain.
 var errAutoModeCommitUnavailable = errors.New("the clone does not contain the commit the run is for")
 
-// checkoutAutoModeCommit checks out, for an Auto Mode run, the commit its run
-// message names (sha=), rather than run whatever the source branch's tip is
-// by the time TFBuddy clones it. It fails closed: an Auto Mode run is never
-// created from any other commit.
+// runsExactCommit reports whether this trigger's runs are made from exactly
+// its commit rather than the source branch's tip: every Auto Mode run, and
+// every run of an Auto Mode author's MR that fell back to Manual Mode. The
+// author is automation that may push again at any time, such as a rebase, so
+// the commit a person approved must be the one that runs.
+func (t *TFCTrigger) runsExactCommit() bool {
+	return t.cfg.AutoMode || t.fellBack
+}
+
+// checkoutAutoModeCommit checks out, for a run that runsExactCommit, the
+// commit it is for, rather than run whatever the source branch's tip is by
+// the time TFBuddy clones it. It fails closed: such a run is never created
+// from any other commit.
 func (t *TFCTrigger) checkoutAutoModeCommit(repo vcs.GitRepo) error {
-	if !t.cfg.AutoMode {
+	if !t.runsExactCommit() {
 		return nil
 	}
 	if err := repo.CheckoutCommit(t.GetCommitSHA()); err != nil {
 		// utils.CreatePermanentError would drop the wrapped sentinel.
-		return fmt.Errorf("refusing an Auto Mode %s: could not check out commit %s, which the run is for (%v): %w. %w",
+		return fmt.Errorf("refusing a %s of an Auto Mode author's MR: could not check out commit %s, which the run is for (%v): %w. %w",
 			t.GetAction(), t.GetCommitSHA(), err, errAutoModeCommitUnavailable, utils.ErrPermanent)
 	}
 	return nil
@@ -731,6 +740,15 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 		return nil, utils.CreatePermanentError(err)
 	}
 	if t.fellBack && t.GetAction() == ApplyAction {
+		// The approvals are for the MR's head. With an automation author,
+		// an older commit may be one nobody approved, or a newer push may
+		// have reset the approvals since.
+		if head := mr.GetHeadSHA(); !strings.EqualFold(head, t.GetCommitSHA()) {
+			err := utils.CreatePermanentError(fmt.Errorf("refusing `tfc apply` of commit %s: the MR's head is now %s. Review the new commit and comment `tfc apply` again",
+				shortSHA(t.GetCommitSHA()), shortSHA(head)))
+			t.postWorkspaceStatusForAll(ctx, triggeredWorkspaces, vcs.CommitStateFailed, "refused: the MR's head moved on")
+			return nil, err
+		}
 		if err := t.requirePersonApproval(ctx); err != nil {
 			t.postWorkspaceStatusForAll(ctx, triggeredWorkspaces, vcs.CommitStateFailed,
 				"refused: a fallen-back Auto Mode MR needs a person's approval")

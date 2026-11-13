@@ -230,15 +230,17 @@ func (c *AutoModeConfig) Author(username string) *AutoModeAuthor {
 // .tfbuddy.yaml adds more.
 var autoModeDeniedDirs = []string{".gitlab"}
 
-// autoModeDeniedFile is the file name, at any depth, that no Auto Mode merge
-// request may change, for the same reason.
-const autoModeDeniedFile = ".gitlab-ci.yml"
+// autoModeDeniedFiles are file names, at any depth, that no Auto Mode merge
+// request may change: `.gitlab-ci.yml` decides what CI runs, and
+// `.tfbuddy.yaml`, which TFBuddy reads from the MR's own branch, maps changed
+// files to workspaces and their TFC organizations.
+var autoModeDeniedFiles = []string{".gitlab-ci.yml", ProjectConfigFilename}
 
 // AutoModeDeniedPath reports whether file is one that always puts a merge
 // request in Manual Mode: under a built-in denied directory or one of
-// protectedDirs, or named `.gitlab-ci.yml`. It matches names
-// case-insensitively, so a checkout on a case-insensitive file system cannot
-// turn it into a denied path.
+// protectedDirs, or named `.gitlab-ci.yml` or `.tfbuddy.yaml`. It matches
+// names case-insensitively, so a checkout on a case-insensitive file system
+// cannot turn it into a denied path.
 func AutoModeDeniedPath(file string, protectedDirs []string) bool {
 	denied := func(part string) bool {
 		match := func(d string) bool { return strings.EqualFold(strings.Trim(d, "/"), part) }
@@ -249,7 +251,7 @@ func AutoModeDeniedPath(file string, protectedDirs []string) bool {
 		if denied(part) {
 			return true
 		}
-		if i == len(parts)-1 && strings.EqualFold(part, autoModeDeniedFile) {
+		if i == len(parts)-1 && slices.ContainsFunc(autoModeDeniedFiles, func(f string) bool { return strings.EqualFold(part, f) }) {
 			return true
 		}
 	}
@@ -274,7 +276,7 @@ func (c *AutoModeConfig) ClassFor(author *AutoModeAuthor, changedFiles []string,
 		return ClassNone, why
 	}
 	if i := slices.IndexFunc(changedFiles, func(f string) bool { return AutoModeDeniedPath(f, c.ProtectedDirs) }); i >= 0 {
-		return ClassNone, fmt.Sprintf("it changes `%s`, and Auto Mode never applies a change to CI or review config", changedFiles[i])
+		return ClassNone, fmt.Sprintf("it changes `%s`, and Auto Mode never applies a change to CI, review or TFBuddy config", changedFiles[i])
 	}
 	for _, class := range c.Classes {
 		if slices.ContainsFunc(class.Authors, func(a string) bool { return strings.EqualFold(a, author.Username) }) &&

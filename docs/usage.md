@@ -407,10 +407,12 @@ autoMode:
   anyone who can push to the branch can claim them.
 * Whatever the classes say, a merge request that changes any file under a
   `.gitlab/` directory or a directory listed in `protectedDirs`, or any file
-  named `.gitlab-ci.yml`, at any depth, is a Manual Mode MR. Those files decide
-  what CI runs, including the review jobs that Auto Mode relies on, so list
-  the directories that configure those reviews in `protectedDirs`. Names
-  match case-insensitively.
+  named `.gitlab-ci.yml` or `.tfbuddy.yaml`, at any depth, is a Manual Mode
+  MR. The CI files decide what CI runs, including the review jobs that Auto
+  Mode relies on, so list the directories that configure those reviews in
+  `protectedDirs`. `.tfbuddy.yaml`, which TFBuddy reads from the MR's own
+  branch, maps the MR's files to workspaces and their TFC organizations.
+  Names match case-insensitively.
 * Every plan and apply run of an Auto Mode merge request has a run message that
   TFBuddy builds from fixed fields only, without the MR title:
   `MR [!123] [tfbuddy-class=tags] sha=<head SHA> author=tags-bot`.
@@ -428,6 +430,11 @@ autoMode:
   current changes, which are its head's, so TFBuddy also refuses an Auto Mode
   plan or apply of a commit that is no longer the head, such as one a delayed
   push event or comment asks for.
+* Every run of an Auto Mode author's MR that fell back to Manual Mode is made
+  from exactly its commit too: the author is automation that may push again
+  at any time, such as a rebase, so the commit a person approved is the one
+  that runs. Its `tfc apply` of a commit that is no longer the head is
+  refused.
 * TFBuddy posts a `TFC/class` commit status on the head commit: pending while
   the plans run, and success once every affected workspace's plan has passed.
   When any plan errored, was canceled, failed a policy (soft failures
@@ -539,9 +546,14 @@ all of these hold, and otherwise says why on the MR:
    and passed, with the class the apply would use: `TFC/class` is only what
    TFBuddy last wrote to GitLab, and a write that failed, or a late one from
    plans begun again since, can leave it green.
-4. The head commit's CI pipeline exists and every job in it has succeeded,
-   whatever `TFBUDDY_REQUIRE_PIPELINE_SUCCESS` says. As for `tfc apply`, a
-   `manual` or `skipped` job, and a job allowed to fail, does not block.
+4. The head commit has a CI pipeline of this MR (a merge request pipeline)
+   or, without one, of its source branch (a push pipeline), and every job in
+   the newest one has succeeded, whatever `TFBUDDY_REQUIRE_PIPELINE_SUCCESS`
+   says. No other pipeline of the commit counts: a pipeline of another MR or
+   branch with the same commit reviews other changes, and one started by
+   hand, through the API, a trigger or a schedule can carry variables a person
+   set. As for `tfc apply`, a `manual` or `skipped` job, and a job allowed to
+   fail, does not block.
 5. Every job listed under `autoMode.requiredJobs` is in that pipeline, and its
    latest run has succeeded. Here a `manual`, `skipped` or allowed-to-fail job
    does not count: a review job that never ran does not pass. TFBuddy reads

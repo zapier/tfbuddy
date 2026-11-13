@@ -211,6 +211,8 @@ func TestAutoModeClassFor_DeniedPaths(t *testing.T) {
 		".GitLab-CI.yml",
 		".AI-Review/config.yaml",
 		"/.gitlab-ci.yml",
+		".tfbuddy.yaml",
+		"services/api/.TFBuddy.yaml",
 	} {
 		t.Run(denied, func(t *testing.T) {
 			if !AutoModeDeniedPath(denied, cfg.ProtectedDirs) {
@@ -223,7 +225,7 @@ func TestAutoModeClassFor_DeniedPaths(t *testing.T) {
 		})
 	}
 
-	for _, allowed := range []string{"services/api/gitlab-ci.yml", "services/my.gitlab/main.tf", "docs/.gitlab-ci.yml.md", "ai-review/x"} {
+	for _, allowed := range []string{"services/api/gitlab-ci.yml", "services/my.gitlab/main.tf", "docs/.gitlab-ci.yml.md", "ai-review/x", "docs/tfbuddy.yaml"} {
 		if AutoModeDeniedPath(allowed, cfg.ProtectedDirs) {
 			t.Errorf("%s should not be a denied path", allowed)
 		}

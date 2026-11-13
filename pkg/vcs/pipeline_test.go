@@ -11,6 +11,7 @@ func (s stubPipeline) GetID() int        { return s.id }
 func (s stubPipeline) GetSource() string { return s.source }
 func (s stubPipeline) GetStatus() string { return "" }
 func (s stubPipeline) GetWebURL() string { return "" }
+func (s stubPipeline) GetRef() string    { return "" }
 
 func TestSelectPipelineForCommit(t *testing.T) {
 	tests := []struct {

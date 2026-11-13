@@ -204,17 +204,44 @@ func (w *GitlabEventWorker) autoModeApplyBlocker(ctx context.Context, mr vcs.Det
 
 	// Unlike `tfc apply`, Auto Mode always needs a green pipeline: the review
 	// jobs run in it, and no person is checking it instead.
-	pipeline, err := w.ciPipelineForCommit(ctx, proj, headSHA)
+	pipeline, err := w.autoModePipelineForCommit(ctx, proj, mr, headSHA)
 	if err != nil {
 		return fmt.Sprintf("could not read the head commit's pipelines: %v", err)
 	}
 	if pipeline == nil {
-		return "the head commit has no CI pipeline"
+		return "the head commit has no CI pipeline of this MR or its source branch"
 	}
 	if blocking := blockingJobs(statuses, pipeline.GetID()); len(blocking) > 0 {
 		return fmt.Sprintf("%s has not succeeded, still waiting on: %s", vcs.DescribePipeline(pipeline), strings.Join(blocking, ", "))
 	}
 	return w.requiredJobsBlocker(ctx, proj, pipeline, requiredJobs)
+}
+
+// autoModePipelineForCommit returns the CI pipeline of headSHA that the Auto
+// Mode gate judges, or nil when there is none: the newest one GitLab ran for
+// this MR's own changes, a merge request pipeline of this MR or, without one,
+// a push pipeline of its source branch. No other pipeline of the commit
+// counts. One a person starts by hand, through the API, a trigger or a
+// schedule can carry variables that person set, and the pipeline of another
+// MR or branch with the same commit, which anyone with Developer access can
+// open, reviews other changes.
+func (w *GitlabEventWorker) autoModePipelineForCommit(ctx context.Context, proj string, mr vcs.DetailedMR, headSHA string) (vcs.ProjectPipeline, error) {
+	pipelines, err := w.gl.GetPipelinesForCommit(ctx, proj, headSHA)
+	if err != nil {
+		return nil, err
+	}
+	mrRefs := fmt.Sprintf("refs/merge-requests/%d/", mr.GetInternalID())
+	candidates := make([]vcs.ProjectPipeline, 0, len(pipelines))
+	for _, p := range pipelines {
+		switch {
+		case p.GetSource() == vcs.PipelineSourceMergeRequestEvent && strings.HasPrefix(p.GetRef(), mrRefs):
+		case p.GetSource() == vcs.PipelineSourcePush && p.GetRef() == mr.GetSourceBranch():
+		default:
+			continue
+		}
+		candidates = append(candidates, p)
+	}
+	return vcs.SelectPipelineForCommit(candidates), nil
 }
 
 // requiredJobsBlocker returns why the required CI jobs of pipeline do not

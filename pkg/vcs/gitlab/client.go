@@ -757,6 +757,9 @@ type GitlabPipeline struct {
 func (gP *GitlabPipeline) GetSource() string {
 	return gP.Source
 }
+func (gP *GitlabPipeline) GetRef() string {
+	return gP.Ref
+}
 func (gP *GitlabPipeline) GetID() int {
 	return gP.ID
 }

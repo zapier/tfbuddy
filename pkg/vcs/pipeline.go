@@ -9,6 +9,9 @@ const (
 	// PipelineSourceMergeRequestEvent is the GitLab pipeline source for pipelines
 	// created by a merge request.
 	PipelineSourceMergeRequestEvent = "merge_request_event"
+	// PipelineSourcePush is the GitLab pipeline source for pipelines created by
+	// a push to a branch.
+	PipelineSourcePush = "push"
 	// PipelineSourceExternal is the GitLab pipeline source for pipelines created
 	// implicitly by the commit status API. TFBuddy produces these whenever it
 	// posts a status without a pipeline ID to attach it to.

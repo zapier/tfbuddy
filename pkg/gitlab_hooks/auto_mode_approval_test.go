@@ -3,6 +3,7 @@ package gitlab_hooks
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -235,7 +236,7 @@ func (f *autoModeFixture) expectGates(approved bool, buildStatus string) {
 		fakeJobStatus{name: "aa:code-review", status: buildStatus, pipelineID: 900},
 	}, nil).AnyTimes()
 	f.client.EXPECT().GetPipelinesForCommit(gomock.Any(), gateProject, gateCommitSHA).Return([]vcs.ProjectPipeline{
-		fakePipeline{id: 900, source: vcs.PipelineSourceMergeRequestEvent, status: "running"},
+		fakePipeline{id: 900, source: vcs.PipelineSourceMergeRequestEvent, status: "running", ref: fmt.Sprintf("refs/merge-requests/%d/head", gateMRIID)},
 	}, nil).AnyTimes()
 }
 
@@ -543,6 +544,61 @@ func TestAutoModeApproval_RequiredJobs(t *testing.T) {
 			}
 			if applied := len(f.created) == 1; applied != (tt.wantComment == "") {
 				t.Fatalf("applied = %v, want %v", applied, tt.wantComment == "")
+			}
+		})
+	}
+}
+
+// The gate judges only a pipeline GitLab ran for this MR's own changes. The
+// same commit can have a pipeline of another MR, which anyone with Developer
+// access can open to have different changes reviewed, or one a person ran by
+// hand with variables of their own; neither counts.
+func TestAutoModeApproval_OnlyThisMRsPipelineCounts(t *testing.T) {
+	thisMR := fmt.Sprintf("refs/merge-requests/%d/head", gateMRIID)
+	otherMR := fakePipeline{id: 901, source: vcs.PipelineSourceMergeRequestEvent, status: "success", ref: "refs/merge-requests/999/head"}
+	byHand := fakePipeline{id: 902, source: "web", status: "success", ref: "tags-bot/tags"}
+	otherBranch := fakePipeline{id: 903, source: vcs.PipelineSourcePush, status: "success", ref: "someone/else"}
+	for _, tt := range []struct {
+		name        string
+		pipelines   []vcs.ProjectPipeline
+		wantComment string
+	}{
+		{
+			// The review job failed in this MR's pipeline, so the gate blocks:
+			// the newer, green pipelines are not this MR's.
+			name:        "this MR's pipeline is judged",
+			pipelines:   []vcs.ProjectPipeline{otherMR, byHand, otherBranch, fakePipeline{id: 900, source: vcs.PipelineSourceMergeRequestEvent, status: "failed", ref: thisMR}},
+			wantComment: "still waiting on: aa:code-review (failed)",
+		},
+		{
+			name:        "only pipelines of other changes",
+			pipelines:   []vcs.ProjectPipeline{otherMR, byHand, otherBranch},
+			wantComment: "has no CI pipeline of this MR or its source branch",
+		},
+		{
+			name:        "a push pipeline of the source branch",
+			pipelines:   []vcs.ProjectPipeline{otherBranch, fakePipeline{id: 900, source: vcs.PipelineSourcePush, status: "failed", ref: "tags-bot/tags"}},
+			wantComment: "still waiting on: aa:code-review (failed)",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newAutoModeFixture(t, true)
+			f.expectMR("tags-bot")
+			f.client.EXPECT().GetPipelinesForCommit(gomock.Any(), gateProject, gateCommitSHA).Return(tt.pipelines, nil).AnyTimes()
+			f.expectGates(true, "failed")
+			f.client.EXPECT().CreateMergeRequestComment(gomock.Any(), gateMRIID, gateProject, gomock.Any()).
+				DoAndReturn(func(_ context.Context, _ int, _ string, msg string) error {
+					if !strings.Contains(msg, tt.wantComment) {
+						t.Errorf("comment = %q, want it to mention %q", msg, tt.wantComment)
+					}
+					return nil
+				})
+
+			if _, err := f.worker.processMergeRequestEvent(mergeEventMsg("approved")); err != nil {
+				t.Fatal(err)
+			}
+			if applies := f.applies(); len(applies) != 0 {
+				t.Fatalf("expected no apply, but an apply trigger was built: %+v", applies[0])
 			}
 		})
 	}

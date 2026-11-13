@@ -1312,6 +1312,20 @@ func (mr *MockProjectPipelineMockRecorder) GetID() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetID", reflect.TypeOf((*MockProjectPipeline)(nil).GetID))
 }
 
+// GetRef mocks base method.
+func (m *MockProjectPipeline) GetRef() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetRef")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetRef indicates an expected call of GetRef.
+func (mr *MockProjectPipelineMockRecorder) GetRef() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRef", reflect.TypeOf((*MockProjectPipeline)(nil).GetRef))
+}
+
 // GetSource mocks base method.
 func (m *MockProjectPipeline) GetSource() string {
 	m.ctrl.T.Helper()
