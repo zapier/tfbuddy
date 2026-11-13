@@ -375,10 +375,16 @@ func (t *TFCTrigger) resolveAutoMode(ctx context.Context, mr vcs.DetailedMR, tri
 	}
 	author := autoMode.Author(mr.GetAuthor().GetUsername())
 	if author == nil {
-		if t.GetAction() == ApplyAction {
-			// The author may have been removed from the config after the MR
-			// fell back; its apply still needs a person's approval.
-			return t.readFallbackOfUnlistedAuthor(autoMode)
+		// The author may have been removed from the config after the MR
+		// fell back: its runs still use exactly their commit, and its apply
+		// still needs a person's approval. A plan is harmless, so a mark
+		// that cannot be read blocks only an apply.
+		if err := t.readFallbackOfUnlistedAuthor(ctx, autoMode); err != nil {
+			if t.GetAction() == ApplyAction {
+				return err
+			}
+			log.Warn().Err(err).Str("project", t.GetProjectNameWithNamespace()).Int("mergeRequestID", t.GetMergeRequestIID()).
+				Msg("could not read whether the MR fell back to Manual Mode; planning the source branch's tip")
 		}
 		return nil
 	}
@@ -452,7 +458,7 @@ func (t *TFCTrigger) resolveAutoMode(ctx context.Context, mr vcs.DetailedMR, tri
 // readFallbackOfUnlistedAuthor marks the trigger as fallen back when the MR,
 // whose author autoMode does not list, has fallen back to Manual Mode anyway:
 // its author was listed when it fell back.
-func (t *TFCTrigger) readFallbackOfUnlistedAuthor(autoMode *AutoModeConfig) error {
+func (t *TFCTrigger) readFallbackOfUnlistedAuthor(ctx context.Context, autoMode *AutoModeConfig) error {
 	manual, reason, err := t.runstream.IsAutoModeManual(t.autoModeRef())
 	if err != nil {
 		return fmt.Errorf("could not read whether the MR has fallen back to Manual Mode. %w", err)
@@ -462,6 +468,9 @@ func (t *TFCTrigger) readFallbackOfUnlistedAuthor(autoMode *AutoModeConfig) erro
 		t.autoModeConfig = autoMode
 		log.Info().Str("project", t.GetProjectNameWithNamespace()).Int("mergeRequestID", t.GetMergeRequestIID()).
 			Str("reason", reason).Msg("merge request fell back to Manual Mode while its author was an Auto Mode author")
+		if t.GetAction() == PlanAction {
+			t.postClassStatus(ctx, vcs.CommitStateSkipped, ManualModeClassDescription(reason))
+		}
 	}
 	return nil
 }

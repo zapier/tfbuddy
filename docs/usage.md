@@ -434,7 +434,7 @@ autoMode:
   from exactly its commit too: the author is automation that may push again
   at any time, such as a rebase, so the commit a person approved is the one
   that runs. Its `tfc apply` of a commit that is no longer the head is
-  refused.
+  refused. This holds even after its author is removed from `authors`.
 * TFBuddy posts a `TFC/class` commit status on the head commit: pending while
   the plans run, and success once every affected workspace's plan has passed.
   When any plan errored, was canceled, failed a policy (soft failures

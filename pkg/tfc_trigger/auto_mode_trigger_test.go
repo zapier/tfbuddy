@@ -1176,3 +1176,47 @@ func TestTFCEvents_FallenBackApplyRunsTheExactCommit(t *testing.T) {
 		})
 	}
 }
+
+// The plans of an MR that fell back while its author was an Auto Mode author
+// keep the exact-commit guarantee after the author is removed from the
+// config: a delayed plan of an older commit plans that commit, not the source
+// branch's tip. A mark that cannot be read does not block a plan.
+func TestTFCEvents_FallbackOfARemovedAuthorPlansTheExactCommit(t *testing.T) {
+	withoutAuthor := strings.Replace(autoModeTargetConfig, "username: tags-bot", "username: other-bot", 1)
+	for _, tt := range []struct {
+		name         string
+		readErr      error
+		wantCheckout bool
+	}{
+		{name: "fallback recorded", wantCheckout: true},
+		{name: "fallback unreadable", readErr: errors.New("nats: timeout")},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			ts := mocks.CreateTestSuite(ctrl, mocks.TestOverrides{ProjectConfig: autoModeWorkspaces()}, t)
+			ts.MockStreamClient.EXPECT().IsAutoModeManual(runstream.AutoModeMRRef{VcsProvider: "gitlab", Project: ts.MetaData.ProjectNameNS, MergeRequest: 101}).
+				Return(tt.readErr == nil, "a plan failed", tt.readErr)
+			checkedOut := false
+			ts.MockGitRepo.EXPECT().CheckoutCommit("abcd12233").DoAndReturn(func(string) error {
+				checkedOut = true
+				return nil
+			}).MaxTimes(1)
+			if tt.wantCheckout {
+				expectManualModeClass(t, ts, "a plan failed")
+			}
+			expectMR(ctrl, ts, "tags-bot", withoutAuthor, []string{autoModeTagsFile}, nil)
+			opts, _ := capturePlanRun(ctrl, ts)
+			ts.InitTestSuite()
+
+			if _, err := newAutoModeTrigger(autoModeAppConfig(), ts, tfc_trigger.PlanAction).TriggerTFCEvents(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if checkedOut != tt.wantCheckout {
+				t.Errorf("checked out the commit = %v, want %v", checkedOut, tt.wantCheckout)
+			}
+			if opts.Message != "MR [!101]: MR Title" {
+				t.Errorf("run message = %q, want a Manual Mode plan", opts.Message)
+			}
+		})
+	}
+}
