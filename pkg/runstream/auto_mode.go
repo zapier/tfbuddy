@@ -397,14 +397,18 @@ func (s *Stream) RegisterClassPlanRun(ref ClassPlanRef, workspace, runID, trigge
 
 // RecordClassPlanResult records how workspace's class plan ended and returns
 // the commit's state after the update. runID is the run that ended; an empty
-// runID records a workspace that did not plan at all, which never passes. A
-// result for a run that does not count for the workspace changes nothing. A
-// failed workspace stays failed.
+// runID records a workspace that did not plan at all, which never passes.
+// trigger is the one whose plans the result belongs to. A result for plans
+// another trigger has begun again since, or for a run that does not count for
+// the workspace, changes nothing. A failed workspace stays failed.
 //
 // finished is true for exactly one call: the one that gave the last workspace
 // its outcome.
-func (s *Stream) RecordClassPlanResult(ref ClassPlanRef, workspace, runID string, passed bool, detail string) (*ClassPlanState, bool, error) {
+func (s *Stream) RecordClassPlanResult(ref ClassPlanRef, workspace, runID, trigger string, passed bool, detail string) (*ClassPlanState, bool, error) {
 	return s.updateClassPlans(ref, func(state *ClassPlanState) (bool, error) {
+		if state.Trigger != trigger {
+			return false, nil
+		}
 		ws, ok := state.Workspaces[workspace]
 		if !ok || (runID != "" && ws.RunID != runID) || ws.Outcome == ClassPlanFailed {
 			return false, nil

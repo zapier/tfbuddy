@@ -50,7 +50,7 @@ func (p *RunStatusUpdater) updateClassStatus(ctx context.Context, run *tfe.Run, 
 	var errs []error
 	passed := run.Status == tfe.RunPlannedAndFinished
 	ref := tfc_trigger.ClassPlanRef(rmd.GetMRProjectNameWithNamespace(), rmd.GetMRInternalID(), rmd.GetCommitSHA())
-	state, finished, err := p.rs.RecordClassPlanResult(ref, rmd.GetWorkspace(), rmd.GetRunID(), passed, string(run.Status))
+	state, finished, err := p.rs.RecordClassPlanResult(ref, rmd.GetWorkspace(), rmd.GetRunID(), rmd.GetClassTrigger(), passed, string(run.Status))
 	switch {
 	case errors.Is(err, runstream.ErrClassPlansNotFound):
 		// A run with the class marker outside a class plan, such as one from

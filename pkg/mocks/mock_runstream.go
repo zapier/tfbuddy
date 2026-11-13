@@ -306,9 +306,9 @@ func (mr *MockStreamClientMockRecorder) RecordAutoMergeSuccess(ref any) *gomock.
 }
 
 // RecordClassPlanResult mocks base method.
-func (m *MockStreamClient) RecordClassPlanResult(ref runstream.ClassPlanRef, workspace, runID string, passed bool, detail string) (*runstream.ClassPlanState, bool, error) {
+func (m *MockStreamClient) RecordClassPlanResult(ref runstream.ClassPlanRef, workspace, runID, trigger string, passed bool, detail string) (*runstream.ClassPlanState, bool, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RecordClassPlanResult", ref, workspace, runID, passed, detail)
+	ret := m.ctrl.Call(m, "RecordClassPlanResult", ref, workspace, runID, trigger, passed, detail)
 	ret0, _ := ret[0].(*runstream.ClassPlanState)
 	ret1, _ := ret[1].(bool)
 	ret2, _ := ret[2].(error)
@@ -316,9 +316,9 @@ func (m *MockStreamClient) RecordClassPlanResult(ref runstream.ClassPlanRef, wor
 }
 
 // RecordClassPlanResult indicates an expected call of RecordClassPlanResult.
-func (mr *MockStreamClientMockRecorder) RecordClassPlanResult(ref, workspace, runID, passed, detail any) *gomock.Call {
+func (mr *MockStreamClientMockRecorder) RecordClassPlanResult(ref, workspace, runID, trigger, passed, detail any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RecordClassPlanResult", reflect.TypeOf((*MockStreamClient)(nil).RecordClassPlanResult), ref, workspace, runID, passed, detail)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RecordClassPlanResult", reflect.TypeOf((*MockStreamClient)(nil).RecordClassPlanResult), ref, workspace, runID, trigger, passed, detail)
 }
 
 // RecordRunFinished mocks base method.
@@ -627,6 +627,20 @@ func (m *MockRunMetadata) GetChangeClass() string {
 func (mr *MockRunMetadataMockRecorder) GetChangeClass() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetChangeClass", reflect.TypeOf((*MockRunMetadata)(nil).GetChangeClass))
+}
+
+// GetClassTrigger mocks base method.
+func (m *MockRunMetadata) GetClassTrigger() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetClassTrigger")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetClassTrigger indicates an expected call of GetClassTrigger.
+func (mr *MockRunMetadataMockRecorder) GetClassTrigger() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetClassTrigger", reflect.TypeOf((*MockRunMetadata)(nil).GetClassTrigger))
 }
 
 // GetClassWorkspaces mocks base method.

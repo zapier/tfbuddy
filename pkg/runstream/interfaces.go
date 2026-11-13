@@ -39,7 +39,7 @@ type StreamClient interface {
 	// them.
 	BeginClassPlans(ref ClassPlanRef, class string, workspaces []string, trigger string) (bool, error)
 	RegisterClassPlanRun(ref ClassPlanRef, workspace, runID, trigger string) error
-	RecordClassPlanResult(ref ClassPlanRef, workspace, runID string, passed bool, detail string) (*ClassPlanState, bool, error)
+	RecordClassPlanResult(ref ClassPlanRef, workspace, runID, trigger string, passed bool, detail string) (*ClassPlanState, bool, error)
 	MarkClassPlansReported(ref ClassPlanRef, trigger string) error
 	GetClassPlans(ref ClassPlanRef) (*ClassPlanState, error)
 	NewTFRunPollingTask(meta RunMetadata, delay time.Duration) RunPollingTask
@@ -73,6 +73,7 @@ type RunMetadata interface {
 	GetAutoMergeSequence() int64
 	GetChangeClass() string
 	GetClassWorkspaces() []string
+	GetClassTrigger() string
 }
 
 type RunPollingTask interface {

@@ -1431,6 +1431,7 @@ func (t *TFCTrigger) publishRunToStream(ctx context.Context, run *tfe.Run, cfgWS
 		rmd.AutoMerge = false
 	}
 	if t.cfg.ClassPlan && t.GetAction() == PlanAction {
+		rmd.ClassTrigger = t.dispatchTrigger()
 		// Before the metadata, so that the run's events, which wait for the
 		// metadata, always find the run registered.
 		err := t.runstream.RegisterClassPlanRun(t.classPlanRef(), run.Workspace.Name, run.ID, t.dispatchTrigger())

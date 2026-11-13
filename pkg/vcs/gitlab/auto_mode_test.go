@@ -85,7 +85,7 @@ func TestUpdateClassStatusAfterLastPlan(t *testing.T) {
 	r.updateClassStatus(context.Background(), &tfe.Run{Status: tfe.RunPlannedAndFinished}, &runstream.TFRunMetadata{Action: runstream.ApplyAction, ChangeClass: "tags"})
 
 	// The first plan to pass does not finish the class.
-	rs.EXPECT().RecordClassPlanResult(classPlanRef, "a", "run-a", true, "planned_and_finished").Return(nil, false, nil)
+	rs.EXPECT().RecordClassPlanResult(classPlanRef, "a", "run-a", "", true, "planned_and_finished").Return(nil, false, nil)
 	r.updateClassStatus(context.Background(), &tfe.Run{Status: tfe.RunPlannedAndFinished}, classPlanRun("a", "run-a"))
 
 	finished := &runstream.ClassPlanState{
@@ -95,7 +95,7 @@ func TestUpdateClassStatusAfterLastPlan(t *testing.T) {
 			"b": {RunID: "run-b", Outcome: runstream.ClassPlanPassed, Detail: "planned_and_finished"},
 		},
 	}
-	rs.EXPECT().RecordClassPlanResult(classPlanRef, "b", "run-b", true, "planned_and_finished").Return(finished, true, nil)
+	rs.EXPECT().RecordClassPlanResult(classPlanRef, "b", "run-b", "", true, "planned_and_finished").Return(finished, true, nil)
 	mrRef := runstream.AutoModeMRRef{VcsProvider: "gitlab", Project: testProject, MergeRequest: 101}
 	rs.EXPECT().IsAutoModeManual(mrRef).Return(false, "", nil)
 	client.EXPECT().SetClassStatus(gomock.Any(), vcs.ClassStatus{
@@ -154,7 +154,7 @@ func TestUpdateClassStatusFailureFallsBackToManualMode(t *testing.T) {
 	mrRef := runstream.AutoModeMRRef{VcsProvider: "gitlab", Project: testProject, MergeRequest: 101}
 
 	// a failed; b has not finished, so the class is not reported yet.
-	rs.EXPECT().RecordClassPlanResult(classPlanRef, "a", "run-a", false, "errored").Return(nil, false, nil)
+	rs.EXPECT().RecordClassPlanResult(classPlanRef, "a", "run-a", "", false, "errored").Return(nil, false, nil)
 	rs.EXPECT().MarkAutoModeManual(mrRef, "the plan for a did not pass (errored)").Return(true, nil)
 	client.EXPECT().SetClassStatus(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, s vcs.ClassStatus) error {
 		if s.State != vcs.CommitStateSkipped || s.Description != "Manual Mode: the plan for a did not pass (errored)" {
@@ -203,7 +203,7 @@ func TestUpdateClassStatusReportsAFailedClass(t *testing.T) {
 			"b": {RunID: "run-b", Outcome: runstream.ClassPlanPassed, Detail: "planned_and_finished"},
 		},
 	}
-	rs.EXPECT().RecordClassPlanResult(classPlanRef, "b", "run-b", true, "planned_and_finished").Return(finished, true, nil)
+	rs.EXPECT().RecordClassPlanResult(classPlanRef, "b", "run-b", "", true, "planned_and_finished").Return(finished, true, nil)
 	rs.EXPECT().IsAutoModeManual(mrRef).Return(true, "a plan failed", nil)
 	client.EXPECT().SetClassStatus(gomock.Any(), vcs.ClassStatus{
 		Project: testProject, CommitSHA: "abc123", MergeRequestIID: 101,
@@ -279,17 +279,17 @@ func TestUpdateClassStatusReportsAgainAfterAFailedReport(t *testing.T) {
 	rs.EXPECT().IsAutoModeManual(mrRef).Return(false, "", nil).Times(2)
 	gomock.InOrder(
 		// The plan finishes the class, but GitLab refuses the status.
-		rs.EXPECT().RecordClassPlanResult(classPlanRef, "a", "run-a", true, "planned_and_finished").Return(state(false), true, nil),
+		rs.EXPECT().RecordClassPlanResult(classPlanRef, "a", "run-a", "", true, "planned_and_finished").Return(state(false), true, nil),
 		client.EXPECT().SetClassStatus(gomock.Any(), success).Return(errors.New("502 Bad Gateway")),
 		// The redelivery changes no outcome, and finds the class unreported.
-		rs.EXPECT().RecordClassPlanResult(classPlanRef, "a", "run-a", true, "planned_and_finished").Return(state(false), false, nil),
+		rs.EXPECT().RecordClassPlanResult(classPlanRef, "a", "run-a", "", true, "planned_and_finished").Return(state(false), false, nil),
 		client.EXPECT().SetClassStatus(gomock.Any(), success).Return(nil),
 		rs.EXPECT().GetAutoModeSummaryNote(mrRef).Return(int64(0), nil),
 		client.EXPECT().CreateMergeRequestCommentWithID(gomock.Any(), 101, testProject, gomock.Any()).Return(int64(3), nil),
 		rs.EXPECT().SetAutoModeSummaryNote(mrRef, int64(3)).Return(nil),
 		rs.EXPECT().MarkClassPlansReported(classPlanRef, "").Return(nil),
 		// Once reported, a later event reports nothing.
-		rs.EXPECT().RecordClassPlanResult(classPlanRef, "a", "run-a", true, "planned_and_finished").Return(state(true), false, nil),
+		rs.EXPECT().RecordClassPlanResult(classPlanRef, "a", "run-a", "", true, "planned_and_finished").Return(state(true), false, nil),
 	)
 
 	run := &tfe.Run{Status: tfe.RunPlannedAndFinished}
@@ -318,7 +318,7 @@ func TestEventStreamCallbackRetriesAnUnrecordedClassPlan(t *testing.T) {
 	client.EXPECT().SetClassStatus(gomock.Any(), gomock.Any()).Return(nil)
 	rs := mocks.NewMockStreamClient(ctrl)
 	ref := runstream.ClassPlanRef{VcsProvider: "gitlab", Project: "zapier/tfbuddy", MergeRequest: 101, CommitSHA: "commit-123"}
-	rs.EXPECT().RecordClassPlanResult(ref, "service-tfbuddy", "run-123", false, "errored").Return(nil, false, errors.New("nats: timeout"))
+	rs.EXPECT().RecordClassPlanResult(ref, "service-tfbuddy", "run-123", "", false, "errored").Return(nil, false, errors.New("nats: timeout"))
 	rs.EXPECT().MarkAutoModeManual(gomock.Any(), gomock.Any()).Return(false, nil)
 	// No RecordRunFinished: the event is not done.
 	r := &RunStatusUpdater{cfg: config.C, tfc: tfc, client: client, rs: rs}

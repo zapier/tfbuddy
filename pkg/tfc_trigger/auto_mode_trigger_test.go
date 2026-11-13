@@ -86,7 +86,7 @@ func expectMR(ctrl *gomock.Controller, ts *mocks.TestSuite, author, targetConfig
 	ts.MockStreamClient.EXPECT().MarkClassPlansReported(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	ts.MockStreamClient.EXPECT().RegisterClassPlanRun(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	ts.MockStreamClient.EXPECT().GetClassPlans(gomock.Any()).Return(nil, runstream.ErrClassPlansNotFound).AnyTimes()
-	ts.MockStreamClient.EXPECT().RecordClassPlanResult(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+	ts.MockStreamClient.EXPECT().RecordClassPlanResult(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(nil, false, nil).AnyTimes()
 	ts.MockGitClient.EXPECT().GetRepoFile(gomock.Any(), ts.MetaData.ProjectNameNS, ".tfbuddy.yaml", ts.MetaData.TargetBranch).
 		Return([]byte(targetConfig), nil).AnyTimes()
@@ -227,7 +227,7 @@ func TestTFCEvents_AutoModePlanCarriesClass(t *testing.T) {
 		ts.MockStreamClient.EXPECT().RegisterClassPlanRun(ref, "service-tfbuddy", "run-1", "delivery:delivery-1").Return(nil),
 	)
 	// Every workspace planned, so none is recorded as failed.
-	ts.MockStreamClient.EXPECT().RecordClassPlanResult(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+	ts.MockStreamClient.EXPECT().RecordClassPlanResult(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
 	expectMR(ctrl, ts, "tags-bot", autoModeTargetConfig, []string{autoModeTagsFile}, tagsBotCommits)
 	opts, rmd := capturePlanRun(ctrl, ts)
 	var classStatuses []vcs.ClassStatus
@@ -248,8 +248,8 @@ func TestTFCEvents_AutoModePlanCarriesClass(t *testing.T) {
 	if opts.Message != "MR [!101] [tfbuddy-class=tags] sha=abcd12233 author=tags-bot" {
 		t.Errorf("run message = %q, want the tags class marker and no title", opts.Message)
 	}
-	if rmd.ChangeClass != "tags" || !slices.Equal(rmd.ClassWorkspaces, []string{"service-tfbuddy"}) {
-		t.Errorf("run metadata class = %q over %v, want tags over [service-tfbuddy]", rmd.ChangeClass, rmd.ClassWorkspaces)
+	if rmd.ChangeClass != "tags" || !slices.Equal(rmd.ClassWorkspaces, []string{"service-tfbuddy"}) || rmd.ClassTrigger != "delivery:delivery-1" {
+		t.Errorf("run metadata class = %q over %v for %q, want tags over [service-tfbuddy] for delivery:delivery-1", rmd.ChangeClass, rmd.ClassWorkspaces, rmd.ClassTrigger)
 	}
 	if len(classStatuses) != 1 || classStatuses[0].State != vcs.CommitStatePending || classStatuses[0].CommitSHA != "abcd12233" {
 		t.Errorf("expected one pending TFC/class status on the head commit, got %+v", classStatuses)
@@ -554,8 +554,8 @@ func TestTFCEvents_ClassFailureAsksForAReplan(t *testing.T) {
 	// The workspace that did not plan fails its class plan.
 	ts.MockStreamClient.EXPECT().RecordClassPlanResult(
 		runstream.ClassPlanRef{VcsProvider: "gitlab", Project: ts.MetaData.ProjectNameNS, MergeRequest: 101, CommitSHA: "abcd12233"},
-		"service-tfbuddy", "", false, gomock.Any()).
-		DoAndReturn(func(_ runstream.ClassPlanRef, _, _ string, _ bool, detail string) (*runstream.ClassPlanState, bool, error) {
+		"service-tfbuddy", "", "delivery:delivery-1", false, gomock.Any()).
+		DoAndReturn(func(_ runstream.ClassPlanRef, _, _, _ string, _ bool, detail string) (*runstream.ClassPlanState, bool, error) {
 			if !strings.Contains(detail, "did not plan") || !strings.Contains(detail, "TFC is down") {
 				t.Errorf("unexpected detail %q", detail)
 			}
@@ -659,7 +659,7 @@ func TestTFCEvents_UnplannedWorkspaceFailsTheClass(t *testing.T) {
 		VcsProvider: "gitlab", Project: ref.Project, MergeRequest: 101, CommitSHA: "abcd12233", Class: "tags", Finished: true,
 		Workspaces: map[string]*runstream.ClassPlanWorkspace{"service-tfbuddy": {Outcome: runstream.ClassPlanFailed, Detail: "did not plan: blocked"}},
 	}
-	ts.MockStreamClient.EXPECT().RecordClassPlanResult(ref, "service-tfbuddy", "", false, gomock.Any()).Return(finished, true, nil)
+	ts.MockStreamClient.EXPECT().RecordClassPlanResult(ref, "service-tfbuddy", "", "delivery:delivery-1", false, gomock.Any()).Return(finished, true, nil)
 	// Already marked, so no comment and no re-plan: just the report.
 	ts.MockStreamClient.EXPECT().IsAutoModeManual(mrRef).Return(false, "", nil).Times(1)
 	ts.MockStreamClient.EXPECT().IsAutoModeManual(mrRef).Return(true, "a plan failed", nil).AnyTimes()
@@ -871,7 +871,7 @@ func TestTFCEvents_RedeliveredClassPlanKeepsThePlans(t *testing.T) {
 	ts.MockStreamClient.EXPECT().ClaimWorkspaceDispatch(gomock.Any()).Return(false, nil)
 	// The workspace was dispatched by the first delivery, so nothing is
 	// recorded for it, and no status is posted.
-	ts.MockStreamClient.EXPECT().RecordClassPlanResult(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+	ts.MockStreamClient.EXPECT().RecordClassPlanResult(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
 	ts.MockGitClient.EXPECT().SetClassStatus(gomock.Any(), gomock.Any()).Times(0)
 	expectMR(ctrl, ts, "tags-bot", autoModeTargetConfig, []string{autoModeTagsFile}, tagsBotCommits)
 	ts.InitTestSuite()

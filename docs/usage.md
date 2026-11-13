@@ -441,8 +441,8 @@ autoMode:
   again later, and a finished class whose `TFC/class` was not written is
   reported by that retry. A redelivered MR event keeps the plans its first
   delivery began; a new trigger for the same commit, such as a `tfc plan`
-  comment, begins them again, and runs of the plans it replaced no longer
-  count; a late redelivery of the replaced trigger leaves the newer plans
+  comment, begins them again, and the runs and outcomes of the plans it
+  replaced no longer count; a late redelivery of the replaced trigger leaves the newer plans
   alone. TFBuddy does not yet read a Sentinel class-policy result.
 * Once every plan has finished, TFBuddy posts one comment on the MR, and
   updates that same comment for later commits, with the class, the head SHA,

@@ -89,7 +89,7 @@ func TestClassPlansFinishOnceWhenPlansEndTogether(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			state, finished, err := stream.RecordClassPlanResult(ref, ws, fmt.Sprintf("run-%d", i), true, "planned_and_finished")
+			state, finished, err := stream.RecordClassPlanResult(ref, ws, fmt.Sprintf("run-%d", i), "delivery:1", true, "planned_and_finished")
 			if err != nil {
 				t.Error(err)
 				return
@@ -113,7 +113,7 @@ func TestClassPlansOutcomes(t *testing.T) {
 	stream := newTestAutoMergeStream(t)
 	ref := ClassPlanRef{VcsProvider: "gitlab", Project: "zapier/example", MergeRequest: 42, CommitSHA: "def"}
 
-	if _, _, err := stream.RecordClassPlanResult(ref, "a", "run-a", true, "planned_and_finished"); !errors.Is(err, ErrClassPlansNotFound) {
+	if _, _, err := stream.RecordClassPlanResult(ref, "a", "run-a", "delivery:1", true, "planned_and_finished"); !errors.Is(err, ErrClassPlansNotFound) {
 		t.Fatalf("expected ErrClassPlansNotFound for a commit with no class plans, got %v", err)
 	}
 	if _, err := stream.BeginClassPlans(ref, "tags", []string{"a", "b", "c"}, "delivery:1"); err != nil {
@@ -127,18 +127,18 @@ func TestClassPlansOutcomes(t *testing.T) {
 	}
 
 	// A run that does not count, such as a `tfc plan -w a` run, changes nothing.
-	state, finished, err := stream.RecordClassPlanResult(ref, "a", "run-other", false, "errored")
+	state, finished, err := stream.RecordClassPlanResult(ref, "a", "run-other", "delivery:1", false, "errored")
 	if err != nil || finished || state.Workspaces["a"].Outcome != ClassPlanPending {
 		t.Fatalf("a run that does not count must not change the outcome, got %+v, %v, %v", state.Workspaces["a"], finished, err)
 	}
-	if _, finished, _ = stream.RecordClassPlanResult(ref, "a", "run-a", true, "planned_and_finished"); finished {
+	if _, finished, _ = stream.RecordClassPlanResult(ref, "a", "run-a", "delivery:1", true, "planned_and_finished"); finished {
 		t.Fatal("b and c have not finished")
 	}
 	// A workspace that never planned fails.
-	if _, finished, _ = stream.RecordClassPlanResult(ref, "b", "", true, "did not plan: TFC is down"); finished {
+	if _, finished, _ = stream.RecordClassPlanResult(ref, "b", "", "delivery:1", true, "did not plan: TFC is down"); finished {
 		t.Fatal("c has not finished")
 	}
-	state, finished, err = stream.RecordClassPlanResult(ref, "c", "", false, "not planned")
+	state, finished, err = stream.RecordClassPlanResult(ref, "c", "", "delivery:1", false, "not planned")
 	if err != nil || !finished {
 		t.Fatalf("expected c to finish the class, got %v, %v", finished, err)
 	}
@@ -146,7 +146,7 @@ func TestClassPlansOutcomes(t *testing.T) {
 		t.Fatalf("unexpected state %+v", state)
 	}
 	// A failed workspace stays failed, and a finished class finishes once.
-	state, finished, _ = stream.RecordClassPlanResult(ref, "b", "", true, "late")
+	state, finished, _ = stream.RecordClassPlanResult(ref, "b", "", "delivery:1", true, "late")
 	if finished || state.Workspaces["b"].Outcome != ClassPlanFailed {
 		t.Fatalf("a failed workspace must stay failed, got %+v", state.Workspaces["b"])
 	}
@@ -155,10 +155,10 @@ func TestClassPlansOutcomes(t *testing.T) {
 	if started, err := stream.BeginClassPlans(ref, "tags", []string{"a"}, "note:7"); err != nil || !started {
 		t.Fatalf("a new trigger must start the class plans over, got %v, %v", started, err)
 	}
-	if _, _, err := stream.RecordClassPlanResult(ref, "a", "run-a", true, "planned_and_finished"); err != nil {
+	if _, _, err := stream.RecordClassPlanResult(ref, "a", "run-a", "note:7", true, "planned_and_finished"); err != nil {
 		t.Fatal(err)
 	}
-	state, _, _ = stream.RecordClassPlanResult(ref, "a", "run-a", true, "planned_and_finished")
+	state, _, _ = stream.RecordClassPlanResult(ref, "a", "run-a", "note:7", true, "planned_and_finished")
 	if state.Workspaces["a"].Outcome != ClassPlanPending {
 		t.Fatalf("a run registered before the commit was planned again must not count, got %+v", state.Workspaces["a"])
 	}
@@ -183,7 +183,7 @@ func TestClassPlansRedeliveryKeepsThePlans(t *testing.T) {
 	if err := stream.RegisterClassPlanRun(ref, "a", "run-a", "delivery:1"); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := stream.RecordClassPlanResult(ref, "a", "run-a", true, "planned_and_finished"); err != nil {
+	if _, _, err := stream.RecordClassPlanResult(ref, "a", "run-a", "delivery:1", true, "planned_and_finished"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -194,20 +194,20 @@ func TestClassPlansRedeliveryKeepsThePlans(t *testing.T) {
 	if err := stream.RegisterClassPlanRun(ref, "b", "run-b", "delivery:1"); err != nil {
 		t.Fatal(err)
 	}
-	state, finished, err := stream.RecordClassPlanResult(ref, "b", "run-b", true, "planned_and_finished")
+	state, finished, err := stream.RecordClassPlanResult(ref, "b", "run-b", "delivery:1", true, "planned_and_finished")
 	if err != nil || !finished || !state.Passed() || state.Reported {
 		t.Fatalf("expected b to finish a passed, unreported class, got %+v, %v, %v", state, finished, err)
 	}
 
 	// Until the report is recorded, every later event sees it unreported.
-	state, finished, _ = stream.RecordClassPlanResult(ref, "b", "run-b", true, "planned_and_finished")
+	state, finished, _ = stream.RecordClassPlanResult(ref, "b", "run-b", "delivery:1", true, "planned_and_finished")
 	if finished || !state.Finished || state.Reported {
 		t.Fatalf("a replayed event must see the finished, unreported class, got %+v, %v", state, finished)
 	}
 	if err := stream.MarkClassPlansReported(ref, "delivery:1"); err != nil {
 		t.Fatal(err)
 	}
-	if state, _, _ = stream.RecordClassPlanResult(ref, "b", "run-b", true, "planned_and_finished"); !state.Reported {
+	if state, _, _ = stream.RecordClassPlanResult(ref, "b", "run-b", "delivery:1", true, "planned_and_finished"); !state.Reported {
 		t.Fatalf("expected the class to be reported, got %+v", state)
 	}
 
@@ -244,6 +244,18 @@ func TestClassPlansOfAnotherTriggerAreIsolated(t *testing.T) {
 	state, err := stream.GetClassPlans(ref)
 	if err != nil || state.Reported || state.Workspaces["a"].RunID != "run-new" {
 		t.Fatalf("expected the new plans untouched by the old ones, got %+v, %v", state, err)
+	}
+
+	// Outcomes of the replaced plans change nothing: neither a run of theirs
+	// nor a workspace they did not plan.
+	if state, _, err := stream.RecordClassPlanResult(ref, "a", "run-new", "delivery:1", true, "planned_and_finished"); err != nil || state.Workspaces["a"].Outcome != ClassPlanPending {
+		t.Fatalf("a result of the replaced plans must not count, got %+v, %v", state, err)
+	}
+	if state, _, err := stream.RecordClassPlanResult(ref, "a", "", "delivery:1", false, "did not plan"); err != nil || state.Workspaces["a"].Outcome != ClassPlanPending {
+		t.Fatalf("a workspace the replaced plans did not plan must not fail the new ones, got %+v, %v", state, err)
+	}
+	if state, finished, err := stream.RecordClassPlanResult(ref, "a", "run-new", "note:2", true, "planned_and_finished"); err != nil || !finished || !state.Passed() {
+		t.Fatalf("the new plans' own run must finish them, got %+v, %v, %v", state, finished, err)
 	}
 
 	// A late redelivery of the replaced trigger keeps the newer plans.

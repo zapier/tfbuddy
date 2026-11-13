@@ -54,6 +54,10 @@ type TFRunMetadata struct {
 	// ClassWorkspaces are the workspaces whose plans decide the merge request's
 	// TFC/class status.
 	ClassWorkspaces []string
+	// ClassTrigger is the trigger whose class plans the run belongs to. Its
+	// outcome counts only for those plans, not for plans another trigger
+	// began again for the same commit.
+	ClassTrigger string `json:",omitempty"`
 }
 
 func (r *TFRunMetadata) GetAction() string {
@@ -100,6 +104,9 @@ func (r *TFRunMetadata) GetChangeClass() string {
 }
 func (r *TFRunMetadata) GetClassWorkspaces() []string {
 	return r.ClassWorkspaces
+}
+func (r *TFRunMetadata) GetClassTrigger() string {
+	return r.ClassTrigger
 }
 func (s *Stream) AddRunMeta(rmd RunMetadata) error {
 	b, err := encodeTFRunMetadata(rmd)

@@ -43,7 +43,7 @@ func (t *TFCTrigger) recordUnplannedWorkspaces(status *TriggeredTFCWorkspaces) (
 			continue
 		}
 		notPlanned = append(notPlanned, name)
-		state, finished, err := t.runstream.RecordClassPlanResult(t.classPlanRef(), name, "", false, detail)
+		state, finished, err := t.runstream.RecordClassPlanResult(t.classPlanRef(), name, "", t.dispatchTrigger(), false, detail)
 		if err != nil {
 			// TFC/class still fails: the caller falls back to Manual Mode.
 			log.Error().Err(err).Str("workspace", name).Msg("could not record a workspace that did not plan")
