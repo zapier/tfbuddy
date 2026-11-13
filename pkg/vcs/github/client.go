@@ -42,6 +42,15 @@ func (c *Client) GetAuthenticatedAccountName(ctx context.Context) (string, error
 	return user.GetLogin(), nil
 }
 
+// GetAuthenticatedUsername returns the login of the token's account.
+func (c *Client) GetAuthenticatedUsername(ctx context.Context) (string, error) {
+	user, resp, err := c.client.Users.Get(ctx, "")
+	if err := permanentError(resp, err); err != nil {
+		return "", err
+	}
+	return user.GetLogin(), nil
+}
+
 // permanentError classifies a GitHub API error by the response it came with.
 // The response may be nil, which happens when a request fails before any
 // response is received, so the status code is read defensively here rather
@@ -520,6 +529,23 @@ func (c *Client) GetCommitJobStatuses(ctx context.Context, projectWithNS string,
 func (c *Client) GetProjectSettings(ctx context.Context, projectWithNS string) (vcs.ProjectSettings, error) {
 	//TODO implement me
 	return nil, nil
+}
+
+// errAutoModeUnsupported is returned by the calls only Auto Mode makes. Auto Mode is
+// GitLab-only: TFBuddy never puts a GitHub pull request in Auto Mode.
+var errAutoModeUnsupported = utils.CreatePermanentError(fmt.Errorf("Auto Mode is not supported on GitHub"))
+
+func (c *Client) GetMergeRequestCommits(ctx context.Context, mrIID int, project string) ([]vcs.MRCommit, error) {
+	return nil, errAutoModeUnsupported
+}
+
+func (c *Client) GetPipelineJobs(ctx context.Context, projectWithNS string, pipelineID int) ([]vcs.PipelineJob, error) {
+	return nil, errAutoModeUnsupported
+}
+
+// SetClassStatus is a no-op, like SetWorkspaceStatus.
+func (c *Client) SetClassStatus(ctx context.Context, status vcs.ClassStatus) error {
+	return nil
 }
 
 func (c *Client) GetIssue(ctx context.Context, owner *gogithub.User, repo string, issueId int) (*gogithub.Issue, error) {

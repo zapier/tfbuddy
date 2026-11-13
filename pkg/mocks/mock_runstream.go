@@ -70,6 +70,21 @@ func (mr *MockStreamClientMockRecorder) BeginAutoMergeApply(ref, workspaces any)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BeginAutoMergeApply", reflect.TypeOf((*MockStreamClient)(nil).BeginAutoMergeApply), ref, workspaces)
 }
 
+// BeginClassPlans mocks base method.
+func (m *MockStreamClient) BeginClassPlans(ref runstream.ClassPlanRef, class string, workspaces []string, trigger string) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "BeginClassPlans", ref, class, workspaces, trigger)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// BeginClassPlans indicates an expected call of BeginClassPlans.
+func (mr *MockStreamClientMockRecorder) BeginClassPlans(ref, class, workspaces, trigger any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BeginClassPlans", reflect.TypeOf((*MockStreamClient)(nil).BeginClassPlans), ref, class, workspaces, trigger)
+}
+
 // ClaimWorkspaceDispatch mocks base method.
 func (m *MockStreamClient) ClaimWorkspaceDispatch(claim runstream.WorkspaceDispatchClaim) (bool, error) {
 	m.ctrl.T.Helper()
@@ -83,6 +98,20 @@ func (m *MockStreamClient) ClaimWorkspaceDispatch(claim runstream.WorkspaceDispa
 func (mr *MockStreamClientMockRecorder) ClaimWorkspaceDispatch(claim any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClaimWorkspaceDispatch", reflect.TypeOf((*MockStreamClient)(nil).ClaimWorkspaceDispatch), claim)
+}
+
+// DeleteAutoModeMRState mocks base method.
+func (m *MockStreamClient) DeleteAutoModeMRState(ref runstream.AutoModeMRRef) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteAutoModeMRState", ref)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteAutoModeMRState indicates an expected call of DeleteAutoModeMRState.
+func (mr *MockStreamClientMockRecorder) DeleteAutoModeMRState(ref any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteAutoModeMRState", reflect.TypeOf((*MockStreamClient)(nil).DeleteAutoModeMRState), ref)
 }
 
 // EnsureAutoMergeState mocks base method.
@@ -115,6 +144,36 @@ func (mr *MockStreamClientMockRecorder) FinalizeAutoMerge(ref, merged any) *gomo
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FinalizeAutoMerge", reflect.TypeOf((*MockStreamClient)(nil).FinalizeAutoMerge), ref, merged)
 }
 
+// GetAutoModeSummaryNote mocks base method.
+func (m *MockStreamClient) GetAutoModeSummaryNote(ref runstream.AutoModeMRRef) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetAutoModeSummaryNote", ref)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetAutoModeSummaryNote indicates an expected call of GetAutoModeSummaryNote.
+func (mr *MockStreamClientMockRecorder) GetAutoModeSummaryNote(ref any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAutoModeSummaryNote", reflect.TypeOf((*MockStreamClient)(nil).GetAutoModeSummaryNote), ref)
+}
+
+// GetClassPlans mocks base method.
+func (m *MockStreamClient) GetClassPlans(ref runstream.ClassPlanRef) (*runstream.ClassPlanState, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetClassPlans", ref)
+	ret0, _ := ret[0].(*runstream.ClassPlanState)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetClassPlans indicates an expected call of GetClassPlans.
+func (mr *MockStreamClientMockRecorder) GetClassPlans(ref any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetClassPlans", reflect.TypeOf((*MockStreamClient)(nil).GetClassPlans), ref)
+}
+
 // GetRunMeta mocks base method.
 func (m *MockStreamClient) GetRunMeta(runID string) (runstream.RunMetadata, error) {
 	m.ctrl.T.Helper()
@@ -142,6 +201,51 @@ func (m *MockStreamClient) HealthCheck() error {
 func (mr *MockStreamClientMockRecorder) HealthCheck() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HealthCheck", reflect.TypeOf((*MockStreamClient)(nil).HealthCheck))
+}
+
+// IsAutoModeManual mocks base method.
+func (m *MockStreamClient) IsAutoModeManual(ref runstream.AutoModeMRRef) (bool, string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsAutoModeManual", ref)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(string)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// IsAutoModeManual indicates an expected call of IsAutoModeManual.
+func (mr *MockStreamClientMockRecorder) IsAutoModeManual(ref any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsAutoModeManual", reflect.TypeOf((*MockStreamClient)(nil).IsAutoModeManual), ref)
+}
+
+// MarkAutoModeManual mocks base method.
+func (m *MockStreamClient) MarkAutoModeManual(ref runstream.AutoModeMRRef, reason string) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "MarkAutoModeManual", ref, reason)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// MarkAutoModeManual indicates an expected call of MarkAutoModeManual.
+func (mr *MockStreamClientMockRecorder) MarkAutoModeManual(ref, reason any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkAutoModeManual", reflect.TypeOf((*MockStreamClient)(nil).MarkAutoModeManual), ref, reason)
+}
+
+// MarkClassPlansReported mocks base method.
+func (m *MockStreamClient) MarkClassPlansReported(ref runstream.ClassPlanRef, trigger string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "MarkClassPlansReported", ref, trigger)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// MarkClassPlansReported indicates an expected call of MarkClassPlansReported.
+func (mr *MockStreamClientMockRecorder) MarkClassPlansReported(ref, trigger any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkClassPlansReported", reflect.TypeOf((*MockStreamClient)(nil).MarkClassPlansReported), ref, trigger)
 }
 
 // NewTFRunPollingTask mocks base method.
@@ -201,6 +305,22 @@ func (mr *MockStreamClientMockRecorder) RecordAutoMergeSuccess(ref any) *gomock.
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RecordAutoMergeSuccess", reflect.TypeOf((*MockStreamClient)(nil).RecordAutoMergeSuccess), ref)
 }
 
+// RecordClassPlanResult mocks base method.
+func (m *MockStreamClient) RecordClassPlanResult(ref runstream.ClassPlanRef, workspace, runID, trigger string, passed bool, detail string) (*runstream.ClassPlanState, bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RecordClassPlanResult", ref, workspace, runID, trigger, passed, detail)
+	ret0, _ := ret[0].(*runstream.ClassPlanState)
+	ret1, _ := ret[1].(bool)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// RecordClassPlanResult indicates an expected call of RecordClassPlanResult.
+func (mr *MockStreamClientMockRecorder) RecordClassPlanResult(ref, workspace, runID, trigger, passed, detail any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RecordClassPlanResult", reflect.TypeOf((*MockStreamClient)(nil).RecordClassPlanResult), ref, workspace, runID, trigger, passed, detail)
+}
+
 // RecordRunFinished mocks base method.
 func (m *MockStreamClient) RecordRunFinished(provider string, re runstream.RunEvent) {
 	m.ctrl.T.Helper()
@@ -227,6 +347,20 @@ func (mr *MockStreamClientMockRecorder) RegisterAutoMergeRun(ref any) *gomock.Ca
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RegisterAutoMergeRun", reflect.TypeOf((*MockStreamClient)(nil).RegisterAutoMergeRun), ref)
 }
 
+// RegisterClassPlanRun mocks base method.
+func (m *MockStreamClient) RegisterClassPlanRun(ref runstream.ClassPlanRef, workspace, runID, trigger string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RegisterClassPlanRun", ref, workspace, runID, trigger)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RegisterClassPlanRun indicates an expected call of RegisterClassPlanRun.
+func (mr *MockStreamClientMockRecorder) RegisterClassPlanRun(ref, workspace, runID, trigger any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RegisterClassPlanRun", reflect.TypeOf((*MockStreamClient)(nil).RegisterClassPlanRun), ref, workspace, runID, trigger)
+}
+
 // ReleaseAutoMergeClaim mocks base method.
 func (m *MockStreamClient) ReleaseAutoMergeClaim(ref runstream.AutoMergeRef) error {
 	m.ctrl.T.Helper()
@@ -239,6 +373,20 @@ func (m *MockStreamClient) ReleaseAutoMergeClaim(ref runstream.AutoMergeRef) err
 func (mr *MockStreamClientMockRecorder) ReleaseAutoMergeClaim(ref any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReleaseAutoMergeClaim", reflect.TypeOf((*MockStreamClient)(nil).ReleaseAutoMergeClaim), ref)
+}
+
+// SetAutoModeSummaryNote mocks base method.
+func (m *MockStreamClient) SetAutoModeSummaryNote(ref runstream.AutoModeMRRef, noteID int64) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetAutoModeSummaryNote", ref, noteID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetAutoModeSummaryNote indicates an expected call of SetAutoModeSummaryNote.
+func (mr *MockStreamClientMockRecorder) SetAutoModeSummaryNote(ref, noteID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetAutoModeSummaryNote", reflect.TypeOf((*MockStreamClient)(nil).SetAutoModeSummaryNote), ref, noteID)
 }
 
 // SubscribeTFRunEvents mocks base method.
@@ -465,6 +613,48 @@ func (m *MockRunMetadata) GetAutoMergeSequence() int64 {
 func (mr *MockRunMetadataMockRecorder) GetAutoMergeSequence() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAutoMergeSequence", reflect.TypeOf((*MockRunMetadata)(nil).GetAutoMergeSequence))
+}
+
+// GetChangeClass mocks base method.
+func (m *MockRunMetadata) GetChangeClass() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetChangeClass")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetChangeClass indicates an expected call of GetChangeClass.
+func (mr *MockRunMetadataMockRecorder) GetChangeClass() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetChangeClass", reflect.TypeOf((*MockRunMetadata)(nil).GetChangeClass))
+}
+
+// GetClassTrigger mocks base method.
+func (m *MockRunMetadata) GetClassTrigger() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetClassTrigger")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetClassTrigger indicates an expected call of GetClassTrigger.
+func (mr *MockRunMetadataMockRecorder) GetClassTrigger() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetClassTrigger", reflect.TypeOf((*MockRunMetadata)(nil).GetClassTrigger))
+}
+
+// GetClassWorkspaces mocks base method.
+func (m *MockRunMetadata) GetClassWorkspaces() []string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetClassWorkspaces")
+	ret0, _ := ret[0].([]string)
+	return ret0
+}
+
+// GetClassWorkspaces indicates an expected call of GetClassWorkspaces.
+func (mr *MockRunMetadataMockRecorder) GetClassWorkspaces() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetClassWorkspaces", reflect.TypeOf((*MockRunMetadata)(nil).GetClassWorkspaces))
 }
 
 // GetCommitSHA mocks base method.

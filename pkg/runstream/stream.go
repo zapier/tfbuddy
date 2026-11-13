@@ -21,6 +21,9 @@ type Stream struct {
 	dispatchKV  nats.KeyValue
 	// completionKV records the runs already counted as finished.
 	completionKV nats.KeyValue
+	autoModeKV   nats.KeyValue
+	// classPlansKV holds the class plan outcomes of Auto Mode commits.
+	classPlansKV nats.KeyValue
 }
 
 // NewStream wires up the runstream JetStream client. dedupWindow is the
@@ -53,6 +56,17 @@ func NewStream(js nats.JetStreamContext, jsc jetstream.JetStream, dedupWindow ti
 		log.Error().Err(err).Msg("could not configure run completion KV store; a redelivered final run event may be counted twice")
 	}
 
+	// Auto Mode fails closed without these: every Auto Mode decision errors,
+	// so TFBuddy runs without them rather than not at all.
+	autoModeKV, err := setUpWithRetry(deadline, AutoModeMRKvBucket+" bucket", func() (nats.KeyValue, error) { return configureAutoModeMRKVStore(js) })
+	if err != nil {
+		log.Error().Err(err).Str("bucket", AutoModeMRKvBucket).Msg("could not configure the Auto Mode state store")
+	}
+	classPlansKV, err := setUpWithRetry(deadline, AutoModeClassPlansKvBucket+" bucket", func() (nats.KeyValue, error) { return configureAutoModeClassPlansKVStore(js) })
+	if err != nil {
+		log.Error().Err(err).Str("bucket", AutoModeClassPlansKvBucket).Msg("could not configure the class plan store")
+	}
+
 	s := &Stream{
 		js:           js,
 		jsc:          jsc,
@@ -61,6 +75,8 @@ func NewStream(js nats.JetStreamContext, jsc jetstream.JetStream, dedupWindow ti
 		autoMergeKV:  autoMergeKV,
 		dispatchKV:   dispatchKV,
 		completionKV: completionKV,
+		autoModeKV:   autoModeKV,
+		classPlansKV: classPlansKV,
 	}
 
 	s.startPollingTaskDispatcher()

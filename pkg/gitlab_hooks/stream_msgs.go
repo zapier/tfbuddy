@@ -124,6 +124,11 @@ type MergeRequestEventMsg struct {
 // delivered through both a group and a project webhook.
 func (e *MergeRequestEventMsg) GetId(ctx context.Context) string {
 	attrs := e.Payload.ObjectAttributes
+	if attrs.Action == manualModeReplanAction {
+		// TFBuddy's own event has no instance-wide MR ID, and an IID is only
+		// unique within its project.
+		return fmt.Sprintf("%s-%s-%d-%s", attrs.Action, e.Payload.Project.PathWithNamespace, attrs.IID, attrs.LastCommit.ID)
+	}
 	return fmt.Sprintf("%d-%s-%s-%s", attrs.ID, attrs.Action, attrs.LastCommit.ID, attrs.UpdatedAt)
 }
 

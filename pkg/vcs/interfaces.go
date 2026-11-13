@@ -7,6 +7,9 @@ import "context"
 type GitClient interface {
 	SupportsAggregateAutoMerge() bool
 	GetAuthenticatedAccountName(ctx context.Context) (string, error)
+	// GetAuthenticatedUsername returns the username of the account TFBuddy's
+	// token belongs to: the author of every commit status TFBuddy posts.
+	GetAuthenticatedUsername(ctx context.Context) (string, error)
 	GetMergeRequestApprovals(ctx context.Context, id int, project string) (MRApproved, error)
 	CreateMergeRequestComment(ctx context.Context, id int, fullPath string, comment string) error
 	CreateMergeRequestCommentWithID(ctx context.Context, id int, fullPath string, comment string) (int64, error)
@@ -32,15 +35,37 @@ type GitClient interface {
 	GetOldRunUrls(ctx context.Context, mrIID int, project string, rootCommentID int, workspace string, action string) (string, error)
 	MergeMR(ctx context.Context, mrIID int, project string) error
 	MergeMRAtSHA(ctx context.Context, mrIID int, project, expectedSHA string) error
+	// GetMergeRequestCommits returns every commit on a merge request.
+	GetMergeRequestCommits(ctx context.Context, mrIID int, project string) ([]MRCommit, error)
+	// SetClassStatus publishes the TFC/class commit status of an Auto Mode merge
+	// request.
+	SetClassStatus(ctx context.Context, status ClassStatus) error
+	// GetPipelineJobs returns the latest run of every CI job in a pipeline.
+	// Commit statuses posted through the API, TFBuddy's own included, are not
+	// jobs and are not returned.
+	GetPipelineJobs(ctx context.Context, projectWithNS string, pipelineID int) ([]PipelineJob, error)
+}
+
+// PipelineJob is one CI job of a pipeline, as GitLab ran it.
+type PipelineJob interface {
+	GetID() int
+	GetName() string
+	GetStatus() string
 }
 type GitRepo interface {
 	FetchUpstreamBranch(string) error
 	GetMergeBase(oldest, newest string) (string, error)
 	GetModifiedFileNamesBetweenCommits(oldest, newest string) ([]string, error)
 	GetLocalDirectory() string
+	// CheckoutCommit checks out sha, a full commit SHA, detached. It fails
+	// when the clone does not contain sha.
+	CheckoutCommit(sha string) error
 }
 type MRApproved interface {
 	IsApproved() bool
+	// GetApprovers returns the usernames of everyone whose approval the MR
+	// currently has.
+	GetApprovers() []string
 }
 
 type MRDiscussion interface {
@@ -62,6 +87,8 @@ type DetailedMR interface {
 	GetWebURL() string
 	GetTitle() string
 	GetState() string
+	// GetHeadSHA returns the SHA of the merge request's head commit.
+	GetHeadSHA() string
 }
 type MR interface {
 	MRBranches
@@ -91,6 +118,9 @@ type CommitStatus interface {
 
 type ProjectPipeline interface {
 	GetSource() string
+	// GetRef returns the ref the pipeline ran for: a branch, or a merge
+	// request's refs/merge-requests/<iid>/... ref.
+	GetRef() string
 	GetID() int
 	GetStatus() string
 	// GetWebURL returns the pipeline's browser URL, which may be empty.
@@ -101,6 +131,9 @@ type ProjectPipeline interface {
 // strict to be, rather than duplicating them in TFBuddy's own configuration.
 type ProjectSettings interface {
 	OnlyAllowMergeIfPipelineSucceeds() bool
+	// GetDefaultBranch returns the project's default branch, or "" for a
+	// project without one (an empty repository).
+	GetDefaultBranch() string
 }
 
 // CommitJobStatus is a single entry in a commit's status list: either a real CI
@@ -111,6 +144,10 @@ type CommitJobStatus interface {
 	GetStatus() string
 	GetPipelineID() int
 	GetAllowFailure() bool
+	// GetAuthor returns the username of whoever posted the status, or "" when
+	// the API did not say. Anyone with Developer access can post a status
+	// with any name, so only the author tells TFBuddy's own statuses apart.
+	GetAuthor() string
 }
 
 type Project interface {

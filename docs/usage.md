@@ -75,6 +75,7 @@ The full list of supported environment variables and flags is described below:
 |`TFBUDDY_BLOCK_APPLY_ON_DRAFT`|`--block-apply-on-draft`|Refuse `tfc apply` while the merge request is a Draft. A Draft cannot be merged, so an apply on one leaves live infrastructure ahead of the target branch. `tfc plan` is still allowed.|`false`|
 |`TFBUDDY_STATUS_TRIGGER_WAIT`|`--status-trigger-wait`|How long `tfc status` waits for TFBuddy to publish a commit status for the pipeline's commit before failing the job. Accepts a Go duration string (e.g. 5m).|`5m0s`|
 |`TFBUDDY_SKIP_AUTO_PLAN_LABELS`|`--skip-auto-plan-labels`|Comma-separated GitLab merge request labels (case-insensitive). When a merge request carries any of these labels, TFBuddy skips automatic `tfc plan` triggering from GitLab webhook events (open, reopen, and new commits pushed), but still discovers every affected workspace and posts a pending TFC/plan/<workspace> and TFC/apply/<workspace> commit status for each, without creating a Terraform Cloud run. Does not affect `tfc plan`/`tfc apply` run from an MR comment, and does not block cleanup when the MR is merged or closed.||
+|`TFBUDDY_AUTO_MODE_ENABLED`|`--auto-mode-enabled`|Enable Auto Mode for GitLab: merge requests whose author is listed under `autoMode` in the target branch's .tfbuddy.yaml are planned with a change class in the run message and applied through the `tfc apply` path once they are approved after their last push. When disabled, those merge requests take Manual Mode, the normal `tfc apply` flow.|`false`|
 <!-- END GENERATED CONFIGURATION -->
 
 For sensitive environment variables use `secrets.envs` which can contain a list of key/value pairs
@@ -337,3 +338,274 @@ every apply attempt for an MR shares that tag and another attempt may already
 be running under it. The MR therefore holds the workspace until it merges or
 closes, as after any apply. If two MRs collide this way, both stay locked until
 one of them runs `tfc unlock -w <workspace>`.
+
+### Auto Mode: apply on approval
+
+Auto Mode is for automation, on GitLab only. An Auto Mode merge request is applied
+automatically once it is approved, through the same path as a `tfc apply`
+comment: the same lock, statuses and divergence check, then auto-merge. Merge
+requests from people, and every merge request while Auto Mode is off, take
+Manual Mode: the normal flow, where someone comments `tfc apply`.
+
+Turn it on with `TFBUDDY_AUTO_MODE_ENABLED=true`, and list the automation users in
+`.tfbuddy.yaml`:
+
+```yaml
+autoMode:
+  authors:
+    # Matched against the merge request author from the GitLab API.
+  - username: tags-bot
+    # The git author and committer emails its commits carry.
+    commitEmails: [tags-bot@example.com]
+  - username: renovate-bot
+    # Renovate's own commits, plus the commits of a fix job that pushes to
+    # Renovate's MRs to fix module inputs after a bump.
+    commitEmails: [bot@renovateapp.com, renovate-fix-bot@example.com]
+  # Users whose approval is automatic, such as an approval bot. See
+  # "Falling back to Manual Mode".
+  automaticApprovers: [approver-bot]
+  # CI jobs that must have succeeded before an approval applies the MR, such
+  # as an AI review job.
+  requiredJobs: ["<AI review job>"]
+  # More directories, at any depth, that no Auto Mode MR may change, on top of
+  # `.gitlab/` and `.gitlab-ci.yml`: for example, the directory that holds an
+  # AI review's prompts.
+  protectedDirs: [.ai-review]
+  classes:
+  - name: tags
+    authors: [tags-bot]
+    paths: ["services/*/*/*/tags.auto.tfvars.json"]
+    # TFC workspace names. A class without workspaces matches no MR.
+    workspaces: ["app-*"]
+  - name: renovate-safe-plan
+    authors: [renovate-bot]
+    # Only Terraform files: the Sentinel class policy cannot see anything else.
+    paths: ["services/**/*.tf", "services/**/.terraform.lock.hcl", "workspaces/**/*.tf", "workspaces/**/.terraform.lock.hcl"]
+    workspaces: ["app-*", "workspaces-app-*"]
+```
+
+* TFBuddy reads `autoMode` only from the project's **default** branch, and
+  only for a merge request that targets the default branch, so a merge request
+  can neither add its own author nor widen a class. A merge request into any
+  other branch is a Manual Mode MR, whatever that branch's `.tfbuddy.yaml`
+  says. An MR that fell back to Manual Mode (see below) and is then
+  retargeted to another branch stays fallen back, so TFBuddy reads the
+  default branch's `autoMode` for it to find the automatic approvers. The
+  workspaces it plans still come from the source branch, as for any MR.
+* A merge request runs in Auto Mode when its author, read from the GitLab API, is
+  under `authors`. The note author and the commit author are never used.
+* Its change class is the first class whose `authors` include the MR author,
+  whose `paths` (doublestar globs) match every file the MR changes, and whose
+  `workspaces` (doublestar globs over TFC workspace names) match every
+  workspace the MR affects, plus the one named by `tfc plan -w` or
+  `tfc apply -w`. A class without `workspaces` matches no merge request, and
+  neither does a merge request that affects no workspace. A merge
+  request that fits no class falls back to Manual Mode, and so does one with any
+  commit whose git author or committer email is not one of the author's
+  `commitEmails`. Those emails are
+  declared by whoever makes the commit, so this check is evidence, not proof:
+  anyone who can push to the branch can claim them.
+* Whatever the classes say, a merge request that changes any file under a
+  `.gitlab/` directory or a directory listed in `protectedDirs`, or any file
+  named `.gitlab-ci.yml` or `.tfbuddy.yaml`, at any depth, is a Manual Mode
+  MR. The CI files decide what CI runs, including the review jobs that Auto
+  Mode relies on, so list the directories that configure those reviews in
+  `protectedDirs`. `.tfbuddy.yaml`, which TFBuddy reads from the MR's own
+  branch, maps the MR's files to workspaces and their TFC organizations.
+  Names match case-insensitively.
+* Every plan and apply run of an Auto Mode merge request has a run message that
+  TFBuddy builds from fixed fields only, without the MR title:
+  `MR [!123] [tfbuddy-class=tags] sha=<head SHA> author=tags-bot`.
+  A Sentinel policy reads the class there. TFBuddy refuses to create an Auto Mode
+  run without a class. Runs of other merge requests keep the title, so a
+  marker in a person's title can only restrict their own run.
+* An Auto Mode run is made from exactly the commit its run message names:
+  TFBuddy checks out that SHA in its clone, rather than run whatever the
+  source branch's tip is by then, and checks divergence from it. When the
+  clone does not contain the commit (a force-push dropped it, or
+  `TFBUDDY_GITLAB_CLONE_DEPTH` is too shallow for a branch that moved on),
+  TFBuddy creates no run and fails the workspace statuses. That commit's class
+  fails, but the merge request does not fall back to Manual Mode for it: its
+  new head is planned by its own push. The class is decided from the MR's
+  current changes, which are its head's, so TFBuddy also refuses an Auto Mode
+  plan or apply of a commit that is no longer the head, such as one a delayed
+  push event or comment asks for.
+* Every run of an Auto Mode author's MR that fell back to Manual Mode is made
+  from exactly its commit too: the author is automation that may push again
+  at any time, such as a rebase, so the commit a person approved is the one
+  that runs. Its `tfc apply` of a commit that is no longer the head is
+  refused. This holds even after its author is removed from `authors`.
+* TFBuddy posts a `TFC/class` commit status on the head commit: pending while
+  the plans run, and success once every affected workspace's plan has passed.
+  When any plan errored, was canceled, failed a policy (soft failures
+  included), or a workspace the MR affects did not plan, the merge request
+  falls back to Manual Mode, as below, and `TFC/class` becomes `skipped`.
+  TFBuddy records
+  each plan's outcome in NATS (the `AUTO_MODE_CLASS_PLANS` key-value bucket)
+  with compare-and-swap, so when the last plans finish together exactly one of
+  them sees every outcome and sets the result. When an outcome or `TFC/class`
+  cannot be written, or the MR's mode cannot be read, the event is handled
+  again later, and a finished class whose `TFC/class` was not written is
+  reported by that retry. A redelivered MR event keeps the plans its first
+  delivery began; a new trigger for the same commit, such as a `tfc plan`
+  comment, begins them again, and the runs and outcomes of the plans it
+  replaced no longer count; a late redelivery of the replaced trigger leaves the newer plans
+  alone. TFBuddy does not yet read a Sentinel class-policy result.
+* Once every plan has finished, TFBuddy posts one comment on the MR, and
+  updates that same comment for later commits, with the class, the head SHA,
+  each workspace's plan run ID and result, and, for an MR in Manual Mode, why.
+
+#### Falling back to Manual Mode
+
+Once an Auto Mode author's merge request falls back to Manual Mode, it stays in
+Manual Mode until it merges. It falls back when:
+
+* it fits no class: a commit fails the author check, a changed file is outside
+  the class paths or is a denied path, or a workspace is outside the class;
+* a class check fails: a plan with the class marker does not pass, or a
+  workspace does not plan;
+* an Auto Mode apply soft-fails a policy (see below), errors, or cannot be
+  started for a workspace, for example because another MR holds its lock.
+  TFBuddy does not tell a failed class policy from any other error, so any
+  errored Auto Mode apply falls back;
+* a person comments `tfc apply` while the Auto Mode gate does not pass (see
+  below): the person takes the MR over.
+
+Every fallback takes the same path:
+
+1. TFBuddy records the fallback for the merge request (project and IID) in
+   NATS, in the `AUTO_MODE_MERGE_REQUESTS` key-value bucket, which has no TTL.
+   It does not use a label, which anyone with Developer access can edit.
+2. `TFC/class` becomes `skipped`, with the description `Manual Mode: <reason>`,
+   on the commit that fell back, and every later plan of the MR does the
+   same. `skipped` never passes the Auto Mode gate, and an approval bot that
+   waits for `success` never approves the MR; unlike `failed`, it
+   does not turn the pipeline red, so the Manual Mode MR can merge once it is
+   applied. `TFC/class` is `failed` only when TFBuddy could not record the
+   fallback, after retrying for a few seconds, or could not read it back. A
+   fallback seen in a run event is then retried with the event.
+3. The first fallback posts a comment that says why.
+4. TFBuddy plans the head commit again without the class, so that a person
+   reviews Manual Mode plans. The exceptions are a fallback decided while
+   TFBuddy plans the commit (the MR fits no class), whose plan is already a
+   Manual Mode plan, and a takeover by `tfc apply`, whose apply plans without
+   the class. The plan never runs in the callback that saw the failure:
+   TFBuddy publishes a merge request event of its own
+   (`tfbuddy_manual_mode_replan`) to the hooks stream, and the merge request
+   event worker plans the commit like a push, unless the MR is no longer open.
+   When the MR has moved on to a newer head, TFBuddy plans that head instead:
+   its push may have decided its mode before the fallback, even if it is
+   still planning. A head its push already planned in Manual Mode is then
+   planned twice. If the request cannot be published, the comment asks for a
+   `tfc plan`.
+
+From then on no plan or apply of the merge request carries the class marker,
+whatever later pushes, force-pushes or comments change, so the hard-mandatory
+class policy does not fail it again, and its approval starts no apply. A person
+approves it and someone comments `tfc apply`, as for any Manual Mode MR.
+TFBuddy deletes the record once the merge request merges. A closed merge
+request keeps it, so reopening it does not bring Auto Mode back. If the record
+cannot be read, TFBuddy runs nothing for the merge request rather than guess
+its mode.
+
+Automation may have approved the MR before it fell back: an approval bot,
+for example, may approve on a green `TFC/class` and, as a code owner of the
+class files, its approval alone can satisfy GitLab's approval rules. So for a
+fallen-back MR, TFBuddy refuses `tfc apply`, and says why, unless at least one
+current approval comes from a user who is neither listed under
+`automaticApprovers` nor an Auto Mode author. This holds even if the author is
+later removed from `authors`; if the default branch no longer has an
+`autoMode` section to tell automatic approvers apart, TFBuddy refuses the
+apply:
+
+```yaml
+autoMode:
+  automaticApprovers: [approver-bot]
+```
+
+Known limits: a transient TFC error on a class plan or an Auto Mode apply, or
+a lock another MR or automation holds when an Auto Mode apply starts, puts
+the MR in Manual Mode for good; a commit that is not in TFBuddy's clone fails
+its runs without a fallback; and an MR whose changes trigger no workspace is
+not judged, so it gets no fallback either.
+
+When GitLab sends the `approved` merge request event (the one sent once every
+approval rule is satisfied), TFBuddy applies an Auto Mode merge request only when
+all of these hold, and otherwise says why on the MR:
+
+1. The MR is open, not a Draft and has no conflicts.
+2. It is approved. Turn on GitLab's "reset approvals on push" in the repo, so
+   that every push removes the approvals and an approval always covers the
+   head commit.
+3. Every `TFC/plan/<workspace>` status on the head commit is green, and
+   `TFC/class` has passed. Only statuses that TFBuddy's own GitLab account
+   posted count. Anyone with Developer access can post a status with any
+   name, so a `TFC/plan/*` or `TFC/class` status from anyone else is ignored,
+   and one of those names that only someone else posted blocks the apply.
+   The head commit's class plans recorded in NATS must also have finished
+   and passed, with the class the apply would use: `TFC/class` is only what
+   TFBuddy last wrote to GitLab, and a write that failed, or a late one from
+   plans begun again since, can leave it green.
+4. The head commit has a CI pipeline of this MR (a merge request pipeline)
+   or, without one, of its source branch (a push pipeline), and every job in
+   the newest one has succeeded, whatever `TFBUDDY_REQUIRE_PIPELINE_SUCCESS`
+   says. No other pipeline of the commit counts: a pipeline of another MR or
+   branch with the same commit reviews other changes, and one started by
+   hand, through the API, a trigger or a schedule can carry variables a person
+   set. As for `tfc apply`, a `manual` or `skipped` job, and a job allowed to
+   fail, does not block.
+5. Every job listed under `autoMode.requiredJobs` is in that pipeline, and its
+   latest run has succeeded. Here a `manual`, `skipped` or allowed-to-fail job
+   does not count: a review job that never ran does not pass. TFBuddy reads
+   the jobs from GitLab's pipeline jobs API, which lists only jobs the pipeline
+   ran from its CI config, so a commit status posted with a job's name cannot
+   stand in for one. A job in a child pipeline is not seen, and so blocks. With
+   no `requiredJobs`, nothing beyond step 4 is required, so list the review
+   jobs an automatic approver relies on, such as an AI review job:
+
+   ```yaml
+   autoMode:
+     requiredJobs: ["<AI review job>"]
+   ```
+6. Auto-merge is on and every affected workspace has `autoMerge: true`, because
+   Auto Mode must merge what it applies.
+
+An `approved` event for a commit that is no longer the MR's head starts
+nothing and posts nothing: the head's own approval sends its own event. The
+apply reads the head again, and runs nothing if it has moved on.
+
+A `tfc apply` comment on an Auto Mode merge request takes the same checks
+after the usual ones for `tfc apply`. When they all hold, the apply runs in
+Auto Mode, as on approval. When one does not, for example because a review
+job failed or `TFC/class` did not pass, the person who commented takes the MR
+over: it falls back to Manual Mode until it merges, and the apply runs at
+once as a Manual Mode apply, without the class marker. Like any fallen-back
+MR's, it needs an approval from a person, so a person can always fix and
+apply what automation could not. If TFBuddy cannot record the takeover,
+nothing runs.
+
+The apply then decides the MR's mode again, through the same code as a plan,
+and runs nothing if the MR no longer runs in Auto Mode: an approval never
+starts a Manual Mode apply. The lock check then refuses workspaces another MR
+or automation holds, and the divergence check refuses workspaces whose paths
+changed on the target branch.
+For Auto Mode, a divergence check that cannot run blocks every workspace instead
+of posting a warning; for a plan, that is a failed class check. An Auto Mode
+apply that errors, or that TFBuddy cannot start for a workspace, falls back to
+Manual Mode, so a retry is a Manual Mode `tfc apply`, which needs a person's
+approval.
+
+TFBuddy never overrides a Sentinel policy for Auto Mode. When an Auto Mode
+apply soft-fails a policy (TFC reports a run that would apply as
+`policy_override`, and a plan-only run as `policy_soft_failed`; both are
+handled), TFBuddy puts the merge request in Manual Mode through the same
+fallback as above, re-plan included, then discards the run in TFC, fails
+`TFC/apply/<workspace>`, and comments that the apply was discarded and why.
+The fallback comes first because a discarded run sends no event that could
+retry it: if TFBuddy cannot record the fallback, it leaves the run waiting
+for an override, which applies nothing, and handles the event again later.
+If the discard fails, the comment says
+so: discard the run in TFC by hand, and do not override the policy. Other
+workspaces of the same apply are not affected, and the MR does not auto-merge,
+because that workspace never applied. A Manual Mode apply that soft-fails
+works as before: a person decides in TFC.

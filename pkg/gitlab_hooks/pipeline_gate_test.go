@@ -28,30 +28,44 @@ type fakePipeline struct {
 	source string
 	status string
 	webURL string
+	ref    string
 }
 
 func (f fakePipeline) GetID() int        { return f.id }
 func (f fakePipeline) GetSource() string { return f.source }
 func (f fakePipeline) GetStatus() string { return f.status }
 func (f fakePipeline) GetWebURL() string { return f.webURL }
+func (f fakePipeline) GetRef() string    { return f.ref }
 
 type fakeJobStatus struct {
 	name         string
 	status       string
 	pipelineID   int
 	allowFailure bool
+	// author is who posted the status; "" means TFBuddy.
+	author string
 }
 
 func (f fakeJobStatus) GetName() string       { return f.name }
 func (f fakeJobStatus) GetStatus() string     { return f.status }
 func (f fakeJobStatus) GetPipelineID() int    { return f.pipelineID }
 func (f fakeJobStatus) GetAllowFailure() bool { return f.allowFailure }
+func (f fakeJobStatus) GetAuthor() string {
+	if f.author == "" {
+		return tfbuddyUsername
+	}
+	return f.author
+}
+
+// tfbuddyUsername is TFBuddy's GitLab account in these tests.
+const tfbuddyUsername = "tfbuddy"
 
 type fakeProjectSettings struct{ onlyAllowMergeIfPipelineSucceeds bool }
 
 func (f fakeProjectSettings) OnlyAllowMergeIfPipelineSucceeds() bool {
 	return f.onlyAllowMergeIfPipelineSucceeds
 }
+func (f fakeProjectSettings) GetDefaultBranch() string { return "main" }
 
 // gateFixture wires a GitlabEventWorker against mocks for the pipeline gate.
 type gateFixture struct {

@@ -100,6 +100,20 @@ type TFCTrigger struct {
 	gl        vcs.GitClient
 	tfc       tfc_api.ApiClient
 	runstream runstream.StreamClient
+	// replanner asks for the Manual Mode re-plan of an Auto Mode MR whose
+	// class check fails.
+	replanner ManualModeReplanner
+	// autoModeConfig is the Auto Mode config resolveAutoMode read for an
+	// Auto Mode author's MR, and fellBack whether that MR is in Manual Mode
+	// for good.
+	autoModeConfig *AutoModeConfig
+	fellBack       bool
+}
+
+// SetManualModeReplanner sets what asks for the Manual Mode re-plan of an Auto
+// Mode MR that falls back.
+func (t *TFCTrigger) SetManualModeReplanner(r ManualModeReplanner) {
+	t.replanner = r
 }
 
 type TFCTriggerOptions struct {
@@ -125,6 +139,23 @@ type TFCTriggerOptions struct {
 	TFVersion         string `short:"v" long:"tf_version" description:"A specific terraform version to use" required:"false"`
 	Target            string `short:"t" long:"target" description:"A specific terraform target to use" required:"false"`
 	AllowEmptyRun     bool   `short:"e" long:"allow_empty_run" description:"A specific terraform AllowEmptyRun" required:"false"`
+
+	// Auto Mode marks a merge request whose author runs in Auto Mode, AutoModeAuthor is
+	// that author, ChangeClass is its change class and ClassWorkspaces the
+	// workspaces whose plans decide TFC/class. TFBuddy sets all four from the
+	// target branch's .tfbuddy.yaml; they have no flags, so no comment can set
+	// them.
+	AutoMode        bool
+	AutoModeAuthor  string
+	ChangeClass     string
+	ClassWorkspaces []string
+	// ClassPlan marks an Auto Mode plan of every affected workspace: its runs
+	// decide TFC/class.
+	ClassPlan bool
+	// AutoModeApproval marks an apply that an Auto Mode approval started. It
+	// must run in Auto Mode or not at all: the trigger decides the mode again,
+	// and refuses the apply when the MR no longer fits a class.
+	AutoModeApproval bool
 }
 
 func NewTFCTriggerConfig(opts *TFCTriggerOptions) (*TFCTriggerOptions, error) {
@@ -448,7 +479,13 @@ func (t *TFCTrigger) getModifiedWorkspacesOnTargetBranch(ctx context.Context, mr
 		return modifiedWSMap, fmt.Errorf("could not fetch target branch %s. %w", mr.GetTargetBranch(), err)
 	}
 	// find merge base. This is the common commit between the source branch and the target branch. This is usually the commit a branch was forked from.
-	commonSHA, err := repo.GetMergeBase(mr.GetSourceBranch(), mr.GetTargetBranch())
+	// A run that runsExactCommit checks out its commit, which may be behind
+	// the source branch's tip, so it diverges from that commit.
+	source := mr.GetSourceBranch()
+	if t.runsExactCommit() {
+		source = t.GetCommitSHA()
+	}
+	commonSHA, err := repo.GetMergeBase(source, mr.GetTargetBranch())
 	if err != nil {
 		return nil, fmt.Errorf("could not find merge base. %w", err)
 	}
@@ -543,6 +580,35 @@ func (t *TFCTrigger) getTriggeredWorkspacesForRequest(ctx context.Context, mr vc
 
 }
 
+// errAutoModeCommitUnavailable marks an Auto Mode run whose commit the clone
+// does not contain.
+var errAutoModeCommitUnavailable = errors.New("the clone does not contain the commit the run is for")
+
+// runsExactCommit reports whether this trigger's runs are made from exactly
+// its commit rather than the source branch's tip: every Auto Mode run, and
+// every run of an Auto Mode author's MR that fell back to Manual Mode. The
+// author is automation that may push again at any time, such as a rebase, so
+// the commit a person approved must be the one that runs.
+func (t *TFCTrigger) runsExactCommit() bool {
+	return t.cfg.AutoMode || t.fellBack
+}
+
+// checkoutAutoModeCommit checks out, for a run that runsExactCommit, the
+// commit it is for, rather than run whatever the source branch's tip is by
+// the time TFBuddy clones it. It fails closed: such a run is never created
+// from any other commit.
+func (t *TFCTrigger) checkoutAutoModeCommit(repo vcs.GitRepo) error {
+	if !t.runsExactCommit() {
+		return nil
+	}
+	if err := repo.CheckoutCommit(t.GetCommitSHA()); err != nil {
+		// utils.CreatePermanentError would drop the wrapped sentinel.
+		return fmt.Errorf("refusing a %s of an Auto Mode author's MR: could not check out commit %s, which the run is for (%v): %w. %w",
+			t.GetAction(), t.GetCommitSHA(), err, errAutoModeCommitUnavailable, utils.ErrPermanent)
+	}
+	return nil
+}
+
 // cloneGitRepo will clone the git repo for a specific MR and returns the temp path to be cleaned up later
 func (t *TFCTrigger) cloneGitRepo(ctx context.Context, mr vcs.MR) (vcs.GitRepo, error) {
 	ctx, span := otel.Tracer(t.tracerName()).Start(ctx, "cloneGitRepo")
@@ -606,6 +672,10 @@ func (t *TFCTrigger) beginAutoMergeApply(workspaces []*TFCWorkspace) error {
 		case t.cfg.AutoMergeSequence > 0:
 			t.cfg.AutoMergeGeneration = fmt.Sprintf("gitlab-note-%d", t.cfg.AutoMergeSequence)
 		default:
+			if t.cfg.AutoMode {
+				// Auto Mode must merge what it applies.
+				return errors.New("an Auto Mode apply needs auto-merge, and this apply has no stable GitLab delivery or note ID")
+			}
 			log.Warn().Msg("auto-merge disabled for apply without a stable GitLab delivery or note ID")
 			return nil
 		}
@@ -636,6 +706,12 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 	if err != nil {
 		return nil, fmt.Errorf("could not read MergeRequest data from VCS API: %w", err)
 	}
+	if t.cfg.AutoModeApproval && !strings.EqualFold(mr.GetHeadSHA(), t.GetCommitSHA()) {
+		// The MR moved on after its approval was checked. The approval and
+		// the gates were for another commit, so nothing runs.
+		return nil, utils.CreatePermanentError(fmt.Errorf("refusing the apply an approval started: it is for commit %s, but the MR's head is now %s",
+			shortSHA(t.GetCommitSHA()), shortSHA(mr.GetHeadSHA())))
+	}
 	triggeredWorkspaces, affectedWorkspaces, err := t.getTriggeredWorkspacesForRequest(ctx, mr, false)
 	if err != nil {
 		return nil, fmt.Errorf("could not read triggered workspaces. %w", err)
@@ -650,6 +726,43 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 		return &TriggeredTFCWorkspaces{}, nil
 	}
 
+	if err := t.resolveAutoMode(ctx, mr, triggeredWorkspaces, affectedWorkspaces); err != nil {
+		t.postWorkspaceStatusForAll(ctx, triggeredWorkspaces, vcs.CommitStateFailed,
+			fmt.Sprintf("could not decide whether this MR runs in Auto Mode: %v", err))
+		return nil, fmt.Errorf("could not decide whether this MR runs in Auto Mode: %w", err)
+	}
+	if t.cfg.AutoModeApproval && (!t.cfg.AutoMode || t.GetAction() != ApplyAction) {
+		// The approval handler decided that the MR runs in Auto Mode, but this
+		// decision, made again just now, did not. An approval is not a person
+		// asking for a Manual Mode apply, so nothing runs.
+		err := errors.New("refusing the apply an approval started: the MR does not run in Auto Mode")
+		t.postWorkspaceStatusForAll(ctx, triggeredWorkspaces, vcs.CommitStateFailed, err.Error())
+		return nil, utils.CreatePermanentError(err)
+	}
+	if t.fellBack && t.GetAction() == ApplyAction {
+		// The approvals are for the MR's head. With an automation author,
+		// an older commit may be one nobody approved, or a newer push may
+		// have reset the approvals since.
+		if head := mr.GetHeadSHA(); !strings.EqualFold(head, t.GetCommitSHA()) {
+			err := utils.CreatePermanentError(fmt.Errorf("refusing `tfc apply` of commit %s: the MR's head is now %s. Review the new commit and comment `tfc apply` again",
+				shortSHA(t.GetCommitSHA()), shortSHA(head)))
+			t.postWorkspaceStatusForAll(ctx, triggeredWorkspaces, vcs.CommitStateFailed, "refused: the MR's head moved on")
+			return nil, err
+		}
+		if err := t.requirePersonApproval(ctx); err != nil {
+			t.postWorkspaceStatusForAll(ctx, triggeredWorkspaces, vcs.CommitStateFailed,
+				"refused: a fallen-back Auto Mode MR needs a person's approval")
+			return nil, err
+		}
+	}
+	if t.cfg.AutoMode && t.GetAction() == ApplyAction && !autoMergeEligible(t.appCfg, affectedWorkspaces) {
+		// Auto Mode must merge what it applies, or live state stays ahead of the
+		// target branch with nobody watching.
+		err := errors.New("refusing an Auto Mode apply: auto-merge must be enabled, and every affected workspace must use mode apply-before-merge with autoMerge enabled")
+		t.postWorkspaceStatusForAll(ctx, triggeredWorkspaces, vcs.CommitStateFailed, err.Error())
+		return nil, utils.CreatePermanentError(err)
+	}
+
 	repo, err := t.cloneGitRepo(ctx, mr)
 	if err != nil {
 		t.postWorkspaceStatusForAll(ctx, triggeredWorkspaces, vcs.CommitStateFailed,
@@ -661,8 +774,24 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 			log.Error().Err(err).Str("path", repo.GetLocalDirectory()).Msg("could not remove cloned repository directory")
 		}
 	}()
+	if err := t.checkoutAutoModeCommit(repo); err != nil {
+		t.postWorkspaceStatusForAll(ctx, triggeredWorkspaces, vcs.CommitStateFailed, err.Error())
+		return nil, err
+	}
 
 	blocked, err := t.getModifiedWorkspacesOnTargetBranch(ctx, mr, repo, triggeredWorkspaces)
+	if err != nil && t.cfg.AutoMode {
+		// Auto Mode has nobody reading a warning, so a divergence check that
+		// cannot run blocks every workspace instead.
+		t.postWorkspaceStatusForAll(ctx, triggeredWorkspaces, vcs.CommitStateFailed,
+			"blocked: could not check the target branch for changes to workspace paths")
+		if t.GetAction() == PlanAction {
+			if ferr := t.fallBackToManualMode(ctx, "TFBuddy could not check the target branch for changes to workspace paths", true); ferr != nil {
+				log.Error().Err(ferr).Msg("could not fall back to Manual Mode")
+			}
+		}
+		return nil, utils.CreatePermanentError(fmt.Errorf("could not check the target branch for an Auto Mode MR: %w", err))
+	}
 	if err != nil {
 		if err := t.postUpdate(ctx, MRCommentTargetBranchEvalFailed); err != nil {
 			log.Error().Err(err).Msg("could not update MR with message")
@@ -680,7 +809,71 @@ func (t *TFCTrigger) TriggerTFCEvents(ctx context.Context) (*TriggeredTFCWorkspa
 		return nil, fmt.Errorf("could not initialize apply generation: %w", err)
 	}
 
-	return t.dispatchWorkspaces(ctx, triggeredWorkspaces, blocked, mr, repo), nil
+	classPlan := t.cfg.AutoMode && t.GetAction() == PlanAction && t.GetWorkspace() == ""
+	classPlansStarted := false
+	if classPlan {
+		// Every class workspace is pending until its run reports, so a plan
+		// that is still running keeps TFC/class pending, and one that never
+		// starts fails it below. A redelivery of this trigger keeps the
+		// plans it began: its dispatch claims start no new run, so the runs
+		// registered so far are the ones that count.
+		started, err := t.runstream.BeginClassPlans(t.classPlanRef(), t.cfg.ChangeClass, t.cfg.ClassWorkspaces, t.dispatchTrigger())
+		if err != nil {
+			t.postWorkspaceStatusForAll(ctx, triggeredWorkspaces, vcs.CommitStateFailed,
+				fmt.Sprintf("could not initialize the class plans: %v", err))
+			return nil, fmt.Errorf("could not initialize the class plans: %w", err)
+		}
+		t.cfg.ClassPlan = true
+		classPlansStarted = started
+		if started {
+			t.postClassStatus(ctx, vcs.CommitStatePending, fmt.Sprintf("class %s: waiting for plans", t.cfg.ChangeClass))
+		}
+	}
+
+	status := t.dispatchWorkspaces(ctx, triggeredWorkspaces, blocked, mr, repo)
+	if t.cfg.AutoMode && t.GetAction() == ApplyAction && len(status.Errored) > 0 {
+		// A workspace whose apply never started sends no run event, so no
+		// run event can put the MR in Manual Mode for it. Without this, a
+		// retry would be another Auto Mode apply.
+		names := make([]string, 0, len(status.Errored))
+		for _, ws := range status.Errored {
+			names = append(names, "`"+ws.Name+"`")
+		}
+		if err := t.fallBackToManualMode(ctx, fmt.Sprintf("its apply of %s could not be started", strings.Join(names, ", ")), true); err != nil {
+			log.Error().Err(err).Msg("could not fall back to Manual Mode")
+		}
+	}
+	if classPlan {
+		// A workspace that did not plan never counts as a clean one, and no
+		// run event will arrive for it to fail the class later.
+		notPlanned, finished := t.recordUnplannedWorkspaces(status)
+		if len(notPlanned) > 0 {
+			if err := t.fallBackToManualMode(ctx, fmt.Sprintf("%s did not plan", strings.Join(notPlanned, ", ")), true); err != nil {
+				log.Error().Err(err).Msg("could not fall back to Manual Mode")
+			}
+		}
+		if finished == nil && !classPlansStarted {
+			// A redelivery: its first delivery may have finished the class
+			// without reporting it, and no run event will come to report it.
+			// (A delivery that also recorded its fallback is planned in
+			// Manual Mode instead, which sets TFC/class to skipped.)
+			state, err := t.runstream.GetClassPlans(t.classPlanRef())
+			switch {
+			case errors.Is(err, runstream.ErrClassPlansNotFound):
+			case err != nil:
+				return status, fmt.Errorf("could not read the class plans: %w", err)
+			case state.Finished && !state.Reported:
+				finished = state
+			}
+		}
+		if finished != nil {
+			if err := ReportClassPlans(ctx, t.gl, t.runstream, finished); err != nil {
+				// The redelivery reports the finished class.
+				return status, fmt.Errorf("could not report the class plans: %w", err)
+			}
+		}
+	}
+	return status, nil
 }
 
 // SkipTFCEvents discovers the same workspaces TriggerTFCEvents would trigger
@@ -865,6 +1058,7 @@ func (t *TFCTrigger) TriggerCleanupEvent(ctx context.Context) error {
 		return fmt.Errorf("could not read MergeRequest data from VCS API: %w", err)
 	}
 	t.recordAutoMergeResult(mr)
+	t.forgetAutoModeState(mr)
 	triggeredWorkspaces, _, err := t.getTriggeredWorkspacesForRequest(ctx, mr, true)
 	if err != nil {
 		return fmt.Errorf("could not determine workspaces for merge cleanup. %w", err)
@@ -920,6 +1114,18 @@ func (t *TFCTrigger) TriggerCleanupEvent(ctx context.Context) error {
 		return fmt.Errorf("could not create MR discussion thread for TFC run status updates. %w", err)
 	}
 	return nil
+}
+
+// forgetAutoModeState drops a merged MR's Auto Mode state. A closed MR keeps
+// it: reopening it must not bring Auto Mode back.
+func (t *TFCTrigger) forgetAutoModeState(mr vcs.DetailedMR) {
+	if !t.appCfg.AutoModeEnabled || t.GetVcsProvider() != "gitlab" || mr.GetState() != "merged" {
+		return
+	}
+	if err := t.runstream.DeleteAutoModeMRState(t.autoModeRef()); err != nil {
+		log.Warn().Err(err).Str("project", t.GetProjectNameWithNamespace()).Int("mergeRequestID", t.GetMergeRequestIID()).
+			Msg("could not delete a merged MR's Auto Mode state")
+	}
 }
 
 func (t *TFCTrigger) recordAutoMergeResult(mr vcs.DetailedMR) {
@@ -1082,6 +1288,12 @@ func (t *TFCTrigger) triggerRunForWorkspace(ctx context.Context, cfgWS *TFCWorks
 		// the worker ACKs and stops redelivering.
 		return fmt.Errorf("run action was not apply or plan. %w", utils.ErrPermanent)
 	}
+	// Build the message before taking the lock, so a run TFBuddy refuses to
+	// create never holds the workspace.
+	message, err := t.runMessage(mr.GetTitle())
+	if err != nil {
+		return err
+	}
 	// If the workspace is locked tell the user and don't queue a run
 	// Otherwise, TFC wil queue an apply, which might put them out of order
 	if isApply {
@@ -1176,7 +1388,7 @@ func (t *TFCTrigger) triggerRunForWorkspace(ctx context.Context, cfgWS *TFCWorks
 	run, err := t.tfc.CreateRunFromSource(ctx, &tfc_api.ApiRunOptions{
 		IsApply:       isApply,
 		Path:          pkgDir,
-		Message:       fmt.Sprintf("MR [!%d]: %s", t.GetMergeRequestIID(), mr.GetTitle()),
+		Message:       message,
 		Organization:  org,
 		Workspace:     wsName,
 		TFVersion:     t.cfg.TFVersion,
@@ -1219,6 +1431,10 @@ func (t *TFCTrigger) publishRunToStream(ctx context.Context, run *tfe.Run, cfgWS
 		AutoMergeGeneration:                  t.cfg.AutoMergeGeneration,
 		AutoMergeSequence:                    t.cfg.AutoMergeSequence,
 	}
+	if t.cfg.AutoMode {
+		rmd.ChangeClass = t.cfg.ChangeClass
+		rmd.ClassWorkspaces = t.cfg.ClassWorkspaces
+	}
 	//disable Auto Merge and log if the mode is not apply-before-merge
 	if cfgWS.Mode != "apply-before-merge" && cfgWS.AutoMerge {
 		log.Info().Str("RunID", run.ID).
@@ -1231,6 +1447,21 @@ func (t *TFCTrigger) publishRunToStream(ctx context.Context, run *tfe.Run, cfgWS
 			Str("Org", run.Workspace.Organization.Name).
 			Str("WS", run.Workspace.Name).Msg("auto-merge cannot be enabled since the feature is globally disabled")
 		rmd.AutoMerge = false
+	}
+	if t.cfg.ClassPlan && t.GetAction() == PlanAction {
+		rmd.ClassTrigger = t.dispatchTrigger()
+		// Before the metadata, so that the run's events, which wait for the
+		// metadata, always find the run registered.
+		err := t.runstream.RegisterClassPlanRun(t.classPlanRef(), run.Workspace.Name, run.ID, t.dispatchTrigger())
+		switch {
+		case errors.Is(err, runstream.ErrClassPlansSuperseded):
+			// Another trigger planned the commit again meanwhile; its own
+			// runs decide TFC/class.
+			log.Info().Str("RunID", run.ID).Str("WS", run.Workspace.Name).
+				Msg("class plans were begun again by another trigger; this run does not count")
+		case err != nil:
+			return fmt.Errorf("could not register the run for the class plans. %w", err)
+		}
 	}
 	// waitForTFRunMetadata reads this back before any run event is routed, so
 	// without it nothing will ever report on the run.

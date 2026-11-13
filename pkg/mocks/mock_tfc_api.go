@@ -71,6 +71,20 @@ func (mr *MockApiClientMockRecorder) CreateRunFromSource(ctx, opts any) *gomock.
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRunFromSource", reflect.TypeOf((*MockApiClient)(nil).CreateRunFromSource), ctx, opts)
 }
 
+// DiscardRun mocks base method.
+func (m *MockApiClient) DiscardRun(ctx context.Context, runID, comment string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DiscardRun", ctx, runID, comment)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DiscardRun indicates an expected call of DiscardRun.
+func (mr *MockApiClientMockRecorder) DiscardRun(ctx, runID, comment any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DiscardRun", reflect.TypeOf((*MockApiClient)(nil).DiscardRun), ctx, runID, comment)
+}
+
 // GetPlanOutput mocks base method.
 func (m *MockApiClient) GetPlanOutput(id string) ([]byte, error) {
 	m.ctrl.T.Helper()
