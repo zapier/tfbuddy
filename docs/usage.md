@@ -460,7 +460,9 @@ Manual Mode until it merges. It falls back when:
 * an Auto Mode apply soft-fails a policy (see below), errors, or cannot be
   started for a workspace, for example because another MR holds its lock.
   TFBuddy does not tell a failed class policy from any other error, so any
-  errored Auto Mode apply falls back.
+  errored Auto Mode apply falls back;
+* a person comments `tfc apply` while the Auto Mode gate does not pass (see
+  below): the person takes the MR over.
 
 Every fallback takes the same path:
 
@@ -477,9 +479,10 @@ Every fallback takes the same path:
    fallback seen in a run event is then retried with the event.
 3. The first fallback posts a comment that says why.
 4. TFBuddy plans the head commit again without the class, so that a person
-   reviews Manual Mode plans. The one exception is a fallback decided while
+   reviews Manual Mode plans. The exceptions are a fallback decided while
    TFBuddy plans the commit (the MR fits no class), whose plan is already a
-   Manual Mode plan. The plan never runs in the callback that saw the failure:
+   Manual Mode plan, and a takeover by `tfc apply`, whose apply plans without
+   the class. The plan never runs in the callback that saw the failure:
    TFBuddy publishes a merge request event of its own
    (`tfbuddy_manual_mode_replan`) to the hooks stream, and the merge request
    event worker plans the commit like a push, unless the MR is no longer open.
@@ -558,6 +561,16 @@ all of these hold, and otherwise says why on the MR:
 An `approved` event for a commit that is no longer the MR's head starts
 nothing and posts nothing: the head's own approval sends its own event. The
 apply reads the head again, and runs nothing if it has moved on.
+
+A `tfc apply` comment on an Auto Mode merge request takes the same checks
+after the usual ones for `tfc apply`. When they all hold, the apply runs in
+Auto Mode, as on approval. When one does not, for example because a review
+job failed or `TFC/class` did not pass, the person who commented takes the MR
+over: it falls back to Manual Mode until it merges, and the apply runs at
+once as a Manual Mode apply, without the class marker. Like any fallen-back
+MR's, it needs an approval from a person, so a person can always fix and
+apply what automation could not. If TFBuddy cannot record the takeover,
+nothing runs.
 
 The apply then decides the MR's mode again, through the same code as a plan,
 and runs nothing if the MR no longer runs in Auto Mode: an approval never

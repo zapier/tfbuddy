@@ -106,6 +106,12 @@ func (w *GitlabEventWorker) processNoteEvent(ctx context.Context, event vcs.MRCo
 		if !w.checkPipelineStatus(ctx, event, opts.TriggerOpts.CommitSHA) {
 			return proj, nil
 		}
+		// An Auto Mode MR applies in Auto Mode only through the Auto Mode
+		// gate; a person whose apply the gate refuses takes the MR over.
+		if err := w.takeOverAutoModeMR(ctx, proj, event.GetMR().GetInternalID()); err != nil {
+			w.postMessageToMergeRequest(ctx, event, fmt.Sprintf(":no_entry: Apply failed: %s", err.Error()))
+			return proj, err
+		}
 	case "lock":
 		log.Debug().Str("project", proj).Int("mergeRequestID", event.GetMR().GetInternalID()).Msg("Got TFC lock command")
 	case "plan":

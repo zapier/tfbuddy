@@ -105,6 +105,60 @@ func (w *GitlabEventWorker) processAutoModeApproval(ctx context.Context, msg *Me
 	return nil
 }
 
+// autoModeTakeoverReason is the Manual Mode reason of an Auto Mode MR that a
+// person took over with `tfc apply`. Its argument is why the Auto Mode gate
+// refused the apply.
+const autoModeTakeoverReason = "a person commented `tfc apply` while the Auto Mode gate did not pass (%s)"
+
+// takeOverAutoModeMR decides how a `tfc apply` comment on an Auto Mode MR runs.
+// When the Auto Mode gate passes, the apply runs in Auto Mode, like one an
+// approval starts. When it does not, the person who commented takes the MR
+// over: it falls back to Manual Mode until it merges, so the apply that
+// follows is a Manual Mode apply, without the class marker, and like any
+// fallen-back MR's it needs a person's approval. A person can always fix and
+// apply an MR that automation could not.
+//
+// It returns an error when the MR's mode cannot be decided or the fallback
+// cannot be recorded: the apply must then not run, since it would run in
+// Auto Mode past a gate that refused it.
+func (w *GitlabEventWorker) takeOverAutoModeMR(ctx context.Context, proj string, mrIID int) error {
+	if !w.cfg.AutoModeEnabled {
+		return nil
+	}
+	ctx, span := otel.Tracer("GitlabHandler").Start(ctx, "takeOverAutoModeMR")
+	defer span.End()
+
+	mr, err := w.gl.GetMergeRequest(ctx, mrIID, proj)
+	if err != nil {
+		return fmt.Errorf("could not read MergeRequest data from VCS API: %w", err)
+	}
+	class, autoMode, err := tfc_trigger.AutoModeClassForMR(ctx, w.cfg, w.gl, w.runstream, w.replanner, proj, mr)
+	if err != nil {
+		return fmt.Errorf("could not decide whether this MR runs in Auto Mode: %w", err)
+	}
+	if class == tfc_trigger.ClassNone {
+		// A person's MR, or one already in Manual Mode.
+		return nil
+	}
+	reason := w.autoModeApplyBlocker(ctx, mr, proj, mr.GetHeadSHA(), class, autoMode.RequiredJobs)
+	if reason == "" {
+		return nil
+	}
+	log.Info().Str("project", proj).Int("mergeRequestID", mrIID).Str("class", class).Str("reason", reason).
+		Msg("a person took over an Auto Mode MR with `tfc apply`")
+	return tfc_trigger.FallBackToManualMode(ctx, tfc_trigger.AutoModeDeps{
+		AppCfg: w.cfg, GL: w.gl, TFC: w.tfc, RS: w.runstream, Replanner: w.replanner,
+	}, tfc_trigger.ManualModeFallback{
+		Project:         proj,
+		MergeRequestIID: mrIID,
+		CommitSHA:       mr.GetHeadSHA(),
+		Class:           class,
+		Reason:          fmt.Sprintf(autoModeTakeoverReason, reason),
+		// The apply that follows plans without the class.
+		Replan: false,
+	})
+}
+
 // autoModeApplyBlocker returns why an approved Auto Mode merge request must not
 // apply yet, or "" when it may. class is the change class it would apply with,
 // and requiredJobs are the CI jobs that must have succeeded. Lock and
