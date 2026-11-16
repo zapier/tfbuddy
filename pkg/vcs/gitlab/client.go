@@ -99,15 +99,7 @@ func (c *GitlabClient) ResolveMergeRequestDiscussions(
 	workspace string,
 	action string,
 ) error {
-	discussions, err := backoff.RetryWithData(func() ([]*gogitlab.Discussion, error) {
-		discussions, resp, err := c.client.Discussions.ListMergeRequestDiscussions(
-			project,
-			mrIID,
-			&gogitlab.ListMergeRequestDiscussionsOptions{},
-			gogitlab.WithContext(ctx),
-		)
-		return discussions, permanentError(resp, err)
-	}, createBackOffWithRetries(ctx))
+	discussions, err := c.listMergeRequestDiscussions(ctx, project, mrIID)
 	if err != nil {
 		return err
 	}
@@ -137,6 +129,29 @@ func (c *GitlabClient) ResolveMergeRequestDiscussions(
 		}
 	}
 	return resolveErr
+}
+
+// discussionsPerPage is GitLab's maximum page size.
+const discussionsPerPage = 100
+
+// listMergeRequestDiscussions returns every discussion on a merge request,
+// across pages. A busy merge request has more than one page, and a thread
+// missing from the list would be neither cleaned up nor resolved.
+func (c *GitlabClient) listMergeRequestDiscussions(ctx context.Context, project string, mrIID int) ([]*gogitlab.Discussion, error) {
+	return backoff.RetryWithData(func() ([]*gogitlab.Discussion, error) {
+		var all []*gogitlab.Discussion
+		for page := 1; page != 0; {
+			discussions, resp, err := c.client.Discussions.ListMergeRequestDiscussions(project, mrIID,
+				&gogitlab.ListMergeRequestDiscussionsOptions{Page: page, PerPage: discussionsPerPage},
+				gogitlab.WithContext(ctx))
+			if err != nil {
+				return nil, permanentError(resp, err)
+			}
+			all = append(all, discussions...)
+			page = resp.NextPage
+		}
+		return all, nil
+	}, createBackOffWithRetries(ctx))
 }
 
 type GitlabCommitStatusOptions struct {
@@ -242,10 +257,7 @@ func (c *GitlabClient) GetOldRunUrls(ctx context.Context, mrIID int, project str
 
 	log.Debug().Str("projectID", project).Int("mrIID", mrIID).Str("workspace", workspace).Str("action", action).Msg("pruning notes")
 
-	discussions, err := backoff.RetryWithData(func() ([]*gogitlab.Discussion, error) {
-		discussions, resp, err := c.client.Discussions.ListMergeRequestDiscussions(project, mrIID, &gogitlab.ListMergeRequestDiscussionsOptions{}, gogitlab.WithContext(ctx))
-		return discussions, permanentError(resp, err)
-	}, createBackOffWithRetries(ctx))
+	discussions, err := c.listMergeRequestDiscussions(ctx, project, mrIID)
 	if err != nil {
 		return "", utils.CreatePermanentError(err)
 	}

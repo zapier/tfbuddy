@@ -18,6 +18,12 @@ import (
 
 const runEventsConsumerDurableName = "github"
 
+// runResultPoster posts a run's final comment and deletes it again if a
+// newer run replaced the run meanwhile. *Client implements it.
+type runResultPoster interface {
+	PostRunResult(ctx context.Context, prID int, fullName string, rootCommentID int, body string) error
+}
+
 type RunEventsWorker struct {
 	cfg          config.Config
 	client       vcs.GitClient
@@ -84,9 +90,10 @@ func (w *RunEventsWorker) postRunStatusComment(ctx context.Context, run *tfe.Run
 
 	commentBody, topLevelNoteBody, _ := comment_formatter.FormatRunStatusCommentBody(w.cfg, w.tfc, run, rmd)
 
+	final := run.Status == tfe.RunErrored || run.Status == tfe.RunCanceled || run.Status == tfe.RunDiscarded || run.Status == tfe.RunPlannedAndFinished
 	superseded := false
 	if topLevelNoteBody != "" {
-		if run.Status == tfe.RunErrored || run.Status == tfe.RunCanceled || run.Status == tfe.RunDiscarded || run.Status == tfe.RunPlannedAndFinished {
+		if final {
 			oldUrls, err := w.client.GetOldRunUrls(ctx, rmd.GetMRInternalID(), rmd.GetMRProjectNameWithNamespace(), startingCommentID(rmd), run.ID, run.Workspace.Name, rmd.GetAction())
 			switch {
 			case errors.Is(err, vcs.ErrRunSuperseded):
@@ -107,12 +114,23 @@ func (w *RunEventsWorker) postRunStatusComment(ctx context.Context, run *tfe.Run
 		if commentBody != "" {
 			body += fmt.Sprintf("\n%s", commentBody)
 		}
-		w.client.CreateMergeRequestComment(
-			ctx,
-			rmd.GetMRInternalID(),
-			rmd.GetMRProjectNameWithNamespace(),
-			body,
-		)
+		if poster, ok := w.client.(runResultPoster); ok && final {
+			err := poster.PostRunResult(ctx, rmd.GetMRInternalID(), rmd.GetMRProjectNameWithNamespace(), startingCommentID(rmd), body)
+			switch {
+			case errors.Is(err, vcs.ErrRunSuperseded):
+				log.Warn().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("prID", rmd.GetMRInternalID()).Str("runID", run.ID).Str("runStatus", string(run.Status)).
+					Msg("a newer run of the same workspace replaced this run while its result was being posted; deleted the stale result")
+			case err != nil:
+				log.Error().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("prID", rmd.GetMRInternalID()).Str("runID", run.ID).Err(err).Msg("could not post the run's result")
+			}
+		} else {
+			w.client.CreateMergeRequestComment(
+				ctx,
+				rmd.GetMRInternalID(),
+				rmd.GetMRProjectNameWithNamespace(),
+				body,
+			)
+		}
 	}
 	if run.Status == tfe.RunApplied {
 		if len(run.TargetAddrs) > 0 {

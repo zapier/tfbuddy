@@ -22,24 +22,43 @@ import (
 )
 
 // liveGitHub is an in-memory GitHub that keeps the comments of one pull
-// request, so a test can play overlapping runs against the real client.
+// request, so a test can play overlapping runs against the real client. It
+// pages comment listings like GitHub does.
 type liveGitHub struct {
 	t        *testing.T
 	mu       sync.Mutex
 	nextID   int64
 	comments []fakeComment
-	// comments left out of the listing, as if they were on a later page
-	unlisted map[int64]bool
+	// beforeCreate, if set, runs before a new comment is stored, without
+	// holding the lock, so it can play another run's requests in between.
+	beforeCreate func(body string)
 }
 
 func newLiveGitHub(t *testing.T) *liveGitHub {
-	return &liveGitHub{t: t, nextID: 1000, unlisted: map[int64]bool{}}
+	return &liveGitHub{t: t, nextID: 1000}
 }
 
 func (g *liveGitHub) add(body string) int64 {
 	g.nextID++
 	g.comments = append(g.comments, fakeComment{ID: g.nextID, Body: body, User: ghBotUser})
 	return g.nextID
+}
+
+func (g *liveGitHub) setBeforeCreate(hook func(body string)) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.beforeCreate = hook
+}
+
+// addHumanComments adds comments by a person, for example to fill the first
+// page of the listing.
+func (g *liveGitHub) addHumanComments(n int) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	for i := 0; i < n; i++ {
+		g.nextID++
+		g.comments = append(g.comments, fakeComment{ID: g.nextID, Body: "Looks good to me", User: "reviewer"})
+	}
 }
 
 // startRun posts the comment the trigger posts before it creates a run.
@@ -94,30 +113,49 @@ func commentJSON(c fakeComment) map[string]any {
 }
 
 func (g *liveGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	prComments := fmt.Sprintf("/repos/%s/%s/issues/%d/comments", testOwner, testRepo, testPRID)
+	commentPrefix := fmt.Sprintf("/repos/%s/%s/issues/comments/", testOwner, testRepo)
+	var body struct {
+		Body string `json:"body"`
+	}
+	if r.Method == http.MethodPost {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		g.mu.Lock()
+		hook := g.beforeCreate
+		g.mu.Unlock()
+		if hook != nil {
+			hook(body.Body)
+		}
+	}
+
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
-
-	prComments := fmt.Sprintf("/repos/%s/%s/issues/%d/comments", testOwner, testRepo, testPRID)
-	commentPrefix := fmt.Sprintf("/repos/%s/%s/issues/comments/", testOwner, testRepo)
 	switch {
 	case r.URL.Path == "/user":
 		_ = json.NewEncoder(w).Encode(map[string]any{"id": 1, "login": ghBotUser})
 
 	case r.URL.Path == prComments && r.Method == http.MethodGet:
-		var out []map[string]any
-		for _, c := range g.comments {
-			if !g.unlisted[c.ID] {
-				out = append(out, commentJSON(c))
-			}
+		perPage, _ := strconv.Atoi(r.URL.Query().Get("per_page"))
+		if perPage <= 0 {
+			perPage = 30
+		}
+		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+		if page <= 0 {
+			page = 1
+		}
+		from := min((page-1)*perPage, len(g.comments))
+		to := min(from+perPage, len(g.comments))
+		if to < len(g.comments) {
+			w.Header().Set("Link", fmt.Sprintf(`<http://%s%s?page=%d&per_page=%d>; rel="next"`, r.Host, prComments, page+1, perPage))
+		}
+		out := []map[string]any{}
+		for _, c := range g.comments[from:to] {
+			out = append(out, commentJSON(c))
 		}
 		_ = json.NewEncoder(w).Encode(out)
 
 	case r.URL.Path == prComments && r.Method == http.MethodPost:
-		var body struct {
-			Body string `json:"body"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
 		g.add(body.Body)
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(commentJSON(g.comments[len(g.comments)-1]))
@@ -190,12 +228,18 @@ func TestGH_OverlappingPlanRunsKeepTheNewerResult(t *testing.T) {
 	for _, tc := range []struct {
 		name               string
 		olderFinishesFirst bool
+		// comments posted before the runs, so that the runs' comments are
+		// on a later page of the listing
+		humanComments int
 	}{
 		{name: "newer run finishes first", olderFinishesFirst: false},
 		{name: "older run finishes first", olderFinishesFirst: true},
+		{name: "newer run finishes first, runs beyond the first page", olderFinishesFirst: false, humanComments: 150},
+		{name: "older run finishes first, runs beyond the first page", olderFinishesFirst: true, humanComments: 150},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			gh := newLiveGitHub(t)
+			gh.addHumanComments(tc.humanComments)
 			earlier := gh.addFinishedRun("workspace-a", "run-earlier")
 			older := gh.startRun("workspace-a", "run-older")
 			newer := gh.startRun("workspace-a", "run-newer")
@@ -282,27 +326,49 @@ func TestGH_GetOldRunUrls_SupersededRunOnlyDeletesItsOwnStatusUpdates(t *testing
 	}
 }
 
-// The listing holds only the first page of comments. A starting comment
-// beyond it still exists, so the run is not superseded and cleans up as usual.
-func TestGH_GetOldRunUrls_StartingCommentBeyondTheListing(t *testing.T) {
+// GetOldRunUrls checks that the run is current before its result is posted,
+// but a newer run handled on another replica can replace it in between: delete
+// the older run's starting comment and post its own result. The older run's
+// result, posted after that, must be deleted again rather than left last.
+func TestGH_NewerRunReplacingTheOlderOneWhileItPostsItsResult(t *testing.T) {
 	t.Setenv("TFBUDDY_DELETE_OLD_COMMENTS", "true")
 	config.Reload()
 
 	gh := newLiveGitHub(t)
-	earlier := gh.addFinishedRun("workspace-a", "run-earlier")
-	current := gh.startRun("workspace-a", "run-current")
-	gh.unlisted[current.startingCommentID] = true
+	gh.addFinishedRun("workspace-a", "run-earlier")
+	older := gh.startRun("workspace-a", "run-older")
+	newer := gh.startRun("workspace-a", "run-newer")
 	server := httptest.NewServer(gh)
 	defer server.Close()
 
-	client := newGHTestClient(t, server.URL)
-	if _, err := client.GetOldRunUrls(context.Background(), testPRID, testFullName, int(current.startingCommentID), "run-current", "workspace-a", "plan"); err != nil {
-		t.Fatal(err)
+	ctrl := gomock.NewController(t)
+	tfc := mocks.NewMockApiClient(ctrl)
+	tfc.EXPECT().GetPlanOutput(gomock.Any()).Return([]byte("{}"), nil).AnyTimes()
+	w := &RunEventsWorker{cfg: config.C, tfc: tfc, client: newGHTestClient(t, server.URL)}
+	ctx := context.Background()
+
+	// The newer run finishes on another replica just as the older run posts
+	// its result: after the older run's check, before its comment is stored.
+	var once sync.Once
+	gh.setBeforeCreate(func(body string) {
+		if strings.Contains(body, "**Run URL**: [run-older]") && strings.Contains(body, "`planned_and_finished`") {
+			once.Do(func() {
+				w.postRunStatusComment(ctx, newer.run(tfe.RunPlannedAndFinished), newer.metadata())
+			})
+		}
+	})
+	w.postRunStatusComment(ctx, older.run(tfe.RunPlannedAndFinished), older.metadata())
+
+	left := gh.matching("workspace-a", "plan")
+	if len(left) == 0 {
+		t.Fatal("no comments left for the workspace")
 	}
-	if gh.exists(earlier.startingCommentID) {
-		t.Error("the earlier run's starting comment was not deleted")
+	if last := left[len(left)-1].Body; !strings.Contains(last, "**Run URL**: [run-newer]") {
+		t.Errorf("the last comment is not the newer run's result:\n%s", last)
 	}
-	if !gh.exists(current.startingCommentID) {
-		t.Error("the run's own starting comment was deleted")
+	for _, c := range left {
+		if strings.Contains(c.Body, "**Run URL**: [run-older]") {
+			t.Errorf("the replaced older run's result was left:\n%s", c.Body)
+		}
 	}
 }

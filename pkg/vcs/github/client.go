@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -131,7 +132,8 @@ func (c *Client) MergeMRAtSHA(ctx context.Context, mrIID int, project, _ string)
 // that is still posting. When a newer run has already deleted this run's
 // starting comment, the run is superseded: it only deletes its own status
 // updates and returns vcs.ErrRunSuperseded, so it does not post a stale
-// result after the newer one.
+// result after the newer one. PostRunResult covers a newer run that replaces
+// this one after this check.
 func (c *Client) GetOldRunUrls(ctx context.Context, prID int, fullName string, rootCommentID int, runID string, workspace string, action string) (string, error) {
 	_, span := otel.Tracer("TFC").Start(ctx, "GetOldRunURLs")
 	defer span.End()
@@ -141,10 +143,7 @@ func (c *Client) GetOldRunUrls(ctx context.Context, prID int, fullName string, r
 	if err != nil {
 		return "", utils.CreatePermanentError(err)
 	}
-	comments, err := backoff.RetryWithData(func() ([]*gogithub.IssueComment, error) {
-		comments, resp, err := c.client.Issues.ListComments(c.ctx, projectParts[0], projectParts[1], prID, &gogithub.IssueListCommentsOptions{})
-		return comments, permanentError(resp, err)
-	}, createBackOffWithRetries())
+	comments, err := c.listIssueComments(projectParts[0], projectParts[1], prID)
 	if err != nil {
 		return "", err
 	}
@@ -158,14 +157,9 @@ func (c *Client) GetOldRunUrls(ctx context.Context, prID int, fullName string, r
 	}
 
 	rootID := int64(rootCommentID)
-	superseded := false
-	if rootID > 0 {
-		exists, err := c.commentExists(projectParts[0], projectParts[1], rootID, comments)
-		if err != nil {
-			return "", err
-		}
-		superseded = !exists
-	}
+	superseded := rootID > 0 && !slices.ContainsFunc(comments, func(comment *gogithub.IssueComment) bool {
+		return comment.GetID() == rootID
+	})
 
 	var oldRunUrls []string
 	var oldRunBlock string
@@ -249,15 +243,29 @@ func (c *Client) GetOldRunUrls(ctx context.Context, prID int, fullName string, r
 	return oldRunBlock, nil
 }
 
-// commentExists reports whether the comment is still on the PR. The listing
-// holds only the first page of comments, so a comment missing from it is
-// looked up directly before it counts as deleted.
-func (c *Client) commentExists(owner, repo string, id int64, listed []*gogithub.IssueComment) (bool, error) {
-	for _, comment := range listed {
-		if comment.GetID() == id {
-			return true, nil
+// listIssueComments returns every comment on a pull request, across pages.
+// A comment missing from the list, such as a run's starting comment on a
+// busy pull request, would be neither cleaned up nor found.
+func (c *Client) listIssueComments(owner, repo string, prID int) ([]*gogithub.IssueComment, error) {
+	return backoff.RetryWithData(func() ([]*gogithub.IssueComment, error) {
+		var all []*gogithub.IssueComment
+		opts := &gogithub.IssueListCommentsOptions{ListOptions: gogithub.ListOptions{PerPage: 100}}
+		for {
+			comments, resp, err := c.client.Issues.ListComments(c.ctx, owner, repo, prID, opts)
+			if err != nil {
+				return nil, permanentError(resp, err)
+			}
+			all = append(all, comments...)
+			if resp.NextPage == 0 {
+				return all, nil
+			}
+			opts.Page = resp.NextPage
 		}
-	}
+	}, createBackOffWithRetries())
+}
+
+// commentExists reports whether a comment is still on the pull request.
+func (c *Client) commentExists(owner, repo string, id int64) (bool, error) {
 	return backoff.RetryWithData(func() (bool, error) {
 		_, resp, err := c.client.Issues.GetComment(c.ctx, owner, repo, id)
 		if resp != nil && resp.StatusCode == http.StatusNotFound {
@@ -268,6 +276,39 @@ func (c *Client) commentExists(owner, repo string, id int64, listed []*gogithub.
 		}
 		return true, nil
 	}, createBackOffWithRetries())
+}
+
+// PostRunResult posts a run's final comment. GetOldRunUrls only checks that
+// the run is current before the result is posted: a newer run of the same
+// workspace, handled on another replica, can delete this run's starting
+// comment (rootCommentID) and post its own result in between. So once the
+// result is posted, the starting comment is checked again. If it is gone,
+// the result is stale and is deleted again, keeping the newer run's result
+// last, and vcs.ErrRunSuperseded is returned.
+func (c *Client) PostRunResult(ctx context.Context, prID int, fullName string, rootCommentID int, body string) error {
+	projectParts, err := splitFullName(fullName)
+	if err != nil {
+		return utils.CreatePermanentError(err)
+	}
+	commentID, err := c.CreateMergeRequestCommentWithID(ctx, prID, fullName, body)
+	if err != nil || rootCommentID <= 0 {
+		return err
+	}
+	exists, err := c.commentExists(projectParts[0], projectParts[1], int64(rootCommentID))
+	if err != nil {
+		log.Warn().Err(err).Int("prID", prID).Int("rootCommentID", rootCommentID).Msg("could not check whether a newer run replaced this run, keeping its result")
+		return nil
+	}
+	if exists {
+		return nil
+	}
+	if err := backoff.Retry(func() error {
+		resp, err := c.client.Issues.DeleteComment(c.ctx, projectParts[0], projectParts[1], commentID)
+		return permanentError(resp, err)
+	}, createBackOffWithRetries()); err != nil {
+		return fmt.Errorf("could not delete the result of a run a newer run replaced: %w", err)
+	}
+	return vcs.ErrRunSuperseded
 }
 
 func (c *Client) CreateMergeRequestComment(ctx context.Context, prID int, fullName string, comment string) error {

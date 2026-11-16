@@ -55,6 +55,20 @@ func (g *liveGitLab) newNoteID() int {
 	return g.nextID
 }
 
+// addHumanDiscussions adds threads started by a person, for example to fill
+// the first page of the listing.
+func (g *liveGitLab) addHumanDiscussions(n int) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	for i := 0; i < n; i++ {
+		id := g.newNoteID()
+		g.discussions = append(g.discussions, &liveDiscussion{
+			id:    "disc-human-" + strconv.Itoa(id),
+			notes: []fakeNote{{ID: id, Body: "Looks good to me", Username: "reviewer"}},
+		})
+	}
+}
+
 // startRun creates the thread the trigger posts before it creates a run.
 func (g *liveGitLab) startRun(workspace, runID string) testRunThread {
 	g.mu.Lock()
@@ -142,10 +156,23 @@ func (g *liveGitLab) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch {
-	// GET .../discussions
+	// GET .../discussions, paged like GitLab does
 	case r.Method == http.MethodGet && len(parts) == 1 && parts[0] == "discussions":
-		var out []map[string]any
-		for _, d := range g.discussions {
+		perPage, _ := strconv.Atoi(r.URL.Query().Get("per_page"))
+		if perPage <= 0 {
+			perPage = 20
+		}
+		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+		if page <= 0 {
+			page = 1
+		}
+		from := min((page-1)*perPage, len(g.discussions))
+		to := min(from+perPage, len(g.discussions))
+		if to < len(g.discussions) {
+			w.Header().Set("X-Next-Page", strconv.Itoa(page+1))
+		}
+		out := []map[string]any{}
+		for _, d := range g.discussions[from:to] {
 			var notes []map[string]any
 			for _, n := range d.notes {
 				notes = append(notes, noteJSON(n))
@@ -260,12 +287,18 @@ func TestOverlappingPlanRunsKeepTheNewerRunsThread(t *testing.T) {
 	for _, tc := range []struct {
 		name               string
 		olderFinishesFirst bool
+		// threads started before the runs, so that the runs' threads are on
+		// a later page of the listing
+		humanDiscussions int
 	}{
 		{name: "newer run finishes first", olderFinishesFirst: false},
 		{name: "older run finishes first", olderFinishesFirst: true},
+		{name: "newer run finishes first, runs beyond the first page", olderFinishesFirst: false, humanDiscussions: 150},
+		{name: "older run finishes first, runs beyond the first page", olderFinishesFirst: true, humanDiscussions: 150},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			gl := newLiveGitLab(t)
+			gl.addHumanDiscussions(tc.humanDiscussions)
 			earlier := gl.addFinishedRun("workspace-a", "run-earlier")
 			older := gl.startRun("workspace-a", "run-older")
 			newer := gl.startRun("workspace-a", "run-newer")
