@@ -157,9 +157,19 @@ func (c *Client) GetOldRunUrls(ctx context.Context, prID int, fullName string, r
 	}
 
 	rootID := int64(rootCommentID)
-	superseded := rootID > 0 && !slices.ContainsFunc(comments, func(comment *gogithub.IssueComment) bool {
+	superseded := false
+	if rootID > 0 && !slices.ContainsFunc(comments, func(comment *gogithub.IssueComment) bool {
 		return comment.GetID() == rootID
-	})
+	}) {
+		// Pages are read by offset: comments another run deletes meanwhile
+		// shift later comments onto a page already read, so a comment
+		// missing from the listing may still exist. Look it up directly.
+		exists, err := c.commentExists(projectParts[0], projectParts[1], rootID)
+		if err != nil {
+			return "", err
+		}
+		superseded = !exists
+	}
 
 	var oldRunUrls []string
 	var oldRunBlock string

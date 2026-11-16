@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -32,6 +33,9 @@ type liveGitHub struct {
 	// beforeCreate, if set, runs before a new comment is stored, without
 	// holding the lock, so it can play another run's requests in between.
 	beforeCreate func(body string)
+	// afterListPage, if set, runs with the lock held after a page of the
+	// listing is read, so it can change the comments between pages.
+	afterListPage func(page int)
 }
 
 func newLiveGitHub(t *testing.T) *liveGitHub {
@@ -42,6 +46,13 @@ func (g *liveGitHub) add(body string) int64 {
 	g.nextID++
 	g.comments = append(g.comments, fakeComment{ID: g.nextID, Body: body, User: ghBotUser})
 	return g.nextID
+}
+
+// removeLocked deletes comments; the caller holds the lock.
+func (g *liveGitHub) removeLocked(ids ...int64) {
+	g.comments = slices.DeleteFunc(g.comments, func(c fakeComment) bool {
+		return slices.Contains(ids, c.ID)
+	})
 }
 
 func (g *liveGitHub) setBeforeCreate(hook func(body string)) {
@@ -152,6 +163,9 @@ func (g *liveGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		out := []map[string]any{}
 		for _, c := range g.comments[from:to] {
 			out = append(out, commentJSON(c))
+		}
+		if g.afterListPage != nil {
+			g.afterListPage(page)
 		}
 		_ = json.NewEncoder(w).Encode(out)
 
@@ -370,5 +384,35 @@ func TestGH_NewerRunReplacingTheOlderOneWhileItPostsItsResult(t *testing.T) {
 		if strings.Contains(c.Body, "**Run URL**: [run-older]") {
 			t.Errorf("the replaced older run's result was left:\n%s", c.Body)
 		}
+	}
+}
+
+// Pages are read by offset. When another run deletes comments while the run
+// reads the pages, its starting comment can shift onto a page it has already
+// read. It still exists, so the run is not superseded and cleans up as usual.
+func TestGH_GetOldRunUrls_StartingCommentShiftedOntoAPageAlreadyRead(t *testing.T) {
+	t.Setenv("TFBUDDY_DELETE_OLD_COMMENTS", "true")
+	config.Reload()
+
+	gh := newLiveGitHub(t)
+	gh.addHumanComments(98)
+	earlier := gh.addFinishedRun("workspace-a", "run-earlier") // the last two comments of page 1
+	current := gh.startRun("workspace-a", "run-current")       // the first comment of page 2
+	gh.afterListPage = func(page int) {
+		if page == 1 {
+			// Another run deletes the earlier run's comments, so the starting
+			// comment moves to page 1, which has been read already.
+			gh.removeLocked(earlier.startingCommentID, earlier.startingCommentID+1)
+		}
+	}
+	server := httptest.NewServer(gh)
+	defer server.Close()
+
+	client := newGHTestClient(t, server.URL)
+	if _, err := client.GetOldRunUrls(context.Background(), testPRID, testFullName, int(current.startingCommentID), "run-current", "workspace-a", "plan"); err != nil {
+		t.Fatalf("err = %v, want the run to be current", err)
+	}
+	if !gh.exists(current.startingCommentID) {
+		t.Error("the run's starting comment was deleted")
 	}
 }
