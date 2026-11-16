@@ -75,7 +75,7 @@ func TestEventStreamCallbackRecordsAFinishedRun(t *testing.T) {
 	tfc := mocks.NewMockApiClient(ctrl)
 	tfc.EXPECT().GetRun(gomock.Any(), "run-123").Return(githubRun(tfe.RunErrored), nil)
 	client := mocks.NewMockGitClient(ctrl)
-	client.EXPECT().GetOldRunUrls(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+	client.EXPECT().GetOldRunUrls(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	client.EXPECT().CreateMergeRequestComment(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	rs := mocks.NewMockStreamClient(ctrl)
 	re := githubRunEvent(tfe.RunErrored)
@@ -92,7 +92,7 @@ func TestEventStreamCallbackDoesNotRecordARunInProgress(t *testing.T) {
 	tfc := mocks.NewMockApiClient(ctrl)
 	tfc.EXPECT().GetRun(gomock.Any(), "run-123").Return(githubRun(tfe.RunPlanning), nil)
 	client := mocks.NewMockGitClient(ctrl)
-	client.EXPECT().GetOldRunUrls(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+	client.EXPECT().GetOldRunUrls(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	client.EXPECT().CreateMergeRequestComment(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	// No expectations on the stream: recording a finished run fails the test.
 	w := &RunEventsWorker{cfg: config.C, tfc: tfc, client: client, rs: mocks.NewMockStreamClient(ctrl)}

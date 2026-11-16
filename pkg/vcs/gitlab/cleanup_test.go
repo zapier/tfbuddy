@@ -221,7 +221,7 @@ func TestGetOldRunUrls_SingleWorkspace_DeletesOlderPlanKeepsNewest(t *testing.T)
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	_, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentNoteID, "brave-phoenix", "plan")
+	_, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentNoteID, "run-current", "brave-phoenix", "plan")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -300,7 +300,7 @@ func TestGetOldRunUrls_MultiWorkspace_KeepsOnePerWorkspaceAndAction(t *testing.T
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	_, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentPlanA, "workspace-a", "plan")
+	_, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentPlanA, "run-current", "workspace-a", "plan")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -373,7 +373,7 @@ func TestGetOldRunUrls_ApplyAction_DeletesOlderApplyOnly(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	_, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentApplyA, "workspace-a", "apply")
+	_, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentApplyA, "run-current", "workspace-a", "apply")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -426,7 +426,7 @@ func TestGetOldRunUrls_NoMatchingDiscussions_DeletesNothing(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	_, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentNoteID, "workspace-a", "plan")
+	_, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentNoteID, "run-current", "workspace-a", "plan")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -466,7 +466,7 @@ func TestGetOldRunUrls_DeleteDisabled_CollectsUrlsButNoDeletion(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	result, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentNoteID, "workspace-a", "plan")
+	result, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentNoteID, "run-current", "workspace-a", "plan")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -510,7 +510,7 @@ func TestGetOldRunUrls_CollectsOldRunUrlsInTable(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	result, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentNoteID, "workspace-a", "plan")
+	result, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentNoteID, "run-current", "workspace-a", "plan")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -556,7 +556,7 @@ func TestGetOldRunUrls_MultiWorkspace_FullScenario(t *testing.T) {
 		defer server.Close()
 
 		client := newTestClient(t, server.URL)
-		_, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentPlanA, "ws-a", "plan")
+		_, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentPlanA, "run-current", "ws-a", "plan")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -584,7 +584,7 @@ func TestGetOldRunUrls_MultiWorkspace_FullScenario(t *testing.T) {
 		defer server.Close()
 
 		client := newTestClient(t, server.URL)
-		_, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentPlanB, "ws-b", "plan")
+		_, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentPlanB, "run-current", "ws-b", "plan")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -612,7 +612,7 @@ func TestGetOldRunUrls_MultiWorkspace_FullScenario(t *testing.T) {
 		defer server.Close()
 
 		client := newTestClient(t, server.URL)
-		_, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentApplyA, "ws-a", "apply")
+		_, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentApplyA, "run-current", "ws-a", "apply")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -669,7 +669,7 @@ func TestGetOldRunUrls_KeepsNewerRunsThread(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	result, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentNoteID, "workspace-a", "plan")
+	result, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentNoteID, "run-current", "workspace-a", "plan")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -704,7 +704,7 @@ func TestGetOldRunUrls_UnknownRootNoteDeletesNothing(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	if _, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, 0, "workspace-a", "plan"); err != nil {
+	if _, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, 0, "run-current", "workspace-a", "plan"); err != nil {
 		t.Fatal(err)
 	}
 

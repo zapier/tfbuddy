@@ -119,7 +119,20 @@ func (c *Client) MergeMRAtSHA(ctx context.Context, mrIID int, project, _ string)
 // run URLs into a collapsible block, and (when TFBUDDY_DELETE_OLD_COMMENTS is
 // set) deletes old comments that belong to the same workspace+action combination.
 // Comments for other workspaces or actions are left untouched.
-func (c *Client) GetOldRunUrls(ctx context.Context, prID int, fullName string, rootCommentID int, workspace string, action string) (string, error) {
+//
+// GitHub has no threads: the run's starting comment (rootCommentID) and each
+// of its status updates are separate comments. Old comments are those posted
+// before the starting comment, and the run's own status updates, found by
+// runID. The starting comment itself is kept until a newer run cleans up.
+//
+// Two runs of one workspace can overlap, for example a push and a `tfc plan`
+// comment in the same minute. A comment posted after the starting comment by
+// another run is left alone: it belongs to a newer run, or to an older run
+// that is still posting. When a newer run has already deleted this run's
+// starting comment, the run is superseded: it only deletes its own status
+// updates and returns vcs.ErrRunSuperseded, so it does not post a stale
+// result after the newer one.
+func (c *Client) GetOldRunUrls(ctx context.Context, prID int, fullName string, rootCommentID int, runID string, workspace string, action string) (string, error) {
 	_, span := otel.Tracer("TFC").Start(ctx, "GetOldRunURLs")
 	defer span.End()
 
@@ -144,6 +157,16 @@ func (c *Client) GetOldRunUrls(ctx context.Context, prID int, fullName string, r
 		return "", err
 	}
 
+	rootID := int64(rootCommentID)
+	superseded := false
+	if rootID > 0 {
+		exists, err := c.commentExists(projectParts[0], projectParts[1], rootID, comments)
+		if err != nil {
+			return "", err
+		}
+		superseded = !exists
+	}
+
 	var oldRunUrls []string
 	var oldRunBlock string
 	var matchingCommentIDs []int64
@@ -158,21 +181,33 @@ func (c *Client) GetOldRunUrls(ctx context.Context, prID int, fullName string, r
 			continue
 		}
 
-		// Only collect run URL info from comments that match workspace+action.
 		runUrl := utils.CaptureSubstring(body, utils.URL_RUN_PREFIX, utils.URL_RUN_SUFFIX)
 		runUrlRaw := utils.CaptureSubstring(runUrl, "[", "]")
 		runUrlSplit := strings.Split(runUrlRaw, "/")
-		runID := ""
+		commentRunID := ""
 		if len(runUrlSplit) > 0 {
-			runID = runUrlSplit[len(runUrlSplit)-1]
+			commentRunID = runUrlSplit[len(runUrlSplit)-1]
 		} else {
 			log.Warn().Msg("Unable to obtain Terraform cloud run ID. The run URL(s) on the previous comments may be malformed.")
-			runID = runUrl
+			commentRunID = runUrl
 			runUrlRaw = runUrl
 		}
+
+		ownStatus := runID != "" && commentRunID == runID
+		if superseded {
+			if ownStatus {
+				matchingCommentIDs = append(matchingCommentIDs, comment.GetID())
+			}
+			continue
+		}
+		if comment.GetID() > rootID && !ownStatus {
+			continue
+		}
+
+		// Only collect run URL info from comments that match workspace+action.
 		runStatus := utils.CaptureSubstring(body, utils.URL_RUN_STATUS_PREFIX, utils.URL_RUN_SUFFIX)
 		if runUrl != "" && runStatus != "" {
-			oldRunUrls = append(oldRunUrls, fmt.Sprintf("|[%s](%s)|%s|%s|", runID, runUrlRaw, runStatus, comment.CreatedAt))
+			oldRunUrls = append(oldRunUrls, fmt.Sprintf("|[%s](%s)|%s|%s|", commentRunID, runUrlRaw, runStatus, comment.CreatedAt))
 		}
 
 		oldRunBlockTest := utils.CaptureSubstring(body, utils.URL_RUN_GROUP_PREFIX, utils.URL_RUN_GROUP_SUFFIX)
@@ -180,7 +215,7 @@ func (c *Client) GetOldRunUrls(ctx context.Context, prID int, fullName string, r
 			oldRunBlock = oldRunBlockTest
 		}
 
-		if comment.GetID() != int64(rootCommentID) {
+		if comment.GetID() != rootID {
 			matchingCommentIDs = append(matchingCommentIDs, comment.GetID())
 		}
 	}
@@ -192,9 +227,14 @@ func (c *Client) GetOldRunUrls(ctx context.Context, prID int, fullName string, r
 				resp, err := c.client.Issues.DeleteComment(c.ctx, projectParts[0], projectParts[1], commentID)
 				return permanentError(resp, err)
 			}, createBackOffWithRetries()); err != nil {
-				return "", err
+				// Another run may have deleted it first.
+				log.Warn().Err(err).Int64("commentID", commentID).Msg("could not delete comment, skipping")
 			}
 		}
+	}
+
+	if superseded {
+		return "", vcs.ErrRunSuperseded
 	}
 
 	if len(oldRunUrls) > 0 {
@@ -207,6 +247,27 @@ func (c *Client) GetOldRunUrls(ctx context.Context, prID int, fullName string, r
 		return "", nil
 	}
 	return oldRunBlock, nil
+}
+
+// commentExists reports whether the comment is still on the PR. The listing
+// holds only the first page of comments, so a comment missing from it is
+// looked up directly before it counts as deleted.
+func (c *Client) commentExists(owner, repo string, id int64, listed []*gogithub.IssueComment) (bool, error) {
+	for _, comment := range listed {
+		if comment.GetID() == id {
+			return true, nil
+		}
+	}
+	return backoff.RetryWithData(func() (bool, error) {
+		_, resp, err := c.client.Issues.GetComment(c.ctx, owner, repo, id)
+		if resp != nil && resp.StatusCode == http.StatusNotFound {
+			return false, nil
+		}
+		if err != nil {
+			return false, permanentError(resp, err)
+		}
+		return true, nil
+	}, createBackOffWithRetries())
 }
 
 func (c *Client) CreateMergeRequestComment(ctx context.Context, prID int, fullName string, comment string) error {

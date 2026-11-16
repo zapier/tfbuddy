@@ -234,7 +234,9 @@ func (c *GitlabClient) MergeMRAtSHA(ctx context.Context, mrIID int, project, exp
 // thread before it posts its result. The newer run removes ours instead when
 // it finishes. GitLab note IDs increase, so the root note ID orders the
 // threads.
-func (c *GitlabClient) GetOldRunUrls(ctx context.Context, mrIID int, project string, rootNoteID int, workspace string, action string) (string, error) {
+//
+// The run ID is not needed here: each run's comments live in its own thread.
+func (c *GitlabClient) GetOldRunUrls(ctx context.Context, mrIID int, project string, rootNoteID int, _ string, workspace string, action string) (string, error) {
 	_, span := otel.Tracer("TFC").Start(ctx, "GetOldRunURLs")
 	defer span.End()
 

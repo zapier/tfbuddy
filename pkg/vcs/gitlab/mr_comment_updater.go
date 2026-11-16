@@ -23,7 +23,7 @@ func (p *RunStatusUpdater) postRunStatusComment(ctx context.Context, run *tfe.Ru
 	var err error
 
 	if run.Status == tfe.RunErrored || run.Status == tfe.RunCanceled || run.Status == tfe.RunDiscarded || run.Status == tfe.RunPlannedAndFinished {
-		oldUrls, err = p.client.GetOldRunUrls(ctx, rmd.GetMRInternalID(), rmd.GetMRProjectNameWithNamespace(), int(rmd.GetRootNoteID()), run.Workspace.Name, rmd.GetAction())
+		oldUrls, err = p.client.GetOldRunUrls(ctx, rmd.GetMRInternalID(), rmd.GetMRProjectNameWithNamespace(), int(rmd.GetRootNoteID()), run.ID, run.Workspace.Name, rmd.GetAction())
 		if err != nil {
 			log.Error().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Err(err).Msg("could not retrieve old run urls")
 		}

@@ -2,7 +2,9 @@ package github
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strconv"
 
 	"github.com/hashicorp/go-tfe"
 	"github.com/rs/zerolog/log"
@@ -82,10 +84,16 @@ func (w *RunEventsWorker) postRunStatusComment(ctx context.Context, run *tfe.Run
 
 	commentBody, topLevelNoteBody, _ := comment_formatter.FormatRunStatusCommentBody(w.cfg, w.tfc, run, rmd)
 
+	superseded := false
 	if topLevelNoteBody != "" {
 		if run.Status == tfe.RunErrored || run.Status == tfe.RunCanceled || run.Status == tfe.RunDiscarded || run.Status == tfe.RunPlannedAndFinished {
-			oldUrls, err := w.client.GetOldRunUrls(ctx, rmd.GetMRInternalID(), rmd.GetMRProjectNameWithNamespace(), int(rmd.GetRootNoteID()), run.Workspace.Name, rmd.GetAction())
-			if err != nil {
+			oldUrls, err := w.client.GetOldRunUrls(ctx, rmd.GetMRInternalID(), rmd.GetMRProjectNameWithNamespace(), startingCommentID(rmd), run.ID, run.Workspace.Name, rmd.GetAction())
+			switch {
+			case errors.Is(err, vcs.ErrRunSuperseded):
+				superseded = true
+				log.Warn().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("prID", rmd.GetMRInternalID()).Str("runID", run.ID).Str("runStatus", string(run.Status)).
+					Msg("a newer run of the same workspace has replaced this run's comments; skipping its final comment")
+			case err != nil:
 				log.Error().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("prID", rmd.GetMRInternalID()).Err(err).Msg("could not retrieve old run urls")
 			}
 			if oldUrls != "" {
@@ -94,7 +102,7 @@ func (w *RunEventsWorker) postRunStatusComment(ctx context.Context, run *tfe.Run
 		}
 	}
 
-	if topLevelNoteBody != "" {
+	if topLevelNoteBody != "" && !superseded {
 		body := topLevelNoteBody
 		if commentBody != "" {
 			body += fmt.Sprintf("\n%s", commentBody)
@@ -122,6 +130,21 @@ func (w *RunEventsWorker) postRunStatusComment(ctx context.Context, run *tfe.Run
 		}
 	}
 }
+
+// startingCommentID returns the ID of the comment the trigger posted when it
+// started the run. On GitHub the run's discussion ID is that comment's ID;
+// the root note ID is only set for GitLab threads.
+func startingCommentID(rmd runstream.RunMetadata) int {
+	if id := rmd.GetRootNoteID(); id > 0 {
+		return int(id)
+	}
+	id, err := strconv.Atoi(rmd.GetDiscussionID())
+	if err != nil {
+		return 0
+	}
+	return id
+}
+
 func (w *RunEventsWorker) mergePRIfPossible(ctx context.Context, rmd runstream.RunMetadata) {
 	if !rmd.GetAutoMerge() {
 		return

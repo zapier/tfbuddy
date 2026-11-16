@@ -116,7 +116,7 @@ func TestEventStreamCallbackHandlesTheFinalEvent(t *testing.T) {
 	tfc := mocks.NewMockApiClient(ctrl)
 	tfc.EXPECT().GetRun(gomock.Any(), "run-123").Return(testRun(tfe.RunErrored), nil)
 	client := mocks.NewMockGitClient(ctrl)
-	client.EXPECT().GetOldRunUrls(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+	client.EXPECT().GetOldRunUrls(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	client.EXPECT().UpdateMergeRequestDiscussionNote(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	client.EXPECT().AddMergeRequestDiscussionReply(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	var got vcs.WorkspaceStatus
@@ -144,7 +144,7 @@ func TestEventStreamCallbackRecordsAFinishedRun(t *testing.T) {
 	tfc := mocks.NewMockApiClient(ctrl)
 	tfc.EXPECT().GetRun(gomock.Any(), "run-123").Return(testRun(tfe.RunErrored), nil)
 	client := mocks.NewMockGitClient(ctrl)
-	client.EXPECT().GetOldRunUrls(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+	client.EXPECT().GetOldRunUrls(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	client.EXPECT().UpdateMergeRequestDiscussionNote(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	client.EXPECT().AddMergeRequestDiscussionReply(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	client.EXPECT().SetWorkspaceStatus(gomock.Any(), gomock.Any()).Return(nil).Times(1)
