@@ -20,6 +20,8 @@ Once the apply completes TF Buddy will update the PR indicating what was changed
 
 When `TFBUDDY_DELETE_OLD_COMMENTS` is set, TFBuddy automatically cleans up old discussion threads to keep MRs/PRs readable. Each comment is tagged with an invisible HTML marker identifying its workspace and action (plan or apply). When a new run completes, TFBuddy deletes older discussions that match the same workspace and action, keeping only the latest one. This is workspace-scoped: if your MR triggers runs in multiple workspaces, each workspace retains its own most recent plan and apply comment independently. Previous run URLs are collected into a collapsible "Previous TFC Urls" table on the latest comment.
 
+A run only deletes comments of runs that started before it. When two runs of one workspace overlap, for example a push and a `tfc plan` comment in the same minute, the older run never deletes the newer run's comments, whichever finishes first. On GitLab, the newer run removes the older run's thread when it finishes, and an older run whose thread is already gone skips its status update. On GitHub, where every status update is a separate PR comment, the comment that started a run stays until a newer run cleans up. A run that a newer run has already replaced deletes its own status updates and doesn't post its final result. If the older run finishes first, its result can remain above the newer one until the next run.
+
 Example of how an error is reported
 
 ![error](img/error.png)

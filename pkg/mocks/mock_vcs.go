@@ -191,18 +191,18 @@ func (mr *MockGitClientMockRecorder) GetMergeRequestModifiedFiles(ctx, mrIID, pr
 }
 
 // GetOldRunUrls mocks base method.
-func (m *MockGitClient) GetOldRunUrls(ctx context.Context, mrIID int, project string, rootCommentID int, workspace, action string) (string, error) {
+func (m *MockGitClient) GetOldRunUrls(ctx context.Context, mrIID int, project string, rootCommentID int, runID, workspace, action string) (string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetOldRunUrls", ctx, mrIID, project, rootCommentID, workspace, action)
+	ret := m.ctrl.Call(m, "GetOldRunUrls", ctx, mrIID, project, rootCommentID, runID, workspace, action)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetOldRunUrls indicates an expected call of GetOldRunUrls.
-func (mr *MockGitClientMockRecorder) GetOldRunUrls(ctx, mrIID, project, rootCommentID, workspace, action any) *gomock.Call {
+func (mr *MockGitClientMockRecorder) GetOldRunUrls(ctx, mrIID, project, rootCommentID, runID, workspace, action any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetOldRunUrls", reflect.TypeOf((*MockGitClient)(nil).GetOldRunUrls), ctx, mrIID, project, rootCommentID, workspace, action)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetOldRunUrls", reflect.TypeOf((*MockGitClient)(nil).GetOldRunUrls), ctx, mrIID, project, rootCommentID, runID, workspace, action)
 }
 
 // GetPipelinesForCommit mocks base method.

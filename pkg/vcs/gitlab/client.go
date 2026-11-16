@@ -1,11 +1,14 @@
 package gitlab
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -99,15 +102,7 @@ func (c *GitlabClient) ResolveMergeRequestDiscussions(
 	workspace string,
 	action string,
 ) error {
-	discussions, err := backoff.RetryWithData(func() ([]*gogitlab.Discussion, error) {
-		discussions, resp, err := c.client.Discussions.ListMergeRequestDiscussions(
-			project,
-			mrIID,
-			&gogitlab.ListMergeRequestDiscussionsOptions{},
-			gogitlab.WithContext(ctx),
-		)
-		return discussions, permanentError(resp, err)
-	}, createBackOffWithRetries(ctx))
+	discussions, err := c.listMergeRequestDiscussions(ctx, project, mrIID)
 	if err != nil {
 		return err
 	}
@@ -137,6 +132,72 @@ func (c *GitlabClient) ResolveMergeRequestDiscussions(
 		}
 	}
 	return resolveErr
+}
+
+// discussionsPerPage is GitLab's maximum page size.
+const discussionsPerPage = 100
+
+// listMergeRequestDiscussions returns every discussion on a merge request,
+// oldest first. A busy merge request has more than one page, and a thread
+// missing from the list would be neither cleaned up nor resolved.
+//
+// Pages are read by offset, and another run may delete threads meanwhile,
+// which moves later threads to earlier pages. So once the first page shows
+// how many there are, the pages are read from the last back to the first: a
+// thread that moves lands on a page that is still to be read, and none is
+// skipped. Threads read twice are kept once.
+func (c *GitlabClient) listMergeRequestDiscussions(ctx context.Context, project string, mrIID int) ([]*gogitlab.Discussion, error) {
+	return backoff.RetryWithData(func() ([]*gogitlab.Discussion, error) {
+		byID := map[string]*gogitlab.Discussion{}
+		read := func(page int) (*gogitlab.Response, error) {
+			discussions, resp, err := c.client.Discussions.ListMergeRequestDiscussions(project, mrIID,
+				&gogitlab.ListMergeRequestDiscussionsOptions{Page: page, PerPage: discussionsPerPage},
+				gogitlab.WithContext(ctx))
+			if err != nil {
+				return nil, permanentError(resp, err)
+			}
+			for _, d := range discussions {
+				byID[d.ID] = d
+			}
+			return resp, nil
+		}
+
+		resp, err := read(1)
+		if err != nil {
+			return nil, err
+		}
+		switch {
+		case resp.TotalPages > 1:
+			for page := resp.TotalPages; page >= 1; page-- {
+				if _, err := read(page); err != nil {
+					return nil, err
+				}
+			}
+		case resp.NextPage != 0:
+			// GitLab leaves out the page count for very long lists: read
+			// forward.
+			for page := resp.NextPage; page != 0; {
+				next, err := read(page)
+				if err != nil {
+					return nil, err
+				}
+				page = next.NextPage
+			}
+		}
+
+		all := slices.Collect(maps.Values(byID))
+		slices.SortFunc(all, func(a, b *gogitlab.Discussion) int {
+			return cmp.Compare(firstNoteID(a), firstNoteID(b))
+		})
+		return all, nil
+	}, createBackOffWithRetries(ctx))
+}
+
+func firstNoteID(d *gogitlab.Discussion) int {
+	if len(d.Notes) == 0 {
+		return 0
+	}
+	return d.Notes[0].ID
 }
 
 type GitlabCommitStatusOptions struct {
@@ -226,16 +287,23 @@ func (c *GitlabClient) MergeMRAtSHA(ctx context.Context, mrIID int, project, exp
 // TFBUDDY_DELETE_OLD_COMMENTS is set) deletes entire discussion threads that
 // belong to the same workspace+action combination.  Threads for other
 // workspaces or actions are left untouched.
-func (c *GitlabClient) GetOldRunUrls(ctx context.Context, mrIID int, project string, rootNoteID int, workspace string, action string) (string, error) {
+//
+// Only threads older than this run's own thread (rootNoteID) count as old.
+// Two runs of one workspace can overlap, for example a push and a `tfc plan`
+// comment in the same minute. A thread created after ours belongs to a newer
+// run, which may still be in progress: deleting it would remove that run's
+// thread before it posts its result. The newer run removes ours instead when
+// it finishes. GitLab note IDs increase, so the root note ID orders the
+// threads.
+//
+// The run ID is not needed here: each run's comments live in its own thread.
+func (c *GitlabClient) GetOldRunUrls(ctx context.Context, mrIID int, project string, rootNoteID int, _ string, workspace string, action string) (string, error) {
 	_, span := otel.Tracer("TFC").Start(ctx, "GetOldRunURLs")
 	defer span.End()
 
 	log.Debug().Str("projectID", project).Int("mrIID", mrIID).Str("workspace", workspace).Str("action", action).Msg("pruning notes")
 
-	discussions, err := backoff.RetryWithData(func() ([]*gogitlab.Discussion, error) {
-		discussions, resp, err := c.client.Discussions.ListMergeRequestDiscussions(project, mrIID, &gogitlab.ListMergeRequestDiscussionsOptions{}, gogitlab.WithContext(ctx))
-		return discussions, permanentError(resp, err)
-	}, createBackOffWithRetries(ctx))
+	discussions, err := c.listMergeRequestDiscussions(ctx, project, mrIID)
 	if err != nil {
 		return "", utils.CreatePermanentError(err)
 	}
@@ -267,6 +335,11 @@ func (c *GitlabClient) GetOldRunUrls(ctx context.Context, mrIID int, project str
 
 		noteWS, noteAction, found := utils.ParseTFBuddyMarker(rootNote.Body)
 		if !found || noteWS != workspace || noteAction != action {
+			continue
+		}
+
+		// A newer run's thread is neither deleted nor listed as a previous run.
+		if rootNote.ID > rootNoteID {
 			continue
 		}
 
@@ -741,6 +814,12 @@ func (g *GitlabClient) GetPipelinesForCommit(ctx context.Context, project, commi
 // commitStatusesPerPage is GitLab's maximum page size, keeping the number of
 // round trips down for pipelines with many jobs.
 const commitStatusesPerPage = 100
+
+// isNotFound reports whether a GitLab API call failed because the object, such
+// as a note or a discussion, does not exist (any more).
+func isNotFound(err error) bool {
+	return errors.Is(err, gogitlab.ErrNotFound)
+}
 
 // permanentError classifies a GitLab API error by the response it came with.
 // The response may be nil, which happens when a request fails before any

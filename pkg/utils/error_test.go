@@ -66,3 +66,19 @@ func TestCreatePermanentError(t *testing.T) {
 		}
 	})
 }
+
+// The permanent error keeps the API client's error, so callers can still
+// tell, for example, a 404 apart. The message is unchanged.
+func TestCreatePermanentHTTPErrorKeepsTheCause(t *testing.T) {
+	cause := errors.New("404 Not Found")
+	err := CreatePermanentHTTPError(404, cause)
+	if !errors.Is(err, ErrPermanent) {
+		t.Error("expected a permanent error")
+	}
+	if !errors.Is(err, cause) {
+		t.Error("expected the error to wrap its cause")
+	}
+	if want := "404 Not Found " + ErrPermanent.Error(); err.Error() != want {
+		t.Errorf("message = %q, want %q", err.Error(), want)
+	}
+}

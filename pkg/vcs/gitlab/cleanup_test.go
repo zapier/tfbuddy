@@ -221,7 +221,7 @@ func TestGetOldRunUrls_SingleWorkspace_DeletesOlderPlanKeepsNewest(t *testing.T)
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	_, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentNoteID, "brave-phoenix", "plan")
+	_, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentNoteID, "run-current", "brave-phoenix", "plan")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -300,7 +300,7 @@ func TestGetOldRunUrls_MultiWorkspace_KeepsOnePerWorkspaceAndAction(t *testing.T
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	_, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentPlanA, "workspace-a", "plan")
+	_, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentPlanA, "run-current", "workspace-a", "plan")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -373,7 +373,7 @@ func TestGetOldRunUrls_ApplyAction_DeletesOlderApplyOnly(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	_, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentApplyA, "workspace-a", "apply")
+	_, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentApplyA, "run-current", "workspace-a", "apply")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -426,7 +426,7 @@ func TestGetOldRunUrls_NoMatchingDiscussions_DeletesNothing(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	_, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentNoteID, "workspace-a", "plan")
+	_, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentNoteID, "run-current", "workspace-a", "plan")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -466,7 +466,7 @@ func TestGetOldRunUrls_DeleteDisabled_CollectsUrlsButNoDeletion(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	result, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentNoteID, "workspace-a", "plan")
+	result, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentNoteID, "run-current", "workspace-a", "plan")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -510,7 +510,7 @@ func TestGetOldRunUrls_CollectsOldRunUrlsInTable(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server.URL)
-	result, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentNoteID, "workspace-a", "plan")
+	result, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentNoteID, "run-current", "workspace-a", "plan")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -556,7 +556,7 @@ func TestGetOldRunUrls_MultiWorkspace_FullScenario(t *testing.T) {
 		defer server.Close()
 
 		client := newTestClient(t, server.URL)
-		_, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentPlanA, "ws-a", "plan")
+		_, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentPlanA, "run-current", "ws-a", "plan")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -584,7 +584,7 @@ func TestGetOldRunUrls_MultiWorkspace_FullScenario(t *testing.T) {
 		defer server.Close()
 
 		client := newTestClient(t, server.URL)
-		_, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentPlanB, "ws-b", "plan")
+		_, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentPlanB, "run-current", "ws-b", "plan")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -612,7 +612,7 @@ func TestGetOldRunUrls_MultiWorkspace_FullScenario(t *testing.T) {
 		defer server.Close()
 
 		client := newTestClient(t, server.URL)
-		_, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentApplyA, "ws-a", "apply")
+		_, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentApplyA, "run-current", "ws-a", "apply")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -633,4 +633,84 @@ func TestGetOldRunUrls_MultiWorkspace_FullScenario(t *testing.T) {
 			}
 		}
 	})
+}
+
+// A thread created after the current run's thread belongs to a newer run of
+// the same workspace, which may still be in progress. It must be neither
+// deleted nor listed as a previous run.
+func TestGetOldRunUrls_KeepsNewerRunsThread(t *testing.T) {
+	t.Setenv("TFBUDDY_DELETE_OLD_COMMENTS", "true")
+	config.Reload()
+
+	currentNoteID := 200
+	discussions := []fakeDiscussion{
+		{
+			ID: "disc-old",
+			Notes: []fakeNote{
+				{ID: 100, Body: buildNoteBody("workspace-a", "plan", "run-old", "https://tfc/runs/run-old", "planned_and_finished"), Username: botUsername},
+				{ID: 101, Body: "Status: `planned_and_finished`", Username: botUsername},
+			},
+		},
+		{
+			ID:    "disc-current",
+			Notes: []fakeNote{{ID: currentNoteID, Body: buildSeedBody("workspace-a", "plan", "org"), Username: botUsername}},
+		},
+		{
+			ID: "disc-newer-in-progress",
+			Notes: []fakeNote{
+				{ID: 300, Body: buildNoteBody("workspace-a", "plan", "run-newer", "https://tfc/runs/run-newer", "planning"), Username: botUsername},
+			},
+		},
+	}
+
+	var deletedNotes []int
+	var mu sync.Mutex
+	server := setupTestServer(t, discussions, &deletedNotes, &mu)
+	defer server.Close()
+
+	client := newTestClient(t, server.URL)
+	result, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, currentNoteID, "run-current", "workspace-a", "plan")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(deletedNotes) != 2 || deletedNotes[0] != 101 || deletedNotes[1] != 100 {
+		t.Fatalf("deleted notes = %v, want [101 100]", deletedNotes)
+	}
+	if !strings.Contains(result, "run-old") {
+		t.Errorf("previous runs should list run-old:\n%s", result)
+	}
+	if strings.Contains(result, "run-newer") {
+		t.Errorf("previous runs must not list the newer run-newer:\n%s", result)
+	}
+}
+
+// Without its own root note ID the run cannot tell which threads are older,
+// so it deletes none.
+func TestGetOldRunUrls_UnknownRootNoteDeletesNothing(t *testing.T) {
+	t.Setenv("TFBUDDY_DELETE_OLD_COMMENTS", "true")
+	config.Reload()
+
+	discussions := []fakeDiscussion{
+		{ID: "disc-1", Notes: []fakeNote{{ID: 100, Body: buildSeedBody("workspace-a", "plan", "org"), Username: botUsername}}},
+		{ID: "disc-2", Notes: []fakeNote{{ID: 200, Body: buildSeedBody("workspace-a", "plan", "org"), Username: botUsername}}},
+	}
+
+	var deletedNotes []int
+	var mu sync.Mutex
+	server := setupTestServer(t, discussions, &deletedNotes, &mu)
+	defer server.Close()
+
+	client := newTestClient(t, server.URL)
+	if _, err := client.GetOldRunUrls(context.Background(), testMRIID, testProject, 0, "run-current", "workspace-a", "plan"); err != nil {
+		t.Fatal(err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(deletedNotes) != 0 {
+		t.Fatalf("deleted notes = %v, want none", deletedNotes)
+	}
 }

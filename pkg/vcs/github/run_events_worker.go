@@ -2,7 +2,9 @@ package github
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strconv"
 
 	"github.com/hashicorp/go-tfe"
 	"github.com/rs/zerolog/log"
@@ -15,6 +17,12 @@ import (
 )
 
 const runEventsConsumerDurableName = "github"
+
+// runResultPoster posts a run's final comment and deletes it again if a
+// newer run replaced the run meanwhile. *Client implements it.
+type runResultPoster interface {
+	PostRunResult(ctx context.Context, prID int, fullName string, rootCommentID int, body string) error
+}
 
 type RunEventsWorker struct {
 	cfg          config.Config
@@ -82,10 +90,17 @@ func (w *RunEventsWorker) postRunStatusComment(ctx context.Context, run *tfe.Run
 
 	commentBody, topLevelNoteBody, _ := comment_formatter.FormatRunStatusCommentBody(w.cfg, w.tfc, run, rmd)
 
+	final := run.Status == tfe.RunErrored || run.Status == tfe.RunCanceled || run.Status == tfe.RunDiscarded || run.Status == tfe.RunPlannedAndFinished
+	superseded := false
 	if topLevelNoteBody != "" {
-		if run.Status == tfe.RunErrored || run.Status == tfe.RunCanceled || run.Status == tfe.RunDiscarded || run.Status == tfe.RunPlannedAndFinished {
-			oldUrls, err := w.client.GetOldRunUrls(ctx, rmd.GetMRInternalID(), rmd.GetMRProjectNameWithNamespace(), int(rmd.GetRootNoteID()), run.Workspace.Name, rmd.GetAction())
-			if err != nil {
+		if final {
+			oldUrls, err := w.client.GetOldRunUrls(ctx, rmd.GetMRInternalID(), rmd.GetMRProjectNameWithNamespace(), startingCommentID(rmd), run.ID, run.Workspace.Name, rmd.GetAction())
+			switch {
+			case errors.Is(err, vcs.ErrRunSuperseded):
+				superseded = true
+				log.Warn().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("prID", rmd.GetMRInternalID()).Str("runID", run.ID).Str("runStatus", string(run.Status)).
+					Msg("a newer run of the same workspace has replaced this run's comments; skipping its final comment")
+			case err != nil:
 				log.Error().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("prID", rmd.GetMRInternalID()).Err(err).Msg("could not retrieve old run urls")
 			}
 			if oldUrls != "" {
@@ -94,17 +109,28 @@ func (w *RunEventsWorker) postRunStatusComment(ctx context.Context, run *tfe.Run
 		}
 	}
 
-	if topLevelNoteBody != "" {
+	if topLevelNoteBody != "" && !superseded {
 		body := topLevelNoteBody
 		if commentBody != "" {
 			body += fmt.Sprintf("\n%s", commentBody)
 		}
-		w.client.CreateMergeRequestComment(
-			ctx,
-			rmd.GetMRInternalID(),
-			rmd.GetMRProjectNameWithNamespace(),
-			body,
-		)
+		if poster, ok := w.client.(runResultPoster); ok && final {
+			err := poster.PostRunResult(ctx, rmd.GetMRInternalID(), rmd.GetMRProjectNameWithNamespace(), startingCommentID(rmd), body)
+			switch {
+			case errors.Is(err, vcs.ErrRunSuperseded):
+				log.Warn().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("prID", rmd.GetMRInternalID()).Str("runID", run.ID).Str("runStatus", string(run.Status)).
+					Msg("a newer run of the same workspace replaced this run while its result was being posted; deleted the stale result")
+			case err != nil:
+				log.Error().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("prID", rmd.GetMRInternalID()).Str("runID", run.ID).Err(err).Msg("could not post the run's result")
+			}
+		} else {
+			w.client.CreateMergeRequestComment(
+				ctx,
+				rmd.GetMRInternalID(),
+				rmd.GetMRProjectNameWithNamespace(),
+				body,
+			)
+		}
 	}
 	if run.Status == tfe.RunApplied {
 		if len(run.TargetAddrs) > 0 {
@@ -122,6 +148,21 @@ func (w *RunEventsWorker) postRunStatusComment(ctx context.Context, run *tfe.Run
 		}
 	}
 }
+
+// startingCommentID returns the ID of the comment the trigger posted when it
+// started the run. On GitHub the run's discussion ID is that comment's ID;
+// the root note ID is only set for GitLab threads.
+func startingCommentID(rmd runstream.RunMetadata) int {
+	if id := rmd.GetRootNoteID(); id > 0 {
+		return int(id)
+	}
+	id, err := strconv.Atoi(rmd.GetDiscussionID())
+	if err != nil {
+		return 0
+	}
+	return id
+}
+
 func (w *RunEventsWorker) mergePRIfPossible(ctx context.Context, rmd runstream.RunMetadata) {
 	if !rmd.GetAutoMerge() {
 		return

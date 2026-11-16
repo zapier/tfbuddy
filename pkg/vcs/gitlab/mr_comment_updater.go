@@ -23,7 +23,7 @@ func (p *RunStatusUpdater) postRunStatusComment(ctx context.Context, run *tfe.Ru
 	var err error
 
 	if run.Status == tfe.RunErrored || run.Status == tfe.RunCanceled || run.Status == tfe.RunDiscarded || run.Status == tfe.RunPlannedAndFinished {
-		oldUrls, err = p.client.GetOldRunUrls(ctx, rmd.GetMRInternalID(), rmd.GetMRProjectNameWithNamespace(), int(rmd.GetRootNoteID()), run.Workspace.Name, rmd.GetAction())
+		oldUrls, err = p.client.GetOldRunUrls(ctx, rmd.GetMRInternalID(), rmd.GetMRProjectNameWithNamespace(), int(rmd.GetRootNoteID()), run.ID, run.Workspace.Name, rmd.GetAction())
 		if err != nil {
 			log.Error().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Err(err).Msg("could not retrieve old run urls")
 		}
@@ -31,6 +31,7 @@ func (p *RunStatusUpdater) postRunStatusComment(ctx context.Context, run *tfe.Ru
 			topLevelNoteBody = fmt.Sprintf("%s\n\n%s", oldUrls, topLevelNoteBody)
 		}
 	}
+	threadDeleted := false
 	if topLevelNoteBody != "" {
 		if _, err := p.client.UpdateMergeRequestDiscussionNote(
 			ctx,
@@ -40,11 +41,22 @@ func (p *RunStatusUpdater) postRunStatusComment(ctx context.Context, run *tfe.Ru
 			rmd.GetDiscussionID(),
 			topLevelNoteBody,
 		); err != nil {
-			log.Error().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Str("discussionID", rmd.GetDiscussionID()).Err(err).Msg("could not update MR thread")
+			if isNotFound(err) {
+				// When two runs of a workspace overlap, the newer run deletes
+				// the older run's thread once it finishes, so the older run's
+				// status no longer has a thread to go to. Someone may also
+				// have deleted the thread by hand. Either way, replying to or
+				// resolving the thread would fail the same way.
+				threadDeleted = true
+				log.Warn().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Str("discussionID", rmd.GetDiscussionID()).Str("runID", run.ID).Str("runStatus", string(run.Status)).
+					Msg("the MR thread for this run no longer exists, most likely replaced by a newer run of the same workspace; skipping this status comment")
+			} else {
+				log.Error().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Str("discussionID", rmd.GetDiscussionID()).Err(err).Msg("could not update MR thread")
+			}
 		}
 	}
 
-	if commentBody != "" {
+	if commentBody != "" && !threadDeleted {
 		p.postComment(ctx, fmt.Sprintf(
 			"Status: `%s`<br>%s",
 			run.Status,
@@ -55,7 +67,7 @@ func (p *RunStatusUpdater) postRunStatusComment(ctx context.Context, run *tfe.Ru
 		)
 	}
 
-	if resolveDiscussion {
+	if resolveDiscussion && !threadDeleted {
 
 		err := p.client.ResolveMergeRequestDiscussion(
 			ctx,
@@ -93,6 +105,12 @@ func (p *RunStatusUpdater) postComment(ctx context.Context, commentBody, project
 
 	if discussionID != "" {
 		_, err := p.client.AddMergeRequestDiscussionReply(ctx, mrIID, projectID, discussionID, content)
+		if isNotFound(err) {
+			// The thread was deleted after its root note was updated; see
+			// postRunStatusComment.
+			log.Warn().Str("project", projectID).Int("mergeRequestID", mrIID).Str("discussionID", discussionID).Msg("the MR thread no longer exists, most likely replaced by a newer run of the same workspace; skipping the reply")
+			return err
+		}
 		if err != nil {
 			log.Error().Str("project", projectID).Int("mergeRequestID", mrIID).Str("discussionID", discussionID).Err(err).Msg("error posting Gitlab discussion reply")
 			return err

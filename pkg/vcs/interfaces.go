@@ -29,7 +29,12 @@ type GitClient interface {
 	GetPipelinesForCommit(ctx context.Context, projectWithNS string, commitSHA string) ([]ProjectPipeline, error)
 	GetCommitJobStatuses(ctx context.Context, projectWithNS string, commitSHA string) ([]CommitJobStatus, error)
 	GetProjectSettings(ctx context.Context, projectWithNS string) (ProjectSettings, error)
-	GetOldRunUrls(ctx context.Context, mrIID int, project string, rootCommentID int, workspace string, action string) (string, error)
+	// GetOldRunUrls lists the earlier runs of a workspace and action for the
+	// run's final comment and, when old comments are deleted, deletes them.
+	// rootCommentID is the comment the trigger posted when it started the run
+	// with ID runID. Comments of a newer run are left alone. It returns
+	// ErrRunSuperseded when the run's own comments were already replaced.
+	GetOldRunUrls(ctx context.Context, mrIID int, project string, rootCommentID int, runID string, workspace string, action string) (string, error)
 	MergeMR(ctx context.Context, mrIID int, project string) error
 	MergeMRAtSHA(ctx context.Context, mrIID int, project, expectedSHA string) error
 }

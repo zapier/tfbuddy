@@ -107,7 +107,7 @@ func TestGH_GetOldRunUrls_SingleWorkspace_DeletesOlderPlan(t *testing.T) {
 	defer server.Close()
 
 	client := newGHTestClient(t, server.URL)
-	_, err := client.GetOldRunUrls(context.Background(), testPRID, testFullName, int(currentID), "ws-a", "plan")
+	_, err := client.GetOldRunUrls(context.Background(), testPRID, testFullName, int(currentID), "run-current", "ws-a", "plan")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func TestGH_GetOldRunUrls_MultiWorkspace_KeepsOnePerWorkspaceAndAction(t *testin
 	defer server.Close()
 
 	client := newGHTestClient(t, server.URL)
-	_, err := client.GetOldRunUrls(context.Background(), testPRID, testFullName, int(currentPlanA), "ws-a", "plan")
+	_, err := client.GetOldRunUrls(context.Background(), testPRID, testFullName, int(currentPlanA), "run-current", "ws-a", "plan")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +192,7 @@ func TestGH_GetOldRunUrls_ApplyAction_OnlyDeletesMatchingApply(t *testing.T) {
 	defer server.Close()
 
 	client := newGHTestClient(t, server.URL)
-	_, err := client.GetOldRunUrls(context.Background(), testPRID, testFullName, int(currentApplyA), "ws-a", "apply")
+	_, err := client.GetOldRunUrls(context.Background(), testPRID, testFullName, int(currentApplyA), "run-current", "ws-a", "apply")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +224,7 @@ func TestGH_GetOldRunUrls_DeleteDisabled_NoDeletion(t *testing.T) {
 	defer server.Close()
 
 	client := newGHTestClient(t, server.URL)
-	result, err := client.GetOldRunUrls(context.Background(), testPRID, testFullName, int(currentID), "ws-a", "plan")
+	result, err := client.GetOldRunUrls(context.Background(), testPRID, testFullName, int(currentID), "run-current", "ws-a", "plan")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,7 +265,7 @@ func TestGH_GetOldRunUrls_FullMultiWorkspaceScenario(t *testing.T) {
 		defer server.Close()
 
 		client := newGHTestClient(t, server.URL)
-		_, err := client.GetOldRunUrls(context.Background(), testPRID, testFullName, int(currentPlanA), "ws-a", "plan")
+		_, err := client.GetOldRunUrls(context.Background(), testPRID, testFullName, int(currentPlanA), "run-current", "ws-a", "plan")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -293,7 +293,7 @@ func TestGH_GetOldRunUrls_FullMultiWorkspaceScenario(t *testing.T) {
 		defer server.Close()
 
 		client := newGHTestClient(t, server.URL)
-		_, err := client.GetOldRunUrls(context.Background(), testPRID, testFullName, int(currentPlanB), "ws-b", "plan")
+		_, err := client.GetOldRunUrls(context.Background(), testPRID, testFullName, int(currentPlanB), "run-current", "ws-b", "plan")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -321,7 +321,7 @@ func TestGH_GetOldRunUrls_FullMultiWorkspaceScenario(t *testing.T) {
 		defer server.Close()
 
 		client := newGHTestClient(t, server.URL)
-		_, err := client.GetOldRunUrls(context.Background(), testPRID, testFullName, int(currentApplyA), "ws-a", "apply")
+		_, err := client.GetOldRunUrls(context.Background(), testPRID, testFullName, int(currentApplyA), "run-current", "ws-a", "apply")
 		if err != nil {
 			t.Fatal(err)
 		}
