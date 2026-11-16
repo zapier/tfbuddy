@@ -226,6 +226,14 @@ func (c *GitlabClient) MergeMRAtSHA(ctx context.Context, mrIID int, project, exp
 // TFBUDDY_DELETE_OLD_COMMENTS is set) deletes entire discussion threads that
 // belong to the same workspace+action combination.  Threads for other
 // workspaces or actions are left untouched.
+//
+// Only threads older than this run's own thread (rootNoteID) count as old.
+// Two runs of one workspace can overlap, for example a push and a `tfc plan`
+// comment in the same minute. A thread created after ours belongs to a newer
+// run, which may still be in progress: deleting it would remove that run's
+// thread before it posts its result. The newer run removes ours instead when
+// it finishes. GitLab note IDs increase, so the root note ID orders the
+// threads.
 func (c *GitlabClient) GetOldRunUrls(ctx context.Context, mrIID int, project string, rootNoteID int, workspace string, action string) (string, error) {
 	_, span := otel.Tracer("TFC").Start(ctx, "GetOldRunURLs")
 	defer span.End()
@@ -267,6 +275,11 @@ func (c *GitlabClient) GetOldRunUrls(ctx context.Context, mrIID int, project str
 
 		noteWS, noteAction, found := utils.ParseTFBuddyMarker(rootNote.Body)
 		if !found || noteWS != workspace || noteAction != action {
+			continue
+		}
+
+		// A newer run's thread is neither deleted nor listed as a previous run.
+		if rootNote.ID > rootNoteID {
 			continue
 		}
 
@@ -741,6 +754,12 @@ func (g *GitlabClient) GetPipelinesForCommit(ctx context.Context, project, commi
 // commitStatusesPerPage is GitLab's maximum page size, keeping the number of
 // round trips down for pipelines with many jobs.
 const commitStatusesPerPage = 100
+
+// isNotFound reports whether a GitLab API call failed because the object, such
+// as a note or a discussion, does not exist (any more).
+func isNotFound(err error) bool {
+	return errors.Is(err, gogitlab.ErrNotFound)
+}
 
 // permanentError classifies a GitLab API error by the response it came with.
 // The response may be nil, which happens when a request fails before any

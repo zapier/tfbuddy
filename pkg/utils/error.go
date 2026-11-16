@@ -33,6 +33,9 @@ func CreatePermanentError(err error) error {
 //
 // A statusCode of 0 means the request produced no response at all, so the
 // error is reported rather than treated as a success.
+//
+// The returned error still wraps err, so callers can match the API client's
+// own errors, such as a GitLab 404, with errors.Is.
 func CreatePermanentHTTPError(statusCode int, err error) error {
 	if err == nil || (statusCode > 0 && statusCode < 400) {
 		return nil
@@ -41,6 +44,6 @@ func CreatePermanentHTTPError(statusCode int, err error) error {
 	case http.StatusTooManyRequests, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
 		return err
 	default:
-		return fmt.Errorf("%s %w", err.Error(), ErrPermanent)
+		return fmt.Errorf("%w %w", err, ErrPermanent)
 	}
 }
