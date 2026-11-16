@@ -157,8 +157,9 @@ func (g *liveGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		from := min((page-1)*perPage, len(g.comments))
 		to := min(from+perPage, len(g.comments))
-		if to < len(g.comments) {
-			w.Header().Set("Link", fmt.Sprintf(`<http://%s%s?page=%d&per_page=%d>; rel="next"`, r.Host, prComments, page+1, perPage))
+		if last := (len(g.comments) + perPage - 1) / perPage; page < last {
+			w.Header().Set("Link", fmt.Sprintf(`<http://%[1]s%[2]s?page=%[3]d&per_page=%[5]d>; rel="next", <http://%[1]s%[2]s?page=%[4]d&per_page=%[5]d>; rel="last"`,
+				r.Host, prComments, page+1, last, perPage))
 		}
 		out := []map[string]any{}
 		for _, c := range g.comments[from:to] {
@@ -414,5 +415,56 @@ func TestGH_GetOldRunUrls_StartingCommentShiftedOntoAPageAlreadyRead(t *testing.
 	}
 	if !gh.exists(current.startingCommentID) {
 		t.Error("the run's starting comment was deleted")
+	}
+}
+
+// Pages are read by offset. When another run deletes comments while a run
+// reads the pages, an older run's starting comment can move onto a page that
+// has been read already. The newer run must still find and delete it, or the
+// older run, finishing last, would find its starting comment and post its
+// result after the newer one.
+func TestGH_OlderStartingCommentMovingOntoAPageAlreadyRead(t *testing.T) {
+	t.Setenv("TFBUDDY_DELETE_OLD_COMMENTS", "true")
+	config.Reload()
+
+	gh := newLiveGitHub(t)
+	gh.addHumanComments(98)
+	earlier := gh.addFinishedRun("workspace-a", "run-earlier") // the last two comments of page 1
+	older := gh.startRun("workspace-a", "run-older")           // the first comment of page 2
+	newer := gh.startRun("workspace-a", "run-newer")
+	moved := false
+	gh.afterListPage = func(page int) {
+		if page == 1 && !moved {
+			// Another run deletes the earlier run's comments, so the older
+			// run's starting comment moves onto page 1, read already.
+			moved = true
+			gh.removeLocked(earlier.startingCommentID, earlier.startingCommentID+1)
+		}
+	}
+	server := httptest.NewServer(gh)
+	defer server.Close()
+
+	ctrl := gomock.NewController(t)
+	tfc := mocks.NewMockApiClient(ctrl)
+	tfc.EXPECT().GetPlanOutput(gomock.Any()).Return([]byte("{}"), nil).AnyTimes()
+	w := &RunEventsWorker{cfg: config.C, tfc: tfc, client: newGHTestClient(t, server.URL)}
+	ctx := context.Background()
+	w.postRunStatusComment(ctx, newer.run(tfe.RunPlannedAndFinished), newer.metadata())
+	w.postRunStatusComment(ctx, older.run(tfe.RunPlannedAndFinished), older.metadata())
+
+	if gh.exists(older.startingCommentID) {
+		t.Error("the older run's starting comment escaped the newer run's cleanup")
+	}
+	left := gh.matching("workspace-a", "plan")
+	if len(left) == 0 {
+		t.Fatal("no comments left for the workspace")
+	}
+	if last := left[len(left)-1].Body; !strings.Contains(last, "**Run URL**: [run-newer]") {
+		t.Errorf("the last comment is not the newer run's result:\n%s", last)
+	}
+	for _, c := range left {
+		if strings.Contains(c.Body, "**Run URL**: [run-older]") {
+			t.Errorf("the older run's result was left:\n%s", c.Body)
+		}
 	}
 }

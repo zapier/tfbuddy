@@ -29,6 +29,9 @@ type liveGitLab struct {
 	discussions []*liveDiscussion
 	// writes that reached a discussion that no longer exists, by kind
 	missed map[string]int
+	// afterListPage, if set, runs with the lock held after a page of the
+	// listing is read, so it can change the threads between pages.
+	afterListPage func(page int)
 }
 
 type liveDiscussion struct {
@@ -168,7 +171,9 @@ func (g *liveGitLab) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		from := min((page-1)*perPage, len(g.discussions))
 		to := min(from+perPage, len(g.discussions))
-		if to < len(g.discussions) {
+		totalPages := (len(g.discussions) + perPage - 1) / perPage
+		w.Header().Set("X-Total-Pages", strconv.Itoa(totalPages))
+		if page < totalPages {
 			w.Header().Set("X-Next-Page", strconv.Itoa(page+1))
 		}
 		out := []map[string]any{}
@@ -178,6 +183,9 @@ func (g *liveGitLab) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				notes = append(notes, noteJSON(n))
 			}
 			out = append(out, map[string]any{"id": d.id, "notes": notes})
+		}
+		if g.afterListPage != nil {
+			g.afterListPage(page)
 		}
 		_ = json.NewEncoder(w).Encode(out)
 
@@ -350,5 +358,53 @@ func TestOverlappingPlanRunsKeepTheNewerRunsThread(t *testing.T) {
 				t.Errorf("%d replies or resolves were sent to a deleted thread", n)
 			}
 		})
+	}
+}
+
+// Pages are read by offset. When another run deletes threads while a run
+// reads the pages, an older run's thread can move onto a page that has been
+// read already. The newer run must still find and delete it, or the older
+// run, finishing last, would post its result in its surviving thread.
+func TestOverlappingRuns_OlderThreadMovingOntoAPageAlreadyRead(t *testing.T) {
+	t.Setenv("TFBUDDY_DELETE_OLD_COMMENTS", "true")
+	config.Reload()
+
+	gl := newLiveGitLab(t)
+	gl.addHumanDiscussions(discussionsPerPage - 1)
+	earlier := gl.addFinishedRun("workspace-a", "run-earlier") // the last thread of page 1
+	older := gl.startRun("workspace-a", "run-older")           // the first thread of page 2
+	newer := gl.startRun("workspace-a", "run-newer")
+	moved := false
+	gl.afterListPage = func(page int) {
+		if page == 1 && !moved {
+			// Another run deletes the earlier run's thread, so the older
+			// run's thread moves onto page 1, read already.
+			moved = true
+			for i, d := range gl.discussions {
+				if d.id == earlier.discussionID {
+					gl.discussions = append(gl.discussions[:i], gl.discussions[i+1:]...)
+					break
+				}
+			}
+		}
+	}
+	server := httptest.NewServer(gl)
+	defer server.Close()
+
+	ctrl := gomock.NewController(t)
+	tfc := mocks.NewMockApiClient(ctrl)
+	tfc.EXPECT().GetPlanOutput(gomock.Any()).Return([]byte("{}"), nil).AnyTimes()
+	p := &RunStatusUpdater{cfg: config.C, tfc: tfc, client: newTestClient(t, server.URL)}
+	ctx := context.Background()
+	p.postRunStatusComment(ctx, newer.finished(), newer.metadata())
+	p.postRunStatusComment(ctx, older.finished(), older.metadata())
+
+	threads := gl.threads("workspace-a", "plan")
+	if len(threads) != 1 || threads[0].id != newer.discussionID {
+		var ids []string
+		for _, d := range threads {
+			ids = append(ids, d.id)
+		}
+		t.Fatalf("plan threads left = %v, want only %s", ids, newer.discussionID)
 	}
 }

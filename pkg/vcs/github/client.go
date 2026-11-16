@@ -1,8 +1,10 @@
 package github
 
 import (
+	"cmp"
 	"context"
 	"fmt"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -253,24 +255,55 @@ func (c *Client) GetOldRunUrls(ctx context.Context, prID int, fullName string, r
 	return oldRunBlock, nil
 }
 
-// listIssueComments returns every comment on a pull request, across pages.
+// listIssueComments returns every comment on a pull request, oldest first.
 // A comment missing from the list, such as a run's starting comment on a
 // busy pull request, would be neither cleaned up nor found.
+//
+// Pages are read by offset, and another run may delete comments meanwhile,
+// which moves later comments to earlier pages. So once the first page shows
+// how many there are, the pages are read from the last back to the first: a
+// comment that moves lands on a page that is still to be read, and none is
+// skipped. Comments read twice are kept once.
 func (c *Client) listIssueComments(owner, repo string, prID int) ([]*gogithub.IssueComment, error) {
 	return backoff.RetryWithData(func() ([]*gogithub.IssueComment, error) {
-		var all []*gogithub.IssueComment
-		opts := &gogithub.IssueListCommentsOptions{ListOptions: gogithub.ListOptions{PerPage: 100}}
-		for {
-			comments, resp, err := c.client.Issues.ListComments(c.ctx, owner, repo, prID, opts)
+		byID := map[int64]*gogithub.IssueComment{}
+		read := func(page int) (*gogithub.Response, error) {
+			comments, resp, err := c.client.Issues.ListComments(c.ctx, owner, repo, prID,
+				&gogithub.IssueListCommentsOptions{ListOptions: gogithub.ListOptions{Page: page, PerPage: 100}})
 			if err != nil {
 				return nil, permanentError(resp, err)
 			}
-			all = append(all, comments...)
-			if resp.NextPage == 0 {
-				return all, nil
+			for _, comment := range comments {
+				byID[comment.GetID()] = comment
 			}
-			opts.Page = resp.NextPage
+			return resp, nil
 		}
+
+		resp, err := read(1)
+		if err != nil {
+			return nil, err
+		}
+		switch {
+		case resp.LastPage > 1:
+			for page := resp.LastPage; page >= 1; page-- {
+				if _, err := read(page); err != nil {
+					return nil, err
+				}
+			}
+		case resp.NextPage != 0:
+			// No last page given: read forward.
+			for page := resp.NextPage; page != 0; {
+				next, err := read(page)
+				if err != nil {
+					return nil, err
+				}
+				page = next.NextPage
+			}
+		}
+
+		all := slices.Collect(maps.Values(byID))
+		slices.SortFunc(all, func(a, b *gogithub.IssueComment) int { return cmp.Compare(a.GetID(), b.GetID()) })
+		return all, nil
 	}, createBackOffWithRetries())
 }
 

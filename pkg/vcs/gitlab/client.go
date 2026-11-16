@@ -1,11 +1,14 @@
 package gitlab
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -135,23 +138,66 @@ func (c *GitlabClient) ResolveMergeRequestDiscussions(
 const discussionsPerPage = 100
 
 // listMergeRequestDiscussions returns every discussion on a merge request,
-// across pages. A busy merge request has more than one page, and a thread
+// oldest first. A busy merge request has more than one page, and a thread
 // missing from the list would be neither cleaned up nor resolved.
+//
+// Pages are read by offset, and another run may delete threads meanwhile,
+// which moves later threads to earlier pages. So once the first page shows
+// how many there are, the pages are read from the last back to the first: a
+// thread that moves lands on a page that is still to be read, and none is
+// skipped. Threads read twice are kept once.
 func (c *GitlabClient) listMergeRequestDiscussions(ctx context.Context, project string, mrIID int) ([]*gogitlab.Discussion, error) {
 	return backoff.RetryWithData(func() ([]*gogitlab.Discussion, error) {
-		var all []*gogitlab.Discussion
-		for page := 1; page != 0; {
+		byID := map[string]*gogitlab.Discussion{}
+		read := func(page int) (*gogitlab.Response, error) {
 			discussions, resp, err := c.client.Discussions.ListMergeRequestDiscussions(project, mrIID,
 				&gogitlab.ListMergeRequestDiscussionsOptions{Page: page, PerPage: discussionsPerPage},
 				gogitlab.WithContext(ctx))
 			if err != nil {
 				return nil, permanentError(resp, err)
 			}
-			all = append(all, discussions...)
-			page = resp.NextPage
+			for _, d := range discussions {
+				byID[d.ID] = d
+			}
+			return resp, nil
 		}
+
+		resp, err := read(1)
+		if err != nil {
+			return nil, err
+		}
+		switch {
+		case resp.TotalPages > 1:
+			for page := resp.TotalPages; page >= 1; page-- {
+				if _, err := read(page); err != nil {
+					return nil, err
+				}
+			}
+		case resp.NextPage != 0:
+			// GitLab leaves out the page count for very long lists: read
+			// forward.
+			for page := resp.NextPage; page != 0; {
+				next, err := read(page)
+				if err != nil {
+					return nil, err
+				}
+				page = next.NextPage
+			}
+		}
+
+		all := slices.Collect(maps.Values(byID))
+		slices.SortFunc(all, func(a, b *gogitlab.Discussion) int {
+			return cmp.Compare(firstNoteID(a), firstNoteID(b))
+		})
 		return all, nil
 	}, createBackOffWithRetries(ctx))
+}
+
+func firstNoteID(d *gogitlab.Discussion) int {
+	if len(d.Notes) == 0 {
+		return 0
+	}
+	return d.Notes[0].ID
 }
 
 type GitlabCommitStatusOptions struct {
