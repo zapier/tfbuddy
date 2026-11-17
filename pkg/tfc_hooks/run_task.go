@@ -1,7 +1,6 @@
 package tfc_hooks
 
 import (
-	"github.com/kr/pretty"
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog/log"
 	"net/http"
@@ -16,7 +15,8 @@ func RunTaskHandler(c echo.Context) error {
 		return err
 	}
 
-	log.Debug().Str("event", pretty.Sprint(event))
+	// Identifiers only: the payload includes the task's access token.
+	log.Debug().Str("runID", event.RunId).Str("workspace", event.WorkspaceName).Str("taskResultID", event.TaskResultId).Msg("received run task event")
 
 	// do something with event
 

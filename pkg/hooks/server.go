@@ -66,9 +66,9 @@ func StartServer(cfg config.Config) {
 	// add otel middleware to hooks group
 	hooksGroup.Use(otelecho.Middleware("tfbuddy"))
 
-	hooksGroup.Use(middleware.BodyDump(func(c echo.Context, reqBody, resBody []byte) {
-		log.Trace().RawJSON("body", reqBody).Msg("Received hook request")
-	}))
+	// Webhook bodies are not logged: they carry whole merge request, comment
+	// and run payloads. The request logger below records method, path and
+	// status.
 	logConfig := middleware.DefaultLoggerConfig
 	hooksGroup.Use(middleware.LoggerWithConfig(logConfig))
 

@@ -151,7 +151,7 @@ func (c *GitlabClient) latestPipelineID(ctx context.Context, project, commitSHA 
 			Msg("could not retrieve pipelines for commit")
 		return nil
 	}
-	log.Trace().Interface("pipelines", pipelines).Msg("retrieved pipelines for commit")
+	log.Trace().Str("project", project).Int("mergeRequestID", mrIID).Int("pipelines", len(pipelines)).Msg("retrieved pipelines for commit")
 	selected := vcs.SelectPipelineForCommit(pipelines)
 	if selected == nil {
 		return nil

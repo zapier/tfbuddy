@@ -2,13 +2,10 @@ package tfc_hooks
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/hashicorp/go-tfe"
-	"github.com/kr/pretty"
 	"github.com/labstack/echo/v4"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog/log"
@@ -83,7 +80,6 @@ func (h *NotificationHandler) Handler() func(c echo.Context) error {
 			tfcNotificationsReceived.With(labels).Inc()
 			return err
 		}
-		log.Debug().Str("event", pretty.Sprint(event))
 
 		// do something with event
 		h.processNotification(ctx, &event)
@@ -117,18 +113,16 @@ func (h *NotificationHandler) processNotification(ctx context.Context, n *Notifi
 	ctx, span := otel.Tracer("TFBuddy").Start(ctx, "ProcessNotification")
 	defer span.End()
 
-	log.Debug().Interface("NotificationPayload", *n).Msg("processNotification()")
+	// Identifiers only, never the payload.
+	log.Debug().
+		Str("runID", n.RunId).
+		Str("organization", n.OrganizationName).
+		Str("workspace", n.WorkspaceName).
+		Int("notifications", len(n.Notifications)).
+		Msg("processNotification()")
 	if n.RunId == "" {
 		return
 	}
-	run, err := h.api.GetRun(ctx, n.RunId)
-	if err != nil {
-		span.RecordError(err)
-		log.Error().Err(err)
-	}
-	runJson, _ := json.Marshal(run)
-	log.Debug().Str("run", string(runJson))
-	fmt.Println(string(runJson))
 
 	// notifying
 	labels := prometheus.Labels{
@@ -136,7 +130,7 @@ func (h *NotificationHandler) processNotification(ctx context.Context, n *Notifi
 		"organization": n.OrganizationName,
 		"workspace":    n.WorkspaceName,
 	}
-	err = h.stream.PublishTFRunEvent(ctx, &runstream.TFRunEvent{
+	err := h.stream.PublishTFRunEvent(ctx, &runstream.TFRunEvent{
 		Organization: n.OrganizationName,
 		Workspace:    n.WorkspaceName,
 		RunID:        n.RunId,

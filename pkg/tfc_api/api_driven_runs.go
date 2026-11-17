@@ -101,7 +101,8 @@ func (c *TFCClient) createConfigurationVersion(opts *ApiRunOptions, ctx context.
 		log.Error().Err(err).Msg("could not create TFC configuration version")
 		return cv, err
 	}
-	log.Debug().Interface("CV", cv).Msg("Created new CV")
+	// Not the whole object: it includes the signed upload URL.
+	log.Debug().Str("cvID", cv.ID).Str("status", string(cv.Status)).Msg("Created new CV")
 
 	err = c.Client.ConfigurationVersions.Upload(ctx, cv.UploadURL, opts.Path)
 	if err != nil {
@@ -114,7 +115,7 @@ func (c *TFCClient) createConfigurationVersion(opts *ApiRunOptions, ctx context.
 		log.Error().Err(err).Msg("could not read configuration version")
 		return nil, err
 	}
-	log.Debug().Interface("CV", cv2).Msg("Uploaded source to CV")
+	log.Debug().Str("cvID", cv2.ID).Str("status", string(cv2.Status)).Msg("Uploaded source to CV")
 	return cv2, err
 }
 
