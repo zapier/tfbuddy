@@ -125,3 +125,27 @@ func TestGitCloneDepth(t *testing.T) {
 		assert.Equal(t, 7, GetCloneDepth(config.C, "TFBUDDY_GITHUB_CLONE_DEPTH"))
 	})
 }
+
+func TestCheckoutCommit(t *testing.T) {
+	gitRepo, initialCommit := mocks.InitGitTestRepo(t)
+	assert.NoError(t, gitRepo.SwitchToBranch("test"))
+	tip, err := gitRepo.CreateCommitFileOnCurrentBranch("main2.tf", "test commit")
+	assert.NoError(t, err)
+	client := Repository{Repository: gitRepo.Repo}
+
+	// The branch tip is checked out; an older commit can be checked out exactly.
+	assert.NoError(t, client.CheckoutCommit(initialCommit))
+	head, err := gitRepo.Repo.Head()
+	assert.NoError(t, err)
+	assert.Equal(t, initialCommit, head.Hash().String())
+
+	assert.NoError(t, client.CheckoutCommit(tip))
+	head, _ = gitRepo.Repo.Head()
+	assert.Equal(t, tip, head.Hash().String())
+
+	// A commit the clone does not have, and anything but a full SHA, fail.
+	assert.Error(t, client.CheckoutCommit("0123456789abcdef0123456789abcdef01234567"))
+	assert.Error(t, client.CheckoutCommit(tip[:8]))
+	head, _ = gitRepo.Repo.Head()
+	assert.Equal(t, tip, head.Hash().String(), "a failed checkout must leave the clone as it was")
+}

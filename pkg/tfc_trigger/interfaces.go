@@ -19,6 +19,7 @@ type Trigger interface {
 	GetTriggerSource() TriggerSource
 	GetWorkspace() string
 	GetVcsProvider() string
+	SetManualModeReplanner(ManualModeReplanner)
 }
 type TriggerAction int
 type TriggerSource int

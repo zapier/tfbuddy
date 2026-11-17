@@ -181,6 +181,18 @@ func (mr *MockTriggerMockRecorder) GetWorkspace() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetWorkspace", reflect.TypeOf((*MockTrigger)(nil).GetWorkspace))
 }
 
+// SetManualModeReplanner mocks base method.
+func (m *MockTrigger) SetManualModeReplanner(arg0 tfc_trigger.ManualModeReplanner) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "SetManualModeReplanner", arg0)
+}
+
+// SetManualModeReplanner indicates an expected call of SetManualModeReplanner.
+func (mr *MockTriggerMockRecorder) SetManualModeReplanner(arg0 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetManualModeReplanner", reflect.TypeOf((*MockTrigger)(nil).SetManualModeReplanner), arg0)
+}
+
 // SetMergeRequestDiscussionID mocks base method.
 func (m *MockTrigger) SetMergeRequestDiscussionID(mrdisID string) {
 	m.ctrl.T.Helper()

@@ -38,6 +38,7 @@ const (
 	KeyBlockApplyOnDraft        = "block-apply-on-draft"
 	KeyStatusTriggerWait        = "status-trigger-wait"
 	KeySkipAutoPlanLabels       = "skip-auto-plan-labels"
+	KeyAutoModeEnabled          = "auto-mode-enabled"
 )
 
 type Config struct {
@@ -67,6 +68,7 @@ type Config struct {
 	BlockApplyOnDraft        bool          `mapstructure:"block-apply-on-draft"`
 	StatusTriggerWait        time.Duration `mapstructure:"status-trigger-wait"`
 	SkipAutoPlanLabels       []string      `mapstructure:"skip-auto-plan-labels"`
+	AutoModeEnabled          bool          `mapstructure:"auto-mode-enabled"`
 }
 
 var C Config
@@ -110,6 +112,7 @@ var bindings = []binding{
 	{key: KeyBlockApplyOnDraft, defaultValue: false, description: "Refuse `tfc apply` while the merge request is a Draft. A Draft cannot be merged, so an apply on one leaves live infrastructure ahead of the target branch. `tfc plan` is still allowed."},
 	{key: KeyStatusTriggerWait, defaultValue: 5 * time.Minute, description: "How long `tfc status` waits for TFBuddy to publish a commit status for the pipeline's commit before failing the job. Accepts a Go duration string (e.g. 5m)."},
 	{key: KeySkipAutoPlanLabels, defaultValue: []string{}, description: "Comma-separated GitLab merge request labels (case-insensitive). When a merge request carries any of these labels, TFBuddy skips automatic `tfc plan` triggering from GitLab webhook events (open, reopen, and new commits pushed), but still discovers every affected workspace and posts a pending TFC/plan/<workspace> and TFC/apply/<workspace> commit status for each, without creating a Terraform Cloud run. Does not affect `tfc plan`/`tfc apply` run from an MR comment, and does not block cleanup when the MR is merged or closed."},
+	{key: KeyAutoModeEnabled, defaultValue: false, description: "Enable Auto Mode for GitLab: merge requests whose author is listed under `autoMode` in the target branch's .tfbuddy.yaml are planned with a change class in the run message and applied through the `tfc apply` path once they are approved after their last push. When disabled, those merge requests take Manual Mode, the normal `tfc apply` flow."},
 }
 
 func init() {

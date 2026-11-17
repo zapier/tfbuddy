@@ -31,6 +31,36 @@ func NewRepository(repo *git.Repository, auth *githttp.BasicAuth, localDir strin
 func (gr *Repository) GetLocalDirectory() string {
 	return gr.localDir
 }
+
+// CheckoutCommit checks out sha, detached. It fails, rather than check out
+// something else, when sha is not a full commit SHA or the clone does not
+// contain it, as when a shallow clone's branch has moved on or a force-push
+// dropped the commit.
+func (gr *Repository) CheckoutCommit(sha string) error {
+	if !plumbing.IsHash(sha) {
+		return utils.CreatePermanentError(fmt.Errorf("%q is not a full commit SHA", sha))
+	}
+	hash := plumbing.NewHash(sha)
+	if _, err := gr.CommitObject(hash); err != nil {
+		return utils.CreatePermanentError(fmt.Errorf("the clone does not contain commit %s: %w", sha, err))
+	}
+	w, err := gr.Worktree()
+	if err != nil {
+		return utils.CreatePermanentError(err)
+	}
+	if err := w.Checkout(&git.CheckoutOptions{Hash: hash, Force: true}); err != nil {
+		return utils.CreatePermanentError(fmt.Errorf("could not check out commit %s: %w", sha, err))
+	}
+	head, err := gr.Head()
+	if err != nil {
+		return utils.CreatePermanentError(err)
+	}
+	if head.Hash() != hash {
+		return utils.CreatePermanentError(fmt.Errorf("checked out %s instead of commit %s", head.Hash(), sha))
+	}
+	return nil
+}
+
 func (gr *Repository) FetchUpstreamBranch(branch string) error {
 	ref := fmt.Sprintf("refs/heads/%s:refs/heads/%s", branch, branch)
 	err := gr.Fetch(&git.FetchOptions{

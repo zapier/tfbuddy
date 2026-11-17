@@ -8,6 +8,7 @@ import (
 	"github.com/zapier/tfbuddy/internal/config"
 	"github.com/zapier/tfbuddy/pkg/runstream"
 	"github.com/zapier/tfbuddy/pkg/tfc_api"
+	"github.com/zapier/tfbuddy/pkg/tfc_trigger"
 	"github.com/zapier/tfbuddy/pkg/vcs"
 	"go.opentelemetry.io/otel"
 )
@@ -18,14 +19,20 @@ type RunStatusUpdater struct {
 	rs           runstream.StreamClient
 	tfc          tfc_api.ApiClient
 	eventQCloser func()
+	// replanner asks for the Manual Mode re-plan of an Auto Mode MR that
+	// falls back. The re-plan never runs in this run-event callback.
+	replanner tfc_trigger.ManualModeReplanner
 }
 
-func NewRunStatusProcessor(cfg config.Config, client *GitlabClient, rs runstream.StreamClient, tfc tfc_api.ApiClient) *RunStatusUpdater {
+// NewRunStatusProcessor subscribes to GitLab run events. replanner, which may
+// be nil, asks for the Manual Mode re-plan of an Auto Mode MR that falls back.
+func NewRunStatusProcessor(cfg config.Config, client *GitlabClient, rs runstream.StreamClient, tfc tfc_api.ApiClient, replanner tfc_trigger.ManualModeReplanner) *RunStatusUpdater {
 	rsp := &RunStatusUpdater{
-		cfg:    cfg,
-		client: client,
-		rs:     rs,
-		tfc:    tfc,
+		cfg:       cfg,
+		client:    client,
+		rs:        rs,
+		tfc:       tfc,
+		replanner: replanner,
 	}
 
 	// subscribe to TFRunEvents (TFC Notifications)
@@ -91,9 +98,18 @@ func (p *RunStatusUpdater) eventStreamCallback(re runstream.RunEvent) bool {
 	if p.runFinishedSince(ctx, re) {
 		return true
 	}
-	if err := p.updateCommitStatusForRun(ctx, run, re.GetMetadata()); err != nil {
+	err = p.updateCommitStatusForRun(ctx, run, re.GetMetadata())
+	classErr := p.updateClassStatus(ctx, run, re.GetMetadata())
+	if err != nil {
 		span.RecordError(err)
 		log.Error().Err(err).Str("runID", re.GetRunID()).Msg("could not reconcile auto-merge state")
+		return false
+	}
+	if classErr != nil {
+		// Handled again later, so that a plan's outcome is not lost while
+		// NATS or GitLab is briefly unavailable.
+		span.RecordError(classErr)
+		log.Error().Err(classErr).Str("runID", re.GetRunID()).Msg("could not reconcile the class status")
 		return false
 	}
 	if tfc_api.IsFinalRunStatus(run.Status) {

@@ -66,6 +66,7 @@ func (p *RunStatusUpdater) updateCommitStatusForRun(ctx context.Context, run *tf
 	case tfe.RunErrored:
 		// The run has errored. This is a final state.
 		p.updateStatus(ctx, gogitlab.Failed, rmd.GetAction(), rmd)
+		return p.fallBackOnErroredAutoModeApply(ctx, rmd)
 
 	case tfe.RunPlanning:
 		// The planning phase of a run is in progress.
@@ -89,11 +90,24 @@ func (p *RunStatusUpdater) updateCommitStatusForRun(ctx context.Context, run *tf
 			}
 		}
 
-	case tfe.RunPolicySoftFailed:
+	case tfe.RunPolicySoftFailed, tfe.RunPolicyOverride:
+		// TFC reports a soft-failed policy as policy_soft_failed on a plan-only
+		// run, and as policy_override on a run that would apply. TFBuddy never
+		// overrides a policy for Auto Mode: it discards the apply instead.
+		if rmd.GetChangeClass() != "" && rmd.GetAction() == runstream.ApplyAction {
+			return p.discardSoftFailedAutoModeApply(ctx, run, rmd)
+		}
+		if run.Status == tfe.RunPolicyOverride {
+			// Manual Mode: a person decides in TFC whether to override.
+			log.Debug().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Str("status", string(run.Status)).Msg("ignoring run status")
+			return nil
+		}
 		// A sentinel policy has soft failed for a plan-only run. This is a final state.
 		// During the apply, the policy failure will need to be overriden.
 		log.Debug().Str("project", rmd.GetMRProjectNameWithNamespace()).Int("mergeRequestID", rmd.GetMRInternalID()).Msg("policy soft failed")
-		if p.cfg.FailCIOnSentinelSoftFail && rmd.GetAction() == runstream.PlanAction {
+		// An Auto Mode plan that soft-fails a policy fails, and so fails its
+		// class: TFBuddy never overrides a policy for automation.
+		if (p.cfg.FailCIOnSentinelSoftFail || rmd.GetChangeClass() != "") && rmd.GetAction() == runstream.PlanAction {
 			p.updateStatus(ctx, gogitlab.Failed, "plan", rmd)
 		} else {
 			p.updateStatus(ctx, gogitlab.Success, rmd.GetAction(), rmd)
