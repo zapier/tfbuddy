@@ -52,6 +52,12 @@ func Execute() {
 }
 
 func init() {
+	// Run every persistent pre-run from the root down, not only the nearest
+	// one. Without this, a subcommand with its own pre-run (such as `tfc`)
+	// skips the root's, so the log level is never applied. zerolog's global
+	// level starts at trace, so every trace and debug line would be written.
+	cobra.EnableTraverseRunHooks = true
+
 	config.Init()
 	cobra.OnInitialize(initConfig)
 

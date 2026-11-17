@@ -75,15 +75,14 @@ func FormatRunStatusCommentBody(cfg config.Config, tfc tfc_api.ApiClient, run *t
 			}
 		}
 	case tfe.RunPlannedAndFinished:
-		log.Trace().Interface("plan", run.Plan).Msg("planned_and_finished")
-
+		// The plan JSON holds every value in the plan, sensitive ones included,
+		// so it is only parsed here and never logged, at any level.
 		b, err := tfc.GetPlanOutput(run.Plan.ID)
 		if err != nil {
-			log.Error().Err(err).Msg("could not get plan JSON")
+			log.Error().Err(err).Str("runID", run.ID).Str("planID", run.Plan.ID).Msg("could not get plan JSON")
 		} else {
 			extraInfo += "<br>" + terraform_plan.PresentPlanChangesAsMarkdown(b, runUrl) + "</br>"
 		}
-		log.Trace().Str("plan_id", run.Plan.ID).Str("plan_json", string(b)).Msg("")
 
 		if hasChanges(run.Plan) {
 			if len(run.TargetAddrs) > 0 {

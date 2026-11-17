@@ -39,11 +39,16 @@ func (e *PullRequestEventMsg) GetId(ctx context.Context) string {
 }
 
 func (e *PullRequestEventMsg) DecodeEventData(b []byte) error {
-	log.Debug().RawJSON("event_data", b).Msg("worker got PR event")
 	err := json.Unmarshal(b, e)
 	if err != nil {
 		return err
 	}
+	// Log identifiers only, never the event body.
+	log.Debug().
+		Str("repo", e.Payload.GetRepo().GetFullName()).
+		Int("prNumber", e.Payload.GetNumber()).
+		Str("action", e.Payload.GetAction()).
+		Msg("worker got PR event")
 	e.Context = otel.GetTextMapPropagator().Extract(context.Background(), e.Carrier)
 	return nil
 }
@@ -78,12 +83,17 @@ func (e *GithubIssueCommentEventMsg) GetId(ctx context.Context) string {
 }
 
 func (e *GithubIssueCommentEventMsg) DecodeEventData(b []byte) error {
-	log.Trace().RawJSON("event_data", b).Msg("decoding issue_comment event")
 	err := json.Unmarshal(b, e)
 	if err != nil {
 		log.Error().Err(err).Msg("could not decode Github IssueCommentEvent")
 		return err
 	}
+	// Log identifiers only, never the event body.
+	log.Trace().
+		Str("repo", e.Payload.GetRepo().GetFullName()).
+		Int("issueNumber", e.Payload.GetIssue().GetNumber()).
+		Int64("commentID", e.Payload.GetComment().GetID()).
+		Msg("decoded issue_comment event")
 
 	e.Context = otel.GetTextMapPropagator().Extract(context.Background(), e.Carrier)
 	return nil
