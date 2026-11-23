@@ -6,6 +6,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/hashicorp/go-tfe"
 	"github.com/rs/zerolog/log"
@@ -31,7 +32,7 @@ func getProperTargetedApplyText(rmd runstream.RunMetadata, run *tfe.Run, wsName 
 		return fmt.Sprintf(howToApplyFormatWithTarget, targets, wsName, targets, manualMRMergeSnippet)
 	}
 }
-func FormatRunStatusCommentBody(cfg config.Config, tfc tfc_api.ApiClient, run *tfe.Run, rmd runstream.RunMetadata) (main, toplevel string, resolve bool) {
+func FormatRunStatusCommentBody(ctx context.Context, cfg config.Config, tfc tfc_api.ApiClient, run *tfe.Run, rmd runstream.RunMetadata) (main, toplevel string, resolve bool) {
 	wsName := run.Workspace.Name
 	org := run.Workspace.Organization.Name
 	runUrl := fmt.Sprintf("https://app.terraform.io/app/%s/workspaces/%s/runs/%s", org, wsName, run.ID)
@@ -88,7 +89,7 @@ func FormatRunStatusCommentBody(cfg config.Config, tfc tfc_api.ApiClient, run *t
 		}
 
 		if hasChanges(run.Plan) {
-			extraInfo += costEstimateLine(cfg, tfc, run)
+			extraInfo += costEstimateLine(ctx, cfg, tfc, run)
 			if len(run.TargetAddrs) > 0 {
 				extraInfo += getProperTargetedApplyText(rmd, run, wsName)
 			} else {
@@ -135,13 +136,18 @@ func FormatRunStatusCommentBody(cfg config.Config, tfc tfc_api.ApiClient, run *t
 
 }
 
+// The estimate is optional, so a slow read must not hold up the comment.
+const costEstimateTimeout = 10 * time.Second
+
 // costEstimateLine returns "" unless the run has a finished estimate whose
 // monthly change is at least cfg.CostEstimateMinDelta dollars either way.
-func costEstimateLine(cfg config.Config, tfc tfc_api.ApiClient, run *tfe.Run) string {
+func costEstimateLine(ctx context.Context, cfg config.Config, tfc tfc_api.ApiClient, run *tfe.Run) string {
 	if cfg.CostEstimateMinDelta <= 0 || run.CostEstimate == nil || run.CostEstimate.ID == "" {
 		return ""
 	}
-	ce, err := tfc.GetCostEstimate(context.Background(), run.CostEstimate.ID)
+	ctx, cancel := context.WithTimeout(ctx, costEstimateTimeout)
+	defer cancel()
+	ce, err := tfc.GetCostEstimate(ctx, run.CostEstimate.ID)
 	if err != nil {
 		log.Error().Err(err).Str("runID", run.ID).Str("costEstimateID", run.CostEstimate.ID).Msg("could not get cost estimate")
 		return ""
@@ -150,7 +156,7 @@ func costEstimateLine(cfg config.Config, tfc tfc_api.ApiClient, run *tfe.Run) st
 		return ""
 	}
 	delta, err := strconv.ParseFloat(ce.DeltaMonthlyCost, 64)
-	if err != nil || math.Abs(delta) < float64(cfg.CostEstimateMinDelta) {
+	if err != nil || math.IsNaN(delta) || math.IsInf(delta, 0) || math.Abs(delta) < float64(cfg.CostEstimateMinDelta) {
 		return ""
 	}
 	return fmt.Sprintf(costEstimateFormat, formatUSD(delta))

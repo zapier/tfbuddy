@@ -2,9 +2,11 @@ package comment_formatter
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/go-tfe"
 	"github.com/rs/zerolog"
@@ -85,7 +87,7 @@ func TestFormatRunStatusCommentBody_PlanIsNeverLogged(t *testing.T) {
 	tfc.EXPECT().GetPlanOutput("plan-abc123").Return([]byte(testPlanJSON), nil)
 
 	rmd := &runstream.TFRunMetadata{Action: runstream.PlanAction}
-	main, _, _ := FormatRunStatusCommentBody(config.Config{}, tfc, plannedAndFinishedRun(), rmd)
+	main, _, _ := FormatRunStatusCommentBody(context.Background(), config.Config{}, tfc, plannedAndFinishedRun(), rmd)
 
 	if !strings.Contains(main, "<code>terraform_data.example</code>") {
 		t.Errorf("comment is missing the planned resource address:\n%s", main)
@@ -109,7 +111,7 @@ func TestFormatRunStatusCommentBody_PlanFetchErrorIsLoggedWithoutPlan(t *testing
 	tfc.EXPECT().GetPlanOutput("plan-abc123").Return(nil, errors.New("resource not found"))
 
 	rmd := &runstream.TFRunMetadata{Action: runstream.PlanAction}
-	FormatRunStatusCommentBody(config.Config{}, tfc, plannedAndFinishedRun(), rmd)
+	FormatRunStatusCommentBody(context.Background(), config.Config{}, tfc, plannedAndFinishedRun(), rmd)
 
 	out := logs.String()
 	if !strings.Contains(out, "could not get plan JSON") || !strings.Contains(out, "plan-abc123") {
@@ -136,7 +138,7 @@ func formatWithCostEstimate(t *testing.T, minDelta int, run *tfe.Run, read *esti
 	}
 
 	rmd := &runstream.TFRunMetadata{Action: runstream.PlanAction}
-	main, _, _ := FormatRunStatusCommentBody(config.Config{CostEstimateMinDelta: minDelta}, tfc, run, rmd)
+	main, _, _ := FormatRunStatusCommentBody(context.Background(), config.Config{CostEstimateMinDelta: minDelta}, tfc, run, rmd)
 	return main
 }
 
@@ -162,6 +164,9 @@ func TestFormatRunStatusCommentBody_CostEstimate(t *testing.T) {
 		{name: "below the minimum", minDelta: 10, read: finished("-9.99")},
 		{name: "no cost change", minDelta: 10, read: finished("0.0")},
 		{name: "delta isn't a number", minDelta: 10, read: finished("")},
+		{name: "delta is NaN", minDelta: 10, read: finished("NaN")},
+		{name: "delta is positive infinity", minDelta: 10, read: finished("+Inf")},
+		{name: "delta is negative infinity", minDelta: 10, read: finished("-Inf")},
 		{name: "skipped for a targeted plan", minDelta: 10, read: withStatus(tfe.CostEstimateSkippedDueToTargeting)},
 		{name: "still pending", minDelta: 10, read: withStatus(tfe.CostEstimatePending)},
 		{name: "errored estimate", minDelta: 10, read: withStatus(tfe.CostEstimateErrored)},
@@ -206,6 +211,34 @@ func TestFormatRunStatusCommentBody_CostEstimate(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCostEstimateLookupUsesBoundedEventContext(t *testing.T) {
+	type contextKey string
+	eventCtx := context.WithValue(context.Background(), contextKey("event"), "event-context")
+
+	ctrl := gomock.NewController(t)
+	tfc := mocks.NewMockApiClient(ctrl)
+	tfc.EXPECT().GetPlanOutput("plan-abc123").Return([]byte(testPlanJSON), nil)
+	tfc.EXPECT().GetCostEstimate(gomock.Any(), "ce-abc123").DoAndReturn(
+		func(ctx context.Context, _ string) (*tfe.CostEstimate, error) {
+			if got := ctx.Value(contextKey("event")); got != "event-context" {
+				t.Errorf("cost estimate context value = %v, want event-context", got)
+			}
+			deadline, ok := ctx.Deadline()
+			if !ok {
+				t.Error("cost estimate context has no deadline")
+			} else if time.Until(deadline) > costEstimateTimeout {
+				t.Errorf("cost estimate deadline is later than costEstimateTimeout: %s", time.Until(deadline))
+			}
+			return &tfe.CostEstimate{Status: tfe.CostEstimateFinished, DeltaMonthlyCost: "10"}, nil
+		},
+	)
+
+	run := plannedAndFinishedRun()
+	run.CostEstimate = &tfe.CostEstimate{ID: "ce-abc123"}
+	rmd := &runstream.TFRunMetadata{Action: runstream.PlanAction}
+	FormatRunStatusCommentBody(eventCtx, config.Config{CostEstimateMinDelta: 10}, tfc, run, rmd)
 }
 
 func TestFormatRunStatusCommentBody_NoCostEstimateWithoutChanges(t *testing.T) {
