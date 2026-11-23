@@ -50,6 +50,7 @@ func newRateLimitedHTTPClient(limiter *rate.Limiter) *http.Client {
 type ApiClient interface {
 	GetPlanOutput(id string) ([]byte, error)
 	GetRun(ctx context.Context, id string) (*tfe.Run, error)
+	GetCostEstimate(ctx context.Context, id string) (*tfe.CostEstimate, error)
 	GetWorkspaceByName(ctx context.Context, org, name string) (*tfe.Workspace, error)
 	GetWorkspaceById(ctx context.Context, id string) (*tfe.Workspace, error)
 	CreateRunFromSource(ctx context.Context, opts *ApiRunOptions) (*tfe.Run, error)
@@ -116,6 +117,13 @@ func (t *TFCClient) GetRun(ctx context.Context, id string) (*tfe.Run, error) {
 	}
 
 	return run, nil
+}
+
+func (t *TFCClient) GetCostEstimate(ctx context.Context, id string) (*tfe.CostEstimate, error) {
+	ctx, span := otel.Tracer("TFC").Start(ctx, "GetCostEstimate", trace.WithAttributes(attribute.String("cost_estimate_id", id)))
+	defer span.End()
+
+	return t.Client.CostEstimates.Read(ctx, id)
 }
 
 func (t *TFCClient) GetPlanOutput(id string) ([]byte, error) {

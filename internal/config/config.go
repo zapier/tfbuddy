@@ -38,6 +38,7 @@ const (
 	KeyBlockApplyOnDraft        = "block-apply-on-draft"
 	KeyStatusTriggerWait        = "status-trigger-wait"
 	KeySkipAutoPlanLabels       = "skip-auto-plan-labels"
+	KeyCostEstimateMinDelta     = "cost-estimate-min-delta"
 )
 
 type Config struct {
@@ -67,6 +68,7 @@ type Config struct {
 	BlockApplyOnDraft        bool          `mapstructure:"block-apply-on-draft"`
 	StatusTriggerWait        time.Duration `mapstructure:"status-trigger-wait"`
 	SkipAutoPlanLabels       []string      `mapstructure:"skip-auto-plan-labels"`
+	CostEstimateMinDelta     int           `mapstructure:"cost-estimate-min-delta"`
 }
 
 var C Config
@@ -110,6 +112,7 @@ var bindings = []binding{
 	{key: KeyBlockApplyOnDraft, defaultValue: false, description: "Refuse `tfc apply` while the merge request is a Draft. A Draft cannot be merged, so an apply on one leaves live infrastructure ahead of the target branch. `tfc plan` is still allowed."},
 	{key: KeyStatusTriggerWait, defaultValue: 5 * time.Minute, description: "How long `tfc status` waits for TFBuddy to publish a commit status for the pipeline's commit before failing the job. Accepts a Go duration string (e.g. 5m)."},
 	{key: KeySkipAutoPlanLabels, defaultValue: []string{}, description: "Comma-separated GitLab merge request labels (case-insensitive). When a merge request carries any of these labels, TFBuddy skips automatic `tfc plan` triggering from GitLab webhook events (open, reopen, and new commits pushed), but still discovers every affected workspace and posts a pending TFC/plan/<workspace> and TFC/apply/<workspace> commit status for each, without creating a Terraform Cloud run. Does not affect `tfc plan`/`tfc apply` run from an MR comment, and does not block cleanup when the MR is merged or closed."},
+	{key: KeyCostEstimateMinDelta, defaultValue: 10, description: "Show the Terraform Cloud cost estimate in the plan comment when a plan changes the estimated monthly cost by at least this many US dollars, up or down. 0 turns it off. Needs cost estimation enabled for the Terraform Cloud organization."},
 }
 
 func init() {

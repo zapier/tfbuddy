@@ -71,6 +71,21 @@ func (mr *MockApiClientMockRecorder) CreateRunFromSource(ctx, opts any) *gomock.
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRunFromSource", reflect.TypeOf((*MockApiClient)(nil).CreateRunFromSource), ctx, opts)
 }
 
+// GetCostEstimate mocks base method.
+func (m *MockApiClient) GetCostEstimate(ctx context.Context, id string) (*tfe.CostEstimate, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetCostEstimate", ctx, id)
+	ret0, _ := ret[0].(*tfe.CostEstimate)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetCostEstimate indicates an expected call of GetCostEstimate.
+func (mr *MockApiClientMockRecorder) GetCostEstimate(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCostEstimate", reflect.TypeOf((*MockApiClient)(nil).GetCostEstimate), ctx, id)
+}
+
 // GetPlanOutput mocks base method.
 func (m *MockApiClient) GetPlanOutput(id string) ([]byte, error) {
 	m.ctrl.T.Helper()
