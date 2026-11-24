@@ -88,7 +88,7 @@ func (w *RunEventsWorker) postRunStatusComment(ctx context.Context, run *tfe.Run
 	ctx, span := otel.Tracer("TFC").Start(ctx, "postRunStatusComment")
 	defer span.End()
 
-	commentBody, topLevelNoteBody, _ := comment_formatter.FormatRunStatusCommentBody(w.cfg, w.tfc, run, rmd)
+	commentBody, topLevelNoteBody, _ := comment_formatter.FormatRunStatusCommentBody(ctx, w.cfg, w.tfc, run, rmd)
 
 	final := run.Status == tfe.RunErrored || run.Status == tfe.RunCanceled || run.Status == tfe.RunDiscarded || run.Status == tfe.RunPlannedAndFinished
 	superseded := false

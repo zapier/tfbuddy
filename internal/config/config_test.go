@@ -114,6 +114,23 @@ func TestJetStreamDedupWindowCanBeSetFromEnv(t *testing.T) {
 	}
 }
 
+func TestCostEstimateMinDeltaDefaultsTo10(t *testing.T) {
+	resetViperForTest(t)
+
+	if got, want := C.CostEstimateMinDelta, 10; got != want {
+		t.Fatalf("C.CostEstimateMinDelta = %d, want %d", got, want)
+	}
+}
+
+func TestCostEstimateMinDeltaCanBeTurnedOffFromEnv(t *testing.T) {
+	t.Setenv("TFBUDDY_COST_ESTIMATE_MIN_DELTA", "0")
+	resetViperForTest(t)
+
+	if got := C.CostEstimateMinDelta; got != 0 {
+		t.Fatalf("C.CostEstimateMinDelta = %d, want 0", got)
+	}
+}
+
 func TestStringAccessorsReadConfiguredValues(t *testing.T) {
 	t.Setenv("TFBUDDY_LOG_LEVEL", "debug")
 	t.Setenv("TFBUDDY_NATS_SERVICE_URL", "nats://example:4222")

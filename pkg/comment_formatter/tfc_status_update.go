@@ -1,8 +1,12 @@
 package comment_formatter
 
 import (
+	"context"
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/hashicorp/go-tfe"
 	"github.com/rs/zerolog/log"
@@ -28,7 +32,7 @@ func getProperTargetedApplyText(rmd runstream.RunMetadata, run *tfe.Run, wsName 
 		return fmt.Sprintf(howToApplyFormatWithTarget, targets, wsName, targets, manualMRMergeSnippet)
 	}
 }
-func FormatRunStatusCommentBody(cfg config.Config, tfc tfc_api.ApiClient, run *tfe.Run, rmd runstream.RunMetadata) (main, toplevel string, resolve bool) {
+func FormatRunStatusCommentBody(ctx context.Context, cfg config.Config, tfc tfc_api.ApiClient, run *tfe.Run, rmd runstream.RunMetadata) (main, toplevel string, resolve bool) {
 	wsName := run.Workspace.Name
 	org := run.Workspace.Organization.Name
 	runUrl := fmt.Sprintf("https://app.terraform.io/app/%s/workspaces/%s/runs/%s", org, wsName, run.ID)
@@ -85,6 +89,7 @@ func FormatRunStatusCommentBody(cfg config.Config, tfc tfc_api.ApiClient, run *t
 		}
 
 		if hasChanges(run.Plan) {
+			extraInfo += costEstimateLine(ctx, cfg, tfc, run)
 			if len(run.TargetAddrs) > 0 {
 				extraInfo += getProperTargetedApplyText(rmd, run, wsName)
 			} else {
@@ -131,6 +136,45 @@ func FormatRunStatusCommentBody(cfg config.Config, tfc tfc_api.ApiClient, run *t
 
 }
 
+// The estimate is optional, so a slow read must not hold up the comment.
+const costEstimateTimeout = 10 * time.Second
+
+// costEstimateLine returns "" unless the run has a finished estimate whose
+// monthly change is at least cfg.CostEstimateMinDelta dollars either way.
+func costEstimateLine(ctx context.Context, cfg config.Config, tfc tfc_api.ApiClient, run *tfe.Run) string {
+	if cfg.CostEstimateMinDelta <= 0 || run.CostEstimate == nil || run.CostEstimate.ID == "" {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(ctx, costEstimateTimeout)
+	defer cancel()
+	ce, err := tfc.GetCostEstimate(ctx, run.CostEstimate.ID)
+	if err != nil {
+		log.Error().Err(err).Str("runID", run.ID).Str("costEstimateID", run.CostEstimate.ID).Msg("could not get cost estimate")
+		return ""
+	}
+	if ce == nil || ce.Status != tfe.CostEstimateFinished {
+		return ""
+	}
+	delta, err := strconv.ParseFloat(ce.DeltaMonthlyCost, 64)
+	if err != nil || math.IsNaN(delta) || math.IsInf(delta, 0) || math.Abs(delta) < float64(cfg.CostEstimateMinDelta) {
+		return ""
+	}
+	return fmt.Sprintf(costEstimateFormat, formatUSD(delta))
+}
+
+// formatUSD renders a signed dollar amount, e.g. +$1,582.56 or -$4,410.72.
+func formatUSD(v float64) string {
+	sign := "+"
+	if v < 0 {
+		sign, v = "-", -v
+	}
+	whole, cents, _ := strings.Cut(strconv.FormatFloat(v, 'f', 2, 64), ".")
+	for i := len(whole) - 3; i > 0; i -= 3 {
+		whole = whole[:i] + "," + whole[i:]
+	}
+	return sign + "$" + whole + "." + cents
+}
+
 func hasChanges(plan *tfe.Plan) bool {
 	if plan.ResourceAdditions > 0 {
 		return true
@@ -165,6 +209,11 @@ var successPlanSummaryFormat = `
   * Additions: %d
   * Changes: %d
   * Destructions: %d`
+
+var costEstimateFormat = `
+
+:moneybag: **Cost estimate:** %s/mo at list price. Terraform Cloud prices [only some resource types](https://developer.hashicorp.com/terraform/cloud-docs/cost-estimation) and no usage-based costs.
+`
 
 var manualMRMergeSnippet = `Remember to **merge** the MR once the apply has succeeded`
 var autoMRMergeSnippet = `Your MR will be **automatically** merged once the apply has succeeded`
